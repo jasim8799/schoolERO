@@ -15,7 +15,12 @@ import studentRoutes from './routes/student.routes.js';
 const app = express();
 
 // Middlewares
-app.use(cors({ origin: config.cors.origin }));
+app.use(cors({
+  origin: config.cors.origin,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
