@@ -140,24 +140,37 @@ export const markSubjectAttendance = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Records array is required' });
     }
 
-    const attendanceRecords = records.map((record) => ({
-      studentId: record.studentId,
-      subjectId: record.subjectId,
-      classId: record.classId,
-      date: record.date,
-      period: record.period,
-      status: record.status,
-      teacherId: userId,
-      schoolId: schoolId,
-      sessionId: sessionId,
+    const bulkOps = records.map((record) => ({
+      updateOne: {
+        filter: {
+          studentId: record.studentId,
+          subjectId: record.subjectId,
+          date: record.date,
+          period: record.period || null,
+          schoolId: schoolId,
+        },
+        update: {
+          $set: {
+            classId: record.classId,
+            status: record.status,
+            teacherId: userId,
+            schoolId: schoolId,
+            sessionId: sessionId,
+          },
+        },
+        upsert: true,
+      },
     }));
 
-    const result = await StudentSubjectAttendance.insertMany(attendanceRecords);
+    const result = await StudentSubjectAttendance.bulkWrite(bulkOps);
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
       message: 'Subject attendance marked successfully',
-      data: result,
+      data: {
+        upserted: result.upsertedCount,
+        modified: result.modifiedCount,
+      },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
