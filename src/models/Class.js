@@ -13,7 +13,7 @@ const classSchema = new mongoose.Schema({
   },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Session',
+    ref: 'AcademicSession',
     required: [true, 'Session ID is required']
   },
   status: {
