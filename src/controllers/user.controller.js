@@ -1,0 +1,245 @@
+import User from '../models/User.js';
+import School from '../models/School.js';
+import { hashPassword } from '../utils/password.js';
+import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
+import { logger } from '../utils/logger.js';
+import { createAuditLog } from '../utils/auditLog.js';
+
+// Create User
+export const createUser = async (req, res) => {
+  try {
+    const { name, email, mobile, password, role, schoolId, status } = req.body;
+
+    // Validate required fields
+    if (!name || !password || !role) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Name, password, and role are required'
+      });
+    }
+
+    // Validate email or mobile
+    if (!email && !mobile) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Either email or mobile is required'
+      });
+    }
+
+    // Validate schoolId for non-SUPER_ADMIN roles
+    if (role !== USER_ROLES.SUPER_ADMIN && !schoolId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'School ID is required for this role'
+      });
+    }
+
+    // Verify school exists (if schoolId provided)
+    if (schoolId) {
+      const school = await School.findById(schoolId);
+      if (!school) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({
+          success: false,
+          message: 'School not found'
+        });
+      }
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [
+        ...(email ? [{ email }] : []),
+        ...(mobile ? [{ mobile }] : [])
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User with this email or mobile already exists'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await hashPassword(password);
+
+    // Create user
+    const user = await User.create({
+      name,
+      email,
+      mobile,
+      password: hashedPassword,
+      role,
+      schoolId: role === USER_ROLES.SUPER_ADMIN ? null : schoolId,
+      status: status || 'active'
+    });
+
+    logger.success(`User created: ${user.name} (${user.role}) by ${req.user.role}`);
+
+    // Create audit log
+    await createAuditLog({
+      action: 'USER_CREATED',
+      userId: req.user.userId,
+      schoolId: user.schoolId,
+      targetUserId: user._id,
+      details: { role: user.role, email, mobile },
+      req
+    });
+
+    // Remove password from response
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'User created successfully',
+      data: userResponse
+    });
+  } catch (error) {
+    logger.error('Create user error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error creating user',
+      error: error.message
+    });
+  }
+};
+
+// Get All Users
+export const getAllUsers = async (req, res) => {
+  try {
+    const { schoolId, role, status } = req.query;
+
+    // Build query
+    const query = {};
+    
+    if (schoolId) {
+      query.schoolId = schoolId;
+    }
+    
+    if (role) {
+      query.role = role;
+    }
+    
+    if (status) {
+      query.status = status;
+    }
+
+    const users = await User.find(query)
+      .populate('schoolId', 'name code')
+      .select('-password')
+      .sort({ createdAt: -1 });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      count: users.length,
+      data: users
+    });
+  } catch (error) {
+    logger.error('Get users error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error fetching users',
+      error: error.message
+    });
+  }
+};
+
+// Get User by ID
+export const getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .populate('schoolId', 'name code')
+      .select('-password');
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    logger.error('Get user error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error fetching user',
+      error: error.message
+    });
+  }
+};
+
+// Update User
+export const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, mobile, status, role } = req.body;
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update fields
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (mobile) user.mobile = mobile;
+    if (status) user.status = status;
+    if (role) user.role = role;
+
+    await user.save();
+
+    logger.success(`User updated: ${user.name} by ${req.user.role}`);
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'User updated successfully',
+      data: userResponse
+    });
+  } catch (error) {
+    logger.error('Update user error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating user',
+      error: error.message
+    });
+  }
+};
+
+// Delete User
+export const deleteUser = async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    logger.success(`User deleted: ${user.name} by ${req.user.role}`);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete user error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error deleting user',
+      error: error.message
+    });
+  }
+};
