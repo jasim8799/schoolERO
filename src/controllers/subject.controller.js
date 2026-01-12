@@ -1,0 +1,155 @@
+import Subject from '../models/Subject.js';
+import Class from '../models/Class.js';
+import School from '../models/School.js';
+import Session from '../models/Session.js';
+import { HTTP_STATUS } from '../config/constants.js';
+import { logger } from '../utils/logger.js';
+import { createAuditLog } from '../utils/auditLogger.js';
+
+// Create Subject
+export const createSubject = async (req, res) => {
+  try {
+    const { name, classId, schoolId, sessionId } = req.body;
+
+    // Validate required fields
+    if (!name || !classId || !schoolId || !sessionId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Subject name, classId, schoolId, and sessionId are required'
+      });
+    }
+
+    // Verify school exists
+    const school = await School.findById(schoolId);
+    if (!school) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    // Verify session exists and belongs to school
+    const session = await Session.findOne({ _id: sessionId, schoolId });
+    if (!session) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Session not found or does not belong to the specified school'
+      });
+    }
+
+    // Verify class exists and belongs to same school and session
+    const classData = await Class.findOne({ _id: classId, schoolId, sessionId });
+    if (!classData) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Class not found or does not belong to the specified school and session'
+      });
+    }
+
+    // Check if subject already exists for this class
+    const existingSubject = await Subject.findOne({ name, classId, schoolId, sessionId });
+    if (existingSubject) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: `Subject '${name}' already exists for this class`
+      });
+    }
+
+    // Create subject
+    const newSubject = await Subject.create({
+      name,
+      classId,
+      schoolId,
+      sessionId,
+      status: 'active'
+    });
+
+    // Audit log
+    await createAuditLog({
+      action: 'SUBJECT_CREATED',
+      performedBy: req.user.userId,
+      resourceType: 'Subject',
+      resourceId: newSubject._id,
+      schoolId,
+      details: { subjectName: name, classId, sessionId }
+    });
+
+    logger.success(`Subject created: ${name} for class ${classId}`);
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Subject created successfully',
+      data: newSubject
+    });
+  } catch (error) {
+    logger.error('Create subject error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error creating subject',
+      error: error.message
+    });
+  }
+};
+
+// Get All Subjects (with optional filters)
+export const getAllSubjects = async (req, res) => {
+  try {
+    const { classId, schoolId, sessionId } = req.query;
+
+    // Build filter
+    const filter = {};
+    if (classId) filter.classId = classId;
+    if (schoolId) filter.schoolId = schoolId;
+    if (sessionId) filter.sessionId = sessionId;
+
+    const subjects = await Subject.find(filter)
+      .populate('classId', 'name')
+      .populate('schoolId', 'name code')
+      .populate('sessionId', 'name startDate endDate')
+      .sort({ classId: 1, name: 1 });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      count: subjects.length,
+      data: subjects
+    });
+  } catch (error) {
+    logger.error('Get subjects error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error retrieving subjects',
+      error: error.message
+    });
+  }
+};
+
+// Get Subject by ID
+export const getSubjectById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const subject = await Subject.findById(id)
+      .populate('classId', 'name')
+      .populate('schoolId', 'name code')
+      .populate('sessionId', 'name startDate endDate');
+
+    if (!subject) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: subject
+    });
+  } catch (error) {
+    logger.error('Get subject error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error retrieving subject',
+      error: error.message
+    });
+  }
+};

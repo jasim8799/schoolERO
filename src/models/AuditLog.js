@@ -14,7 +14,13 @@ const auditLogSchema = new mongoose.Schema({
       'SCHOOL_CREATED',
       'SESSION_CREATED',
       'SESSION_ACTIVATED',
-      'PASSWORD_CHANGED'
+      'PASSWORD_CHANGED',
+      'CLASS_CREATED',
+      'SECTION_CREATED',
+      'SUBJECT_CREATED',
+      'TEACHER_CREATED',
+      'PARENT_CREATED',
+      'STUDENT_CREATED'
     ]
   },
   userId: {
