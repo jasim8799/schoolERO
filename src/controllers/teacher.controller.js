@@ -5,7 +5,7 @@ import Subject from '../models/Subject.js';
 import School from '../models/School.js';
 import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLogger.js';
+import { createAuditLog } from '../utils/auditLog.js';
 
 // Create Teacher
 export const createTeacher = async (req, res) => {
@@ -81,11 +81,9 @@ export const createTeacher = async (req, res) => {
     // Audit log
     await createAuditLog({
       action: 'TEACHER_CREATED',
-      performedBy: req.user.userId,
-      resourceType: 'Teacher',
-      resourceId: newTeacher._id,
+      userId: req.user.userId,
       schoolId,
-      details: { userId, assignedClasses, assignedSubjects }
+      details: { teacherUserId: userId, teacherId: newTeacher._id, assignedClasses, assignedSubjects }
     });
 
     logger.success(`Teacher profile created for user ${userId}`);

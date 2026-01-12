@@ -3,7 +3,7 @@ import School from '../models/School.js';
 import AcademicSession from '../models/AcademicSession.js';
 import { HTTP_STATUS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLogger.js';
+import { createAuditLog } from '../utils/auditLog.js';
 
 // Create Class
 export const createClass = async (req, res) => {
@@ -56,11 +56,9 @@ export const createClass = async (req, res) => {
     // Audit log
     await createAuditLog({
       action: 'CLASS_CREATED',
-      performedBy: req.user.userId,
-      resourceType: 'Class',
-      resourceId: newClass._id,
+      userId: req.user.userId,
       schoolId,
-      details: { className: name, sessionId }
+      details: { className: name, sessionId, classId: newClass._id }
     });
 
     logger.success(`Class created: ${name} for school ${schoolId}`);

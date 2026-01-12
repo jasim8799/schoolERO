@@ -6,7 +6,7 @@ import School from '../models/School.js';
 import AcademicSession from '../models/AcademicSession.js';
 import { HTTP_STATUS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLogger.js';
+import { createAuditLog } from '../utils/auditLog.js';
 
 // Create Student
 export const createStudent = async (req, res) => {
@@ -113,11 +113,10 @@ export const createStudent = async (req, res) => {
     // Audit log
     await createAuditLog({
       action: 'STUDENT_CREATED',
-      performedBy: req.user.userId,
-      resourceType: 'Student',
-      resourceId: newStudent._id,
+      userId: req.user.userId,
       schoolId,
       details: { 
+        studentId: newStudent._id,
         studentName: name, 
         rollNumber, 
         classId, 
