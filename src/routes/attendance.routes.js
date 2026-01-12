@@ -10,7 +10,7 @@ import {
 } from '../controllers/attendance.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { requireMinRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../constants/roles.js';
+import { USER_ROLES } from '../config/constants.js';
 
 const router = express.Router();
 
