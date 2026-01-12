@@ -3,7 +3,7 @@ import Parent from '../models/Parent.js';
 import Class from '../models/Class.js';
 import Section from '../models/Section.js';
 import School from '../models/School.js';
-import Session from '../models/Session.js';
+import AcademicSession from '../models/AcademicSession.js';
 import { HTTP_STATUS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
 import { createAuditLog } from '../utils/auditLogger.js';
@@ -42,7 +42,7 @@ export const createStudent = async (req, res) => {
     }
 
     // Verify session exists and belongs to school
-    const session = await Session.findOne({ _id: sessionId, schoolId });
+    const session = await AcademicSession.findOne({ _id: sessionId, schoolId });
     if (!session) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
