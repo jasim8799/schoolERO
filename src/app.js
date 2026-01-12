@@ -11,6 +11,7 @@ import subjectRoutes from './routes/subject.routes.js';
 import teacherRoutes from './routes/teacher.routes.js';
 import parentRoutes from './routes/parent.routes.js';
 import studentRoutes from './routes/student.routes.js';
+import attendanceRoutes from './routes/attendance.routes.js';
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use('/api/sections', sectionRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/parents', parentRoutes);
+app.use('/api/attendance', attendanceRoutes);
 app.use('/api/students', studentRoutes);
 
 export default app;
