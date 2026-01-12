@@ -7,7 +7,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:5000/api",
+      "value": "https://schoolero.onrender.com/api",
       "type": "string"
     },
     {
@@ -28,10 +28,9 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "http://localhost:5000/health",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
+          "raw": "https://schoolero.onrender.com/health",
+          "protocol": "https",
+          "host": ["schoolero", "onrender", "com"],
           "path": ["health"]
         }
       }

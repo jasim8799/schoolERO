@@ -216,10 +216,10 @@ export const updateUser = async (req, res) => {
   }
 };
 
-// Delete User
+// Delete User (Soft Delete)
 export const deleteUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
 
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
@@ -228,17 +228,112 @@ export const deleteUser = async (req, res) => {
       });
     }
 
-    logger.success(`User deleted: ${user.name} by ${req.user.role}`);
+    // Check if already inactive
+    if (user.status === 'inactive') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User is already deactivated'
+      });
+    }
+
+    // Soft delete: set status to inactive
+    user.status = 'inactive';
+    user.deactivatedAt = new Date();
+    user.deactivatedBy = req.user.userId;
+    await user.save();
+
+    logger.success(`User deactivated: ${user.name} by ${req.user.role}`);
+
+    // Create audit log
+    await createAuditLog({
+      action: 'USER_DELETED',
+      userId: req.user.userId,
+      schoolId: user.schoolId,
+      targetUserId: user._id,
+      details: { 
+        userName: user.name, 
+        role: user.role,
+        deactivatedBy: req.user.role 
+      },
+      req
+    });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: 'User deleted successfully'
+      message: 'User deactivated successfully',
+      data: {
+        userId: user._id,
+        status: user.status,
+        deactivatedAt: user.deactivatedAt
+      }
     });
   } catch (error) {
     logger.error('Delete user error:', error.message);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      message: 'Error deleting user',
+      message: 'Error deactivating user',
+      error: error.message
+    });
+  }
+};
+
+// Reactivate User
+export const reactivateUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if already active
+    if (user.status === 'active') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User is already active'
+      });
+    }
+
+    // Reactivate user
+    user.status = 'active';
+    user.deactivatedAt = null;
+    user.deactivatedBy = null;
+    await user.save();
+
+    logger.success(`User reactivated: ${user.name} by ${req.user.role}`);
+
+    // Create audit log
+    await createAuditLog({
+      action: 'USER_UPDATED',
+      userId: req.user.userId,
+      schoolId: user.schoolId,
+      targetUserId: user._id,
+      details: { 
+        userName: user.name, 
+        action: 'reactivated',
+        reactivatedBy: req.user.role 
+      },
+      req
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'User reactivated successfully',
+      data: {
+        userId: user._id,
+        status: user.status,
+        name: user.name,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    logger.error('Reactivate user error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error reactivating user',
       error: error.message
     });
   }

@@ -17,7 +17,7 @@ This guide provides step-by-step testing instructions for ALL Phase-1 APIs.
 ### 2. Postman Setup
 - Import collection: `School_ERP_Phase1.postman_collection.json`
 - Create environment with variables:
-  - `base_url`: `http://localhost:5000/api` (or Render URL)
+  - `base_url`: `https://schoolero.onrender.com/api` (production) or `http://localhost:5000/api` (local)
   - `token`: (will be auto-saved)
   - `school_id`: (will be auto-saved)
   - `principal_token`: (will be saved manually)
@@ -34,7 +34,7 @@ This guide provides step-by-step testing instructions for ALL Phase-1 APIs.
 
 **Request:**
 ```http
-GET http://localhost:5000/health
+GET https://schoolero.onrender.com/health
 ```
 
 **Expected Response (200 OK):**

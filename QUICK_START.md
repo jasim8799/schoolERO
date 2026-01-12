@@ -63,7 +63,7 @@ Environment: development
 
 ### Test 1: Health Check
 ```http
-GET http://localhost:5000/health
+GET https://schoolero.onrender.com/health
 ```
 ✅ Should return: `{ "status": "OK" }`
 
@@ -71,7 +71,7 @@ GET http://localhost:5000/health
 
 ### Test 2: Create a School
 ```http
-POST http://localhost:5000/api/schools
+POST https://schoolero.onrender.com/api/schools
 Content-Type: application/json
 
 {
@@ -90,7 +90,7 @@ Content-Type: application/json
 
 ### Test 3: Create Academic Session
 ```http
-POST http://localhost:5000/api/sessions
+POST https://schoolero.onrender.com/api/sessions
 Content-Type: application/json
 
 {
@@ -107,7 +107,7 @@ Content-Type: application/json
 
 ### Test 4: Register SUPER_ADMIN
 ```http
-POST http://localhost:5000/api/auth/register
+POST https://schoolero.onrender.com/api/auth/register
 Content-Type: application/json
 
 {
@@ -123,7 +123,7 @@ Content-Type: application/json
 
 ### Test 5: Login
 ```http
-POST http://localhost:5000/api/auth/login
+POST https://schoolero.onrender.com/api/auth/login
 Content-Type: application/json
 
 {
@@ -137,7 +137,7 @@ Content-Type: application/json
 
 ### Test 6: Get Current User (Protected Endpoint)
 ```http
-GET http://localhost:5000/api/auth/me
+GET https://schoolero.onrender.com/api/auth/me
 Authorization: Bearer <paste_token_here>
 ```
 ✅ Should return your user details
@@ -146,7 +146,7 @@ Authorization: Bearer <paste_token_here>
 
 ### Test 7: Create a Principal User
 ```http
-POST http://localhost:5000/api/users
+POST https://schoolero.onrender.com/api/users
 Authorization: Bearer <paste_token_here>
 Content-Type: application/json
 
@@ -164,7 +164,7 @@ Content-Type: application/json
 
 ### Test 8: List All Users
 ```http
-GET http://localhost:5000/api/users
+GET https://schoolero.onrender.com/api/users
 Authorization: Bearer <paste_token_here>
 ```
 ✅ Should see both users (admin and principal)
@@ -175,7 +175,7 @@ Authorization: Bearer <paste_token_here>
 
 ### Login as Principal
 ```http
-POST http://localhost:5000/api/auth/login
+POST https://schoolero.onrender.com/api/auth/login
 Content-Type: application/json
 
 {
@@ -187,7 +187,7 @@ Content-Type: application/json
 
 ### Try to Create User for DIFFERENT School
 ```http
-POST http://localhost:5000/api/users
+POST https://schoolero.onrender.com/api/users
 Authorization: Bearer <principal_token>
 Content-Type: application/json
 
@@ -303,8 +303,10 @@ Once Phase-1 is tested and working:
 
 | Item | Value |
 |------|-------|
-| Server URL | http://localhost:5000 |
-| API Base | http://localhost:5000/api |
+| Server URL (Production) | https://schoolero.onrender.com |
+| API Base (Production) | https://schoolero.onrender.com/api |
+| Server URL (Local) | http://localhost:5000 |
+| API Base (Local) | http://localhost:5000/api |
 | Database | school_erp |
 | Default Port | 5000 |
 | JWT Expiry | 7 days |

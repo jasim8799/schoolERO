@@ -103,7 +103,7 @@ npm start
 npm run dev
 ```
 
-Server will start on `http://localhost:5000`
+Server will start on `http://localhost:5000` (local) or `https://schoolero.onrender.com` (production)
 
 ---
 
@@ -111,7 +111,8 @@ Server will start on `http://localhost:5000`
 
 ### Base URL
 ```
-http://localhost:5000/api
+Production: https://schoolero.onrender.com/api
+Local: http://localhost:5000/api
 ```
 
 ### Authentication

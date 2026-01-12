@@ -4,7 +4,8 @@ import {
   getAllUsers, 
   getUserById, 
   updateUser, 
-  deleteUser 
+  deleteUser,
+  reactivateUser
 } from '../controllers/user.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { requireRole, requireMinRole, canAssignRole } from '../middlewares/role.middleware.js';
@@ -54,6 +55,14 @@ router.delete(
   '/:id', 
   requireMinRole(USER_ROLES.PRINCIPAL),
   deleteUser
+);
+
+// PATCH /api/users/:id/reactivate - Reactivate user
+// Only PRINCIPAL and above can reactivate users
+router.patch(
+  '/:id/reactivate', 
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  reactivateUser
 );
 
 export default router;

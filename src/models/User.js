@@ -39,6 +39,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: Object.values(USER_STATUS),
     default: USER_STATUS.ACTIVE
+  },
+  deactivatedAt: {
+    type: Date
+  },
+  deactivatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }
 }, {
   timestamps: true

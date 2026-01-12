@@ -2,6 +2,7 @@ import AcademicSession from '../models/AcademicSession.js';
 import School from '../models/School.js';
 import { HTTP_STATUS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
+import { createAuditLog } from '../utils/auditLog.js';
 
 // Create Academic Session
 export const createSession = async (req, res) => {
@@ -43,6 +44,15 @@ export const createSession = async (req, res) => {
     });
 
     logger.success(`Academic session created: ${session.name} for school ${school.code}`);
+
+    // Create audit log
+    await createAuditLog({
+      action: 'SESSION_CREATED',
+      userId: req.user.userId,
+      schoolId: schoolId,
+      details: { sessionName: session.name, startDate, endDate },
+      req
+    });
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
@@ -140,6 +150,19 @@ export const updateSession = async (req, res) => {
     await session.save();
 
     logger.success(`Session ${isActive ? 'activated' : 'deactivated'}: ${session.name}`);
+
+    // Create audit log
+    await createAuditLog({
+      action: 'SESSION_ACTIVATED',
+      userId: req.user.userId,
+      schoolId: session.schoolId,
+      details: { 
+        sessionName: session.name, 
+        isActive,
+        action: isActive ? 'activated' : 'deactivated'
+      },
+      req
+    });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
