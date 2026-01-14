@@ -4,7 +4,7 @@ import School from '../models/School.js';
 import AcademicSession from '../models/AcademicSession.js';
 import { HTTP_STATUS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLog.js';
+import { auditLog } from '../utils/auditLog_new.js';
 
 // Create Section
 export const createSection = async (req, res) => {
@@ -70,7 +70,7 @@ export const createSection = async (req, res) => {
     });
 
     // Audit log
-    await createAuditLog({
+    await auditLog({
       action: 'SECTION_CREATED',
       userId: req.user.userId,
       schoolId,

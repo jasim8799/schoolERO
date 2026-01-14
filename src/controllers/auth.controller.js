@@ -3,7 +3,7 @@ import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateToken } from '../utils/jwt.js';
 import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLog.js';
+import { auditLog } from '../utils/auditLog_new.js';
 
 // Register User
 export const register = async (req, res) => {
@@ -146,7 +146,7 @@ export const login = async (req, res) => {
     logger.success(`User logged in: ${user.name} (${user.role})`);
 
     // Create audit log for login
-    await createAuditLog({
+    await auditLog({
       action: 'LOGIN',
       userId: user._id,
       schoolId: user.schoolId?._id || null,

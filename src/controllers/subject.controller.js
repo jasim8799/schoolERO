@@ -4,7 +4,7 @@ import School from '../models/School.js';
 import AcademicSession from '../models/AcademicSession.js';
 import { HTTP_STATUS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLog.js';
+import { auditLog } from '../utils/auditLog_new.js';
 
 // Create Subject
 export const createSubject = async (req, res) => {
@@ -65,7 +65,7 @@ export const createSubject = async (req, res) => {
     });
 
     // Audit log
-    await createAuditLog({
+    await auditLog({
       action: 'SUBJECT_CREATED',
       userId: req.user.userId,
       schoolId,

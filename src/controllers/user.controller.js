@@ -3,7 +3,7 @@ import School from '../models/School.js';
 import { hashPassword } from '../utils/password.js';
 import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLog.js';
+import { auditLog } from '../utils/auditLog_new.js';
 
 // Create User
 export const createUser = async (req, res) => {
@@ -77,7 +77,7 @@ export const createUser = async (req, res) => {
     logger.success(`User created: ${user.name} (${user.role}) by ${req.user.role}`);
 
     // Create audit log
-    await createAuditLog({
+    await auditLog({
       action: 'USER_CREATED',
       userId: req.user.userId,
       schoolId: user.schoolId,
@@ -245,15 +245,15 @@ export const deleteUser = async (req, res) => {
     logger.success(`User deactivated: ${user.name} by ${req.user.role}`);
 
     // Create audit log
-    await createAuditLog({
+    await auditLog({
       action: 'USER_DELETED',
       userId: req.user.userId,
       schoolId: user.schoolId,
       targetUserId: user._id,
-      details: { 
-        userName: user.name, 
+      details: {
+        userName: user.name,
         role: user.role,
-        deactivatedBy: req.user.role 
+        deactivatedBy: req.user.role
       },
       req
     });
@@ -306,15 +306,15 @@ export const reactivateUser = async (req, res) => {
     logger.success(`User reactivated: ${user.name} by ${req.user.role}`);
 
     // Create audit log
-    await createAuditLog({
+    await auditLog({
       action: 'USER_UPDATED',
       userId: req.user.userId,
       schoolId: user.schoolId,
       targetUserId: user._id,
-      details: { 
-        userName: user.name, 
+      details: {
+        userName: user.name,
         action: 'reactivated',
-        reactivatedBy: req.user.role 
+        reactivatedBy: req.user.role
       },
       req
     });

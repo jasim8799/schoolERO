@@ -5,7 +5,7 @@ import Subject from '../models/Subject.js';
 import School from '../models/School.js';
 import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLog.js';
+import { auditLog } from '../utils/auditLog_new.js';
 
 // Create Teacher
 export const createTeacher = async (req, res) => {
@@ -79,7 +79,7 @@ export const createTeacher = async (req, res) => {
     });
 
     // Audit log
-    await createAuditLog({
+    await auditLog({
       action: 'TEACHER_CREATED',
       userId: req.user.userId,
       schoolId,

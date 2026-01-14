@@ -3,7 +3,7 @@ import User from '../models/User.js';
 import School from '../models/School.js';
 import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import { createAuditLog } from '../utils/auditLog.js';
+import { auditLog } from '../utils/auditLog_new.js';
 
 // Create Parent
 export const createParent = async (req, res) => {
@@ -54,7 +54,7 @@ export const createParent = async (req, res) => {
     });
 
     // Audit log
-    await createAuditLog({
+    await auditLog({
       action: 'PARENT_CREATED',
       userId: req.user.userId,
       schoolId,
