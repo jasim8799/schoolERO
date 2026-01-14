@@ -6,7 +6,7 @@ import { HTTP_STATUS, USER_ROLES, SCHOOL_MODULES, SAAS_PLANS } from '../config/c
 import { logger } from '../utils/logger.js';
 import { auditLog } from '../utils/auditLog_new.js';
 import { applyPlanToSchool, getPlanConfig } from '../utils/planManager.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 // Create School
 export const createSchool = async (req, res) => {
