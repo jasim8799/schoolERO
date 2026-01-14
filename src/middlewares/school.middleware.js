@@ -1,5 +1,48 @@
 import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
 import mongoose from 'mongoose';
+import School from '../models/School.js';
+
+// Check if user's school is active
+export const checkSchoolStatus = async (req, res, next) => {
+  try {
+    // SUPER_ADMIN can access regardless of school status
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
+    // Check if user has a school assigned
+    if (!req.user.schoolId) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'User is not assigned to any school'
+      });
+    }
+
+    // Check if school exists and is active
+    const school = await School.findById(req.user.schoolId);
+    if (!school) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    if (school.status !== 'active') {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'School is currently inactive. Please contact system administrator.'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('School status check error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error checking school status'
+    });
+  }
+};
 
 // Ensure user can only access their own school's data
 export const enforceSchoolIsolation = (req, res, next) => {

@@ -1,8 +1,8 @@
-import Role from '../models/Role.js';
-import { USER_ROLES } from '../config/constants.js';
-import { logger } from './logger.js';
+const Role = require('../models/Role');
+const { USER_ROLES } = require('../config/constants');
+const { logger } = require('./logger');
 
-export const seedRoles = async () => {
+const seedRoles = async () => {
   try {
     const roles = [
       { name: USER_ROLES.SUPER_ADMIN, description: 'Super Administrator with full system access' },
@@ -26,3 +26,5 @@ export const seedRoles = async () => {
     logger.error('Error seeding roles:', error.message);
   }
 };
+
+module.exports = { seedRoles };

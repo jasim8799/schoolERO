@@ -1,0 +1,34 @@
+import Hostel from '../models/Hostel.js';
+
+export const createHostel = async (req, res) => {
+  try {
+    const { name, type, address, wardenName, wardenContact } = req.body;
+    const { schoolId, _id: createdBy } = req.user;
+
+    const hostel = await Hostel.create({
+      name,
+      type,
+      address,
+      wardenName,
+      wardenContact,
+      schoolId,
+      createdBy,
+    });
+    res.status(201).json(hostel);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ message: 'Hostel name already exists for this school.' });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const getHostels = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const hostels = await Hostel.find({ schoolId });
+    res.json(hostels);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

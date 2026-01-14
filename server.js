@@ -1,8 +1,8 @@
-import app from './src/app.js';
-import { connectDB } from './src/config/db.js';
-import { config } from './src/config/env.js';
-import { logger } from './src/utils/logger.js';
-import { seedRoles } from './src/utils/seedRoles.js';
+const app = require('./src/app');
+const { connectDB } = require('./src/config/db');
+const { config } = require('./src/config/env');
+const { logger } = require('./src/utils/logger');
+const { seedRoles } = require('./src/utils/seedRoles');
 
 // Connect to Database
 connectDB();

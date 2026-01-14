@@ -5,7 +5,7 @@ const logLevels = {
   warn: '\x1b[33m[WARN]\x1b[0m'
 };
 
-export const logger = {
+const logger = {
   info: (message, ...args) => {
     console.log(`${logLevels.info} ${message}`, ...args);
   },
@@ -19,3 +19,5 @@ export const logger = {
     console.warn(`${logLevels.warn} ${message}`, ...args);
   }
 };
+
+module.exports = { logger };

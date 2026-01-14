@@ -102,7 +102,7 @@ export const login = async (req, res) => {
         ...(email ? [{ email }] : []),
         ...(mobile ? [{ mobile }] : [])
       ]
-    }).select('+password').populate('schoolId', 'name code');
+    }).select('+password').populate('schoolId', 'name code status');
 
     if (!user) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -116,6 +116,14 @@ export const login = async (req, res) => {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         message: 'User account is inactive'
+      });
+    }
+
+    // Check if user's school is active (for non-SUPER_ADMIN users)
+    if (user.role !== USER_ROLES.SUPER_ADMIN && user.schoolId && user.schoolId.status !== 'active') {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'School is currently inactive. Please contact system administrator.'
       });
     }
 

@@ -36,6 +36,19 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
+    // Check force logout for school users
+    if (decoded.schoolId) {
+      const School = (await import('../models/School.js')).default;
+      const school = await School.findById(decoded.schoolId);
+      if (school && school.forceLogoutAt && decoded.iat * 1000 < school.forceLogoutAt.getTime()) {
+        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+          success: false,
+          message: 'Session expired. Please login again.',
+          forceLogout: true
+        });
+      }
+    }
+
     // Attach user info to request
     req.user = {
       userId: decoded.userId,

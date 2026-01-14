@@ -1,4 +1,4 @@
-import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 
 // Role hierarchy for authorization
 const ROLE_HIERARCHY = {
@@ -11,7 +11,7 @@ const ROLE_HIERARCHY = {
 };
 
 // Check if user has required role
-export const requireRole = (...allowedRoles) => {
+const requireRole = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -35,7 +35,7 @@ export const requireRole = (...allowedRoles) => {
 };
 
 // Check if user has minimum role level
-export const requireMinRole = (minRole) => {
+const requireMinRole = (minRole) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -59,7 +59,7 @@ export const requireMinRole = (minRole) => {
 };
 
 // Prevent users from assigning roles higher than their own
-export const canAssignRole = (req, res, next) => {
+const canAssignRole = (req, res, next) => {
   const { role: targetRole } = req.body;
   const userRoleLevel = ROLE_HIERARCHY[req.user.role] || 0;
   const targetRoleLevel = ROLE_HIERARCHY[targetRole] || 0;
@@ -72,4 +72,10 @@ export const canAssignRole = (req, res, next) => {
   }
 
   next();
+};
+
+module.exports = {
+  requireRole,
+  requireMinRole,
+  canAssignRole
 };

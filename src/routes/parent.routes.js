@@ -1,5 +1,5 @@
 import express from 'express';
-import { createParent, getAllParents, getParentById } from '../controllers/parent.controller.js';
+import { createParent, getAllParents, getParentById, getMyChildren } from '../controllers/parent.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { requireMinRole } from '../middlewares/role.middleware.js';
 import { USER_ROLES } from '../config/constants.js';
@@ -17,5 +17,8 @@ router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllParents);
 
 // GET /api/parents/:id - Get parent by ID
 router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getParentById);
+
+// GET /api/parents/me/children - Get current parent's children (PARENT only)
+router.get('/me/children', getMyChildren);
 
 export default router;

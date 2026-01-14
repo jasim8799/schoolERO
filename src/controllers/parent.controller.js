@@ -145,3 +145,39 @@ export const getParentById = async (req, res) => {
     });
   }
 };
+
+// Get Current Parent's Children
+export const getMyChildren = async (req, res) => {
+  try {
+    const { _id: userId, schoolId } = req.user;
+
+    const parent = await Parent.findOne({ userId, schoolId })
+      .populate({
+        path: 'children',
+        select: 'name rollNumber classId sectionId',
+        populate: [
+          { path: 'classId', select: 'name' },
+          { path: 'sectionId', select: 'name' }
+        ]
+      });
+
+    if (!parent) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Parent profile not found'
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: parent.children
+    });
+  } catch (error) {
+    logger.error('Get my children error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error retrieving children',
+      error: error.message
+    });
+  }
+};

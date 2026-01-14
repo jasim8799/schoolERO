@@ -10,6 +10,7 @@ import {
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { requireRole, requireMinRole, canAssignRole } from '../middlewares/role.middleware.js';
 import { enforceSchoolIsolation, attachSchoolId, filterBySchool } from '../middlewares/school.middleware.js';
+import { checkStudentLimit, checkTeacherLimit } from '../middlewares/schoolLimits.middleware.js';
 import { USER_ROLES } from '../config/constants.js';
 
 const router = express.Router();
@@ -21,12 +22,24 @@ router.use(authenticate);
 // Only PRINCIPAL and OPERATOR can create users
 // Cannot create users for other schools
 // Cannot assign higher role than own role
+// Check limits for students and teachers
 router.post(
-  '/', 
+  '/',
   requireMinRole(USER_ROLES.OPERATOR),
   attachSchoolId,
   canAssignRole,
   enforceSchoolIsolation,
+  async (req, res, next) => {
+    // Check limits based on role being created
+    const { role } = req.body;
+    if (role === USER_ROLES.STUDENT) {
+      return checkStudentLimit(req, res, next);
+    } else if (role === USER_ROLES.TEACHER) {
+      return checkTeacherLimit(req, res, next);
+    }
+    // No limit check for other roles
+    next();
+  },
   createUser
 );
 
