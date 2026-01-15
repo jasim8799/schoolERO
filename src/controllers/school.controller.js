@@ -14,26 +14,55 @@ const { createTeacher: createTeacherProfile } = require('./teacher.controller.js
 // Create School
 const createSchool = async (req, res) => {
   try {
-    const { name, code, address, contact, plan } = req.body;
+    const { schoolName, schoolCode, plan, limits } = req.body;
 
     // Validate required fields
-    if (!name || !code) {
+    if (!schoolName || !schoolCode) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'School name and code are required'
       });
     }
 
-    // Validate plan if provided
-    if (plan && !Object.values(SAAS_PLANS).includes(plan)) {
+    // Validate limits object
+    if (!limits || typeof limits !== 'object') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Invalid plan specified'
+        message: 'Limits object is required'
+      });
+    }
+
+    if (typeof limits.students !== 'number' || limits.students <= 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Valid students limit is required'
+      });
+    }
+
+    if (typeof limits.teachers !== 'number' || limits.teachers <= 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Valid teachers limit is required'
+      });
+    }
+
+    if (typeof limits.storage !== 'number' || limits.storage <= 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Valid storage limit is required'
+      });
+    }
+
+    // Validate plan
+    if (!plan || !Object.values(SAAS_PLANS).includes(plan)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Valid plan is required (BASIC, STANDARD, PREMIUM)'
       });
     }
 
     // Check if school code already exists
-    const existingSchool = await School.findOne({ code: code.toUpperCase() });
+    const existingSchool = await School.findOne({ code: schoolCode.toUpperCase() });
     if (existingSchool) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
@@ -43,14 +72,17 @@ const createSchool = async (req, res) => {
 
     // Prepare school data
     const schoolData = {
-      name,
-      code: code.toUpperCase(),
-      address,
-      contact,
-      plan: plan || SAAS_PLANS.BASIC // Default to BASIC if not specified
+      name: schoolName,
+      code: schoolCode.toUpperCase(),
+      plan,
+      limits: {
+        studentLimit: limits.students,
+        teacherLimit: limits.teachers,
+        storageLimit: limits.storage
+      }
     };
 
-    // Apply plan configuration
+    // Apply plan configuration (this will override limits based on plan, but we set them explicitly)
     const schoolDataWithPlan = applyPlanToSchool(schoolData, schoolData.plan);
 
     // Create school
@@ -58,17 +90,22 @@ const createSchool = async (req, res) => {
 
     logger.success(`School created: ${school.name} (${school.code}) with plan: ${school.plan}`);
 
-    // Audit log
-    await auditLog({
-      action: 'SCHOOL_CREATED',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'SCHOOL',
-      entityId: school._id,
-      description: `School "${school.name}" (${school.code}) created`,
-      schoolId: req.user.schoolId || null,
-      req
-    });
+    // Audit log (wrap in try-catch to prevent breaking response)
+    try {
+      await auditLog({
+        action: 'SCHOOL_CREATED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'SCHOOL',
+        entityId: school._id,
+        description: `School "${school.name}" (${school.code}) created`,
+        schoolId: req.user.schoolId || null,
+        req
+      });
+    } catch (auditError) {
+      logger.error('Audit log failed for school creation:', auditError.message);
+      // Continue with response, don't break school creation
+    }
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
