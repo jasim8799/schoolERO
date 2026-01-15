@@ -163,4 +163,9 @@ AuditLogSchema.pre('findOneAndRemove', function(next) {
   throw new Error('Audit logs cannot be removed');
 });
 
-module.exports = mongoose.model('AuditLog', AuditLogSchema);
+// Check if model already exists to avoid OverwriteModelError
+if (mongoose.models.AuditLog) {
+  module.exports = mongoose.model('AuditLog');
+} else {
+  module.exports = mongoose.model('AuditLog', AuditLogSchema);
+}

@@ -36,6 +36,5 @@ const OnlinePaymentSchema = new mongoose.Schema({
 
 // Index for efficient queries
 OnlinePaymentSchema.index({ studentFeeId: 1, schoolId: 1 });
-OnlinePaymentSchema.index({ gatewayRef: 1 }, { unique: true });
 
 module.exports = mongoose.model('OnlinePayment', OnlinePaymentSchema);

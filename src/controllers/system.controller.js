@@ -1,16 +1,16 @@
-import mongoose from 'mongoose';
-import School from '../models/School.js';
-import User from '../models/User.js';
-import SystemSettings from '../models/SystemSettings.js';
-import SystemAnnouncement from '../models/SystemAnnouncement.js';
-import { HTTP_STATUS, USER_ROLES, SCHOOL_STATUS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const mongoose = require('mongoose');
+const School = require('../models/School');
+const User = require('../models/User');
+const SystemSettings = require('../models/SystemSettings');
+const SystemAnnouncement = require('../models/SystemAnnouncement');
+const { HTTP_STATUS, USER_ROLES, SCHOOL_STATUS } = require('../config/constants');
+const { logger } = require('../utils/logger');
+const { auditLog } = require('../utils/auditLog_new');
 
 /**
  * Get system-wide metrics for Super Admin dashboard
  */
-export const getSystemMetrics = async (req, res) => {
+const getSystemMetrics = async (req, res) => {
   try {
     // School metrics
     const totalSchools = await School.countDocuments();
@@ -122,7 +122,7 @@ export const getSystemMetrics = async (req, res) => {
 /**
  * Get system health status
  */
-export const getSystemHealth = async (req, res) => {
+const getSystemHealth = async (req, res) => {
   try {
     const dbStatus = mongoose.connection.readyState === 1 ? 'healthy' : 'unhealthy';
     const uptime = process.uptime();
@@ -167,7 +167,7 @@ export const getSystemHealth = async (req, res) => {
 /**
  * Get backup status summary
  */
-export const getBackupStatus = async (req, res) => {
+const getBackupStatus = async (req, res) => {
   try {
     // This would integrate with actual backup system
     // For now, return mock data
@@ -209,7 +209,7 @@ export const getBackupStatus = async (req, res) => {
 /**
  * Get maintenance mode status
  */
-export const getMaintenanceMode = async (req, res) => {
+const getMaintenanceMode = async (req, res) => {
   try {
     let settings = await SystemSettings.findOne();
     if (!settings) {
@@ -238,7 +238,7 @@ export const getMaintenanceMode = async (req, res) => {
 /**
  * Toggle maintenance mode
  */
-export const toggleMaintenanceMode = async (req, res) => {
+const toggleMaintenanceMode = async (req, res) => {
   try {
     const { enabled, message } = req.body;
 
@@ -309,7 +309,7 @@ export const toggleMaintenanceMode = async (req, res) => {
 /**
  * Create a system announcement
  */
-export const createSystemAnnouncement = async (req, res) => {
+const createSystemAnnouncement = async (req, res) => {
   try {
     const { title, message, priority, targetRoles, expiresAt } = req.body;
 
@@ -378,7 +378,7 @@ export const createSystemAnnouncement = async (req, res) => {
 /**
  * Get system announcements
  */
-export const getSystemAnnouncements = async (req, res) => {
+const getSystemAnnouncements = async (req, res) => {
   try {
     const { limit = 10, page = 1 } = req.query;
     const userRole = req.user.role;
@@ -443,4 +443,14 @@ export const getSystemAnnouncements = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  getSystemMetrics,
+  getSystemHealth,
+  getBackupStatus,
+  getMaintenanceMode,
+  toggleMaintenanceMode,
+  createSystemAnnouncement,
+  getSystemAnnouncements
 };

@@ -1,8 +1,8 @@
-import express from 'express';
-import { getSystemMetrics, getSystemHealth, getBackupStatus, getMaintenanceMode, toggleMaintenanceMode, createSystemAnnouncement, getSystemAnnouncements } from '../controllers/system.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { getSystemMetrics, getSystemHealth, getBackupStatus, getMaintenanceMode, toggleMaintenanceMode, createSystemAnnouncement, getSystemAnnouncements } = require('../controllers/system.controller');
+const { authenticate } = require('../middlewares/auth.middleware');
+const { requireRole } = require('../middlewares/role.middleware');
+const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
 
@@ -33,4 +33,4 @@ router.put('/maintenance', toggleMaintenanceMode);
 // POST /api/system/announcements - Create system announcement
 router.post('/announcements', createSystemAnnouncement);
 
-export default router;
+module.exports = router;

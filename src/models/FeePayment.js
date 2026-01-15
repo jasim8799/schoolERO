@@ -42,6 +42,5 @@ const FeePaymentSchema = new mongoose.Schema({
 
 // Index for efficient queries
 FeePaymentSchema.index({ studentFeeId: 1, schoolId: 1 });
-FeePaymentSchema.index({ receiptNo: 1 }, { unique: true });
 
 module.exports = mongoose.model('FeePayment', FeePaymentSchema);
