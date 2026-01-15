@@ -8,7 +8,7 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create Parent
 const createParent = async (req, res) => {
   try {
-    const { userId, schoolId } = req.body;
+    const { userId, whatsappNumber, schoolId } = req.body;
 
     // Validate required fields
     if (!userId || !schoolId) {
@@ -18,12 +18,20 @@ const createParent = async (req, res) => {
       });
     }
 
-    // Verify school exists
+    // Verify school exists and matches logged-in user's school
     const school = await School.findById(schoolId);
     if (!school) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'School not found'
+      });
+    }
+
+    // Verify schoolId matches logged-in user's school
+    if (req.user.schoolId && req.user.schoolId.toString() !== schoolId) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'You can only create parents for your own school'
       });
     }
 
@@ -34,6 +42,11 @@ const createParent = async (req, res) => {
         success: false,
         message: 'User not found or is not a PARENT in this school'
       });
+    }
+
+    // Update whatsappNumber if provided
+    if (whatsappNumber !== undefined) {
+      await User.findByIdAndUpdate(userId, { whatsappNumber });
     }
 
     // Check if parent profile already exists
@@ -56,12 +69,21 @@ const createParent = async (req, res) => {
     // Audit log
     await auditLog({
       action: 'PARENT_CREATED',
-      userId: req.user.userId,
-      schoolId,
-      details: { parentUserId: userId, parentId: newParent._id }
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'Parent',
+      entityId: newParent._id,
+      description: `Parent profile created for user "${user.name}" (${user.mobile})`,
+      details: {
+        parentUserId: userId,
+        parentId: newParent._id,
+        schoolId,
+        whatsappNumber: whatsappNumber || null
+      },
+      req
     });
 
-    logger.success(`Parent profile created for user ${userId}`);
+    logger.success(`Parent profile created for user ${userId} (${user.name})`);
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,

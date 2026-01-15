@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  whatsappNumber: {
+    type: String,
+    trim: true
+  },
   password: {
     type: String,
     required: [true, 'Password is required'],

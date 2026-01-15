@@ -1,5 +1,5 @@
 const express = require('express');
-const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, reassignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool } = require('../controllers/school.controller');
+const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, assignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool, createOperator, createParent, createStudent, createTeacher } = require('../controllers/school.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
@@ -15,6 +15,18 @@ router.get('/my/subscription', authenticate, getCurrentUserSchoolSubscription);
 
 // GET /api/schools/my/online-payments - Get current user's school online payment status (authenticated users)
 router.get('/my/online-payments', authenticate, getCurrentUserSchoolOnlinePayments);
+
+// POST /api/schools/:id/operator - Create operator for school (authenticated principals only)
+router.post('/:id/operator', authenticate, createOperator);
+
+// POST /api/schools/:id/parent - Create parent for school (SUPER_ADMIN only)
+router.post('/:id/parent', authenticate, requireRole(USER_ROLES.SUPER_ADMIN), createParent);
+
+// POST /api/schools/:id/student - Create student for school (SUPER_ADMIN only)
+router.post('/:id/student', authenticate, requireRole(USER_ROLES.SUPER_ADMIN), createStudent);
+
+// POST /api/schools/:id/teacher - Create teacher for school (SUPER_ADMIN only)
+router.post('/:id/teacher', authenticate, requireRole(USER_ROLES.SUPER_ADMIN), createTeacher);
 
 // All other school routes require SUPER_ADMIN authentication
 router.use(authenticate);
@@ -35,8 +47,8 @@ router.get('/:id', getSchoolById);
 // PUT /api/schools/:id/status - Activate/Deactivate school (SUPER_ADMIN only)
 router.put('/:id/status', toggleSchoolStatus);
 
-// PUT /api/schools/:id/principal - Reassign principal (SUPER_ADMIN only)
-router.put('/:id/principal', reassignPrincipal);
+// PUT /api/schools/:id/principal - Assign principal (SUPER_ADMIN only)
+router.put('/:id/principal', assignPrincipal);
 
 // PUT /api/schools/:id/plan - Update school plan (SUPER_ADMIN only)
 router.put('/:id/plan', updateSchoolPlan);

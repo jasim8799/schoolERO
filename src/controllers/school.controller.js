@@ -1,12 +1,15 @@
 const mongoose = require('mongoose');
 const School = require('../models/School.js');
 const User = require('../models/User.js');
+const Teacher = require('../models/Teacher.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS, USER_ROLES, SCHOOL_MODULES, SAAS_PLANS, USER_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog_new.js');
 const { applyPlanToSchool, getPlanConfig } = require('../utils/planManager.js');
 const bcrypt = require('bcrypt');
+const { createUser } = require('./user.controller.js');
+const { createTeacher: createTeacherProfile } = require('./teacher.controller.js');
 
 // Create School
 const createSchool = async (req, res) => {
@@ -464,17 +467,17 @@ const toggleSchoolStatus = async (req, res) => {
   }
 };
 
-// Reassign Principal
-const reassignPrincipal = async (req, res) => {
+// Assign Principal
+const assignPrincipal = async (req, res) => {
   try {
     const { id } = req.params;
-    const { newPrincipalId } = req.body;
+    const { userId } = req.body;
 
     // Validate required fields
-    if (!newPrincipalId) {
+    if (!userId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'New principal ID is required'
+        message: 'User ID is required'
       });
     }
 
@@ -487,51 +490,44 @@ const reassignPrincipal = async (req, res) => {
       });
     }
 
-    // Find the new principal
-    const newPrincipal = await User.findById(newPrincipalId);
-    if (!newPrincipal) {
+    // Find the user
+    const user = await User.findById(userId);
+    if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        message: 'New principal not found'
+        message: 'User not found'
       });
     }
 
-    // Check if new principal is already a principal somewhere else
-    if (newPrincipal.role === USER_ROLES.PRINCIPAL && newPrincipal.schoolId && newPrincipal.schoolId.toString() !== id) {
+    // Check if user is already a principal at another school
+    if (user.role === USER_ROLES.PRINCIPAL && user.schoolId && user.schoolId.toString() !== id) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Selected user is already a principal at another school'
       });
     }
 
-    // Find current principal
+    // Check if school already has an active principal
     const currentPrincipal = await User.findOne({
       role: USER_ROLES.PRINCIPAL,
       schoolId: id,
       status: USER_STATUS.ACTIVE
     });
 
+    if (currentPrincipal && currentPrincipal._id.toString() !== userId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'School already has an active principal. Please reassign or deactivate the current principal first.'
+      });
+    }
+
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // Revoke old principal's access
-      if (currentPrincipal) {
-        await User.findByIdAndUpdate(
-          currentPrincipal._id,
-          {
-            role: 'FORMER_PRINCIPAL', // Change role to prevent access
-            status: USER_STATUS.INACTIVE,
-            deactivatedAt: new Date(),
-            deactivatedBy: req.user._id
-          },
-          { session }
-        );
-      }
-
-      // Assign new principal
-      await User.findByIdAndUpdate(
-        newPrincipalId,
+      // Update user to be principal
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
         {
           role: USER_ROLES.PRINCIPAL,
           schoolId: id,
@@ -539,39 +535,37 @@ const reassignPrincipal = async (req, res) => {
           deactivatedAt: null,
           deactivatedBy: null
         },
-        { session }
+        { new: true, session }
       );
 
-      // Log the reassignment
+      // Log the assignment
       await auditLog({
-        action: 'PRINCIPAL_REASSIGNED',
+        action: 'PRINCIPAL_ASSIGNED',
         userId: req.user._id,
         role: req.user.role,
         entityType: 'School',
         entityId: school._id,
-        description: `Principal reassigned for school "${school.name}" (${school.code})`,
+        description: `Principal assigned for school "${school.name}" (${school.code})`,
         details: {
           schoolName: school.name,
           schoolCode: school.code,
-          oldPrincipalId: currentPrincipal?._id,
-          oldPrincipalName: currentPrincipal?.name,
-          newPrincipalId: newPrincipal._id,
-          newPrincipalName: newPrincipal.name
+          principalId: updatedUser._id,
+          principalName: updatedUser.name,
+          principalEmail: updatedUser.email
         },
         req
       });
 
       await session.commitTransaction();
 
-      logger.success(`Principal reassigned for school: ${school.name} (${school.code})`);
+      logger.success(`Principal assigned for school: ${school.name} (${school.code})`);
 
       res.status(HTTP_STATUS.OK).json({
         success: true,
-        message: 'Principal reassigned successfully',
+        message: 'Principal assigned successfully',
         data: {
           school,
-          oldPrincipal: currentPrincipal,
-          newPrincipal
+          principal: updatedUser
         }
       });
     } catch (error) {
@@ -581,10 +575,10 @@ const reassignPrincipal = async (req, res) => {
       session.endSession();
     }
   } catch (error) {
-    logger.error('Reassign principal error:', error.message);
+    logger.error('Assign principal error:', error.message);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      message: 'Error reassigning principal',
+      message: 'Error assigning principal',
       error: error.message
     });
   }
@@ -1095,6 +1089,689 @@ const updateSchoolModules = async (req, res) => {
   }
 };
 
+// Create Operator for School
+const createOperator = async (req, res) => {
+  try {
+    const { id: schoolId } = req.params;
+    const { name, email, mobile, password, role } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Name, email, and password are required'
+      });
+    }
+
+    // Validate that the user is a PRINCIPAL and the schoolId matches their school
+    if (req.user.role !== USER_ROLES.PRINCIPAL) {
+      await auditLog({
+        action: 'OPERATOR_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: null,
+        description: `Failed operator creation attempt: User is not a principal`,
+        details: {
+          attemptedEmail: email,
+          reason: 'User is not a principal',
+          requestedRole: role
+        },
+        req
+      });
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Only principals can create operators'
+      });
+    }
+
+    if (!req.user.schoolId || req.user.schoolId.toString() !== schoolId) {
+      await auditLog({
+        action: 'OPERATOR_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: null,
+        description: `Failed operator creation attempt: School ID mismatch`,
+        details: {
+          attemptedEmail: email,
+          reason: 'School ID mismatch',
+          requestedRole: role,
+          userSchoolId: req.user.schoolId,
+          requestedSchoolId: schoolId
+        },
+        req
+      });
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'You can only create operators for your own school'
+      });
+    }
+
+    // Reject attempts to create PRINCIPAL, SUPER_ADMIN, or TEACHER
+    if (role) {
+      if ([USER_ROLES.PRINCIPAL, USER_ROLES.SUPER_ADMIN, USER_ROLES.TEACHER].includes(role)) {
+        await auditLog({
+          action: 'OPERATOR_CREATION_FAILED',
+          userId: req.user._id,
+          role: req.user.role,
+          entityType: 'User',
+          entityId: null,
+          description: `Failed operator creation attempt: Attempted to create restricted role`,
+          details: {
+            attemptedEmail: email,
+            reason: 'Attempted to create restricted role',
+            requestedRole: role,
+            allowedRole: USER_ROLES.OPERATOR
+          },
+          req
+        });
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          message: 'Principals can only create operators. Cannot create principals, super admins, or teachers.'
+        });
+      }
+      if (role !== USER_ROLES.OPERATOR) {
+        await auditLog({
+          action: 'OPERATOR_CREATION_FAILED',
+          userId: req.user._id,
+          role: req.user.role,
+          entityType: 'User',
+          entityId: null,
+          description: `Failed operator creation attempt: Invalid role specified`,
+          details: {
+            attemptedEmail: email,
+            reason: 'Invalid role specified',
+            requestedRole: role,
+            allowedRole: USER_ROLES.OPERATOR
+          },
+          req
+        });
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          message: 'Principals can only create operators.'
+        });
+      }
+    }
+
+    // Find the school
+    const school = await School.findById(schoolId).select('name code');
+    if (!school) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    // Check if email already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      await auditLog({
+        action: 'OPERATOR_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: null,
+        description: `Failed operator creation attempt: Email already exists`,
+        details: {
+          attemptedEmail: email,
+          reason: 'Email already exists',
+          requestedRole: role
+        },
+        req
+      });
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User with this email already exists'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create operator (always set role to OPERATOR regardless of input)
+    const operator = await User.create({
+      name,
+      email: email.toLowerCase(),
+      mobile,
+      password: hashedPassword,
+      role: USER_ROLES.OPERATOR,
+      schoolId,
+      status: USER_STATUS.ACTIVE
+    });
+
+    // Log the operator creation
+    await auditLog({
+      action: 'OPERATOR_CREATED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'User',
+      entityId: operator._id,
+      description: `Operator created for school "${school.name}" (${school.code})`,
+      details: {
+        schoolName: school.name,
+        schoolCode: school.code,
+        operatorName: operator.name,
+        operatorEmail: operator.email,
+        createdBy: req.user.name
+      },
+      req
+    });
+
+    logger.success(`Operator created: ${operator.name} (${operator.email}) for school: ${school.name} (${school.code})`);
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Operator created successfully',
+      data: {
+        operator: {
+          _id: operator._id,
+          name: operator.name,
+          email: operator.email,
+          mobile: operator.mobile,
+          role: operator.role,
+          schoolId: operator.schoolId,
+          status: operator.status
+        },
+        school: {
+          id: school._id,
+          name: school.name,
+          code: school.code
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Create operator error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error creating operator',
+      error: error.message
+    });
+  }
+};
+
+// Create Parent for School
+const createParent = async (req, res) => {
+  try {
+    const { id: schoolId } = req.params;
+    const { name, email, mobile, whatsappNumber, password } = req.body;
+
+    // Validate required fields
+    if (!name || !mobile || !password) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Name, mobile, and password are required'
+      });
+    }
+
+    // Validate that the user is SUPER_ADMIN
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      await auditLog({
+        action: 'PARENT_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: null,
+        description: `Failed parent creation attempt: User is not a super admin`,
+        details: {
+          attemptedMobile: mobile,
+          reason: 'User is not a super admin'
+        },
+        req
+      });
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Only super admins can create parents'
+      });
+    }
+
+    // Find the school
+    const school = await School.findById(schoolId).select('name code');
+    if (!school) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    // First create the user
+    const userReq = {
+      ...req,
+      body: {
+        name,
+        mobile,
+        whatsappNumber,
+        password,
+        role: USER_ROLES.PARENT,
+        schoolId
+      }
+    };
+
+    let userResponse;
+    const userRes = {
+      status: (code) => ({
+        json: (data) => {
+          userResponse = data;
+          return data;
+        }
+      })
+    };
+
+    await createUser(userReq, userRes);
+
+    if (!userResponse || !userResponse.success) {
+      return res.status(userResponse ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: userResponse ? userResponse.message : 'Failed to create user'
+      });
+    }
+
+    const userId = userResponse.data._id;
+
+    // Create parent profile by calling the parent creation API
+    const parentReq = {
+      ...req,
+      body: {
+        userId,
+        whatsappNumber,
+        schoolId
+      }
+    };
+
+    let parentResponse;
+    const parentRes = {
+      status: (code) => ({
+        json: (data) => {
+          parentResponse = data;
+          return data;
+        }
+      })
+    };
+
+    const { createParent } = require('./parent.controller.js');
+    await createParent(parentReq, parentRes);
+
+    if (!parentResponse || !parentResponse.success) {
+      // If parent creation fails, disable the user and mark as incomplete parent
+      await User.findByIdAndUpdate(userId, {
+        status: USER_STATUS.INACTIVE,
+        deactivationReason: 'Parent profile creation failed - account disabled'
+      });
+
+      // Log the failure
+      await auditLog({
+        action: 'PARENT_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: userId,
+        description: `Parent profile creation failed for user "${userResponse.data.name}" - account disabled`,
+        details: {
+          userId,
+          userName: userResponse.data.name,
+          userMobile: userResponse.data.mobile,
+          failureReason: parentResponse ? parentResponse.message : 'Unknown error in parent profile creation'
+        },
+        req
+      });
+
+      logger.error(`Parent profile creation failed for user ${userId} - account disabled`);
+
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: 'Parent profile creation failed. User account has been disabled. Please contact support.',
+        error: parentResponse ? parentResponse.message : 'Failed to create parent profile'
+      });
+    }
+
+    logger.success(`Parent created: ${userResponse.data.name} (${userResponse.data.mobile}) for school: ${school.name} (${school.code})`);
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Parent created successfully',
+      data: {
+        user: userResponse.data,
+        parent: parentResponse.data,
+        school: {
+          id: school._id,
+          name: school.name,
+          code: school.code
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Create parent error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error creating parent',
+      error: error.message
+    });
+  }
+};
+
+// Create Student for School
+const createStudent = async (req, res) => {
+  try {
+    const { id: schoolId } = req.params;
+    const { name, rollNumber, classId, sectionId, parentId, sessionId, dateOfBirth, gender, address } = req.body;
+
+    // Validate required fields
+    if (!name || !rollNumber || !classId || !sectionId || !parentId || !sessionId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'name, rollNumber, classId, sectionId, parentId, and sessionId are required'
+      });
+    }
+
+    // Validate that the user is SUPER_ADMIN
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      await auditLog({
+        action: 'STUDENT_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: null,
+        description: `Failed student creation attempt: User is not a super admin`,
+        details: {
+          attemptedName: name,
+          reason: 'User is not a super admin'
+        },
+        req
+      });
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Only super admins can create students'
+      });
+    }
+
+    // Find the school
+    const school = await School.findById(schoolId).select('name code');
+    if (!school) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    // Create student by calling the student creation API
+    const studentReq = {
+      ...req,
+      body: {
+        name,
+        rollNumber,
+        classId,
+        sectionId,
+        parentId,
+        schoolId,
+        sessionId,
+        dateOfBirth,
+        gender,
+        address
+      }
+    };
+
+    let studentResponse;
+    const studentRes = {
+      status: (code) => ({
+        json: (data) => {
+          studentResponse = data;
+          return data;
+        }
+      })
+    };
+
+    const { createStudent } = require('./student.controller.js');
+    await createStudent(studentReq, studentRes);
+
+    if (!studentResponse || !studentResponse.success) {
+      return res.status(studentResponse ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: studentResponse ? studentResponse.message : 'Failed to create student'
+      });
+    }
+
+    logger.success(`Student created: ${name} (${rollNumber}) for school: ${school.name} (${school.code})`);
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Student created successfully',
+      data: {
+        student: studentResponse.data,
+        school: {
+          id: school._id,
+          name: school.name,
+          code: school.code
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Create student error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error creating student',
+      error: error.message
+    });
+  }
+};
+
+// Create Teacher for School
+const createTeacher = async (req, res) => {
+  try {
+    const { id: schoolId } = req.params;
+    const { name, email, mobile, password, assignedClasses, assignedSubjects } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Name, email, and password are required'
+      });
+    }
+
+    // Validate that the user is SUPER_ADMIN
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      await auditLog({
+        action: 'TEACHER_CREATION_FAILED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'User',
+        entityId: null,
+        description: `Failed teacher creation attempt: User is not a super admin`,
+        details: {
+          attemptedEmail: email,
+          reason: 'User is not a super admin'
+        },
+        req
+      });
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Only super admins can create teachers'
+      });
+    }
+
+    // Find the school
+    const school = await School.findById(schoolId).select('name code');
+    if (!school) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    // Validate assignedClasses and assignedSubjects if provided
+    if (assignedClasses && !Array.isArray(assignedClasses)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'assignedClasses must be an array'
+      });
+    }
+
+    if (assignedSubjects && !Array.isArray(assignedSubjects)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'assignedSubjects must be an array'
+      });
+    }
+
+    // Validate that assignedClasses and assignedSubjects are not empty
+    if (!assignedClasses || assignedClasses.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'assignedClasses cannot be empty'
+      });
+    }
+
+    if (!assignedSubjects || assignedSubjects.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'assignedSubjects cannot be empty'
+      });
+    }
+
+    // Create user first
+    const mockReq = {
+      body: {
+        name,
+        email,
+        mobile,
+        password,
+        role: USER_ROLES.TEACHER,
+        schoolId
+      },
+      user: req.user
+    };
+
+    let userResult;
+    try {
+      // Create a mock response object to capture the result
+      const mockRes = {
+        status: (code) => ({
+          json: (data) => {
+            if (code === HTTP_STATUS.CREATED && data.success) {
+              userResult = data;
+            } else {
+              throw new Error(data.message || 'Failed to create user');
+            }
+          }
+        })
+      };
+
+      await createUser(mockReq, mockRes);
+    } catch (error) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: error.message || 'Failed to create user'
+      });
+    }
+
+    if (!userResult || !userResult.data) {
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: 'Failed to create user'
+      });
+    }
+
+    const userId = userResult.data._id;
+
+    // Now create teacher profile
+    const teacherMockReq = {
+      body: {
+        userId,
+        assignedClasses,
+        assignedSubjects,
+        schoolId
+      },
+      user: req.user
+    };
+
+    let teacherResult;
+    try {
+      const teacherMockRes = {
+        status: (code) => ({
+          json: (data) => {
+            if (code === HTTP_STATUS.CREATED && data.success) {
+              teacherResult = data;
+            } else {
+              throw new Error(data.message || 'Failed to create teacher profile');
+            }
+          }
+        })
+      };
+
+      await createTeacherProfile(teacherMockReq, teacherMockRes);
+    } catch (error) {
+      // Teacher profile creation failed, disable the created user
+      try {
+        await User.findByIdAndUpdate(userId, {
+          status: USER_STATUS.INACTIVE,
+          deactivatedAt: new Date(),
+          deactivatedBy: req.user._id,
+          deactivationReason: 'Teacher profile creation failed'
+        });
+      } catch (disableError) {
+        logger.error('Failed to disable user after teacher creation failure:', disableError.message);
+      }
+
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Teacher profile creation failed. User account has been disabled.',
+        error: error.message || 'Failed to create teacher profile'
+      });
+    }
+
+    if (!teacherResult || !teacherResult.data) {
+      // Disable the user if teacher profile creation failed
+      try {
+        await User.findByIdAndUpdate(userId, {
+          status: USER_STATUS.INACTIVE,
+          deactivatedAt: new Date(),
+          deactivatedBy: req.user._id,
+          deactivationReason: 'Teacher profile creation failed'
+        });
+      } catch (disableError) {
+        logger.error('Failed to disable user after teacher creation failure:', disableError.message);
+      }
+
+      return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: 'Teacher profile creation failed. User account has been disabled.'
+      });
+    }
+
+    logger.success(`Teacher created: ${name} (${email}) for school: ${school.name} (${school.code})`);
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Teacher created successfully',
+      data: {
+        teacher: {
+          _id: userId,
+          name: userResult.data.name,
+          email: userResult.data.email,
+          mobile: userResult.data.mobile,
+          role: userResult.data.role,
+          schoolId: userResult.data.schoolId,
+          status: userResult.data.status,
+          assignedClasses: teacherResult.data.assignedClasses,
+          assignedSubjects: teacherResult.data.assignedSubjects
+        },
+        school: {
+          id: school._id,
+          name: school.name,
+          code: school.code
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Create teacher error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error creating teacher',
+      error: error.message
+    });
+  }
+};
+
 // Force Logout All Users for a School
 const forceLogoutSchool = async (req, res) => {
   try {
@@ -1161,7 +1838,7 @@ module.exports = {
   getSchoolById,
   createSchoolWithLifecycle,
   toggleSchoolStatus,
-  reassignPrincipal,
+  assignPrincipal,
   getCurrentUserSchoolModules,
   getCurrentUserSchoolOnlinePayments,
   getSchoolModules,
@@ -1169,5 +1846,9 @@ module.exports = {
   getCurrentUserSchoolSubscription,
   renewSchoolSubscription,
   updateSchoolModules,
+  createOperator,
+  createParent,
+  createStudent,
+  createTeacher,
   forceLogoutSchool
 };
