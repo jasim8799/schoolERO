@@ -149,6 +149,10 @@ const login = async (req, res) => {
     await auditLog({
       action: 'LOGIN',
       userId: user._id,
+      role: user.role,
+      entityType: 'USER',
+      entityId: user._id,
+      description: `User ${user.name} logged in`,
       schoolId: user.schoolId?._id || null,
       details: { email, mobile },
       req

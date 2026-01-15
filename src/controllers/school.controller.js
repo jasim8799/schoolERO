@@ -58,6 +58,18 @@ const createSchool = async (req, res) => {
 
     logger.success(`School created: ${school.name} (${school.code}) with plan: ${school.plan}`);
 
+    // Audit log
+    await auditLog({
+      action: 'SCHOOL_CREATED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      description: `School "${school.name}" (${school.code}) created`,
+      schoolId: req.user.schoolId || null,
+      req
+    });
+
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'School created successfully',
@@ -362,12 +374,13 @@ const createSchoolWithLifecycle = async (req, res) => {
 
     // 4. Log creation action
     await auditLog({
-      action: 'SCHOOL_LIFECYCLE_CREATED',
+      action: 'SCHOOL_CREATED',
       userId: req.user._id,
       role: req.user.role,
-      entityType: 'School',
+      entityType: 'SCHOOL',
       entityId: school[0]._id,
       description: `Created school "${school[0].name}" (${school[0].code}) with lifecycle setup`,
+      schoolId: req.user.schoolId || null,
       details: {
         schoolName: school[0].name,
         schoolCode: school[0].code,
