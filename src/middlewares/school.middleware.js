@@ -5,33 +5,31 @@ const School = require('../models/School.js');
 // Check if user's school is active
 const checkSchoolStatus = async (req, res, next) => {
   try {
-    // SUPER_ADMIN can access regardless of school status
-    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
-      return next();
-    }
+    // For non-SUPER_ADMIN roles, enforce school validation
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      // Check if user has a school assigned
+      if (!req.user.schoolId) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'User is not assigned to any school'
+        });
+      }
 
-    // Check if user has a school assigned
-    if (!req.user.schoolId) {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'User is not assigned to any school'
-      });
-    }
+      // Check if school exists and is active
+      const school = await School.findById(req.user.schoolId);
+      if (!school) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'School not found'
+        });
+      }
 
-    // Check if school exists and is active
-    const school = await School.findById(req.user.schoolId);
-    if (!school) {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'School not found'
-      });
-    }
-
-    if (school.status !== 'active') {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'School is currently inactive. Please contact system administrator.'
-      });
+      if (school.status !== 'active') {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'School is currently inactive. Please contact system administrator.'
+        });
+      }
     }
 
     next();
