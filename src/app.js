@@ -2,7 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const { config } = require('./config/env');
 const { checkSubscriptionStatus } = require('./middlewares/subscription.middleware');
+const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
+const adminRoutes = require('./routes/admin.routes');
 const schoolRoutes = require('./routes/school.routes');
 const sessionRoutes = require('./routes/session.routes');
 const authRoutes = require('./routes/auth.routes');
@@ -45,32 +47,30 @@ app.get('/health', (req, res) => {
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/auth', authRoutes);
 
+// Admin routes (SUPER_ADMIN only, no tenant middlewares)
+app.use('/api/admin', adminRoutes);
+
 // Apply maintenance mode check to all API routes (except auth for SUPER_ADMIN login)
 app.use('/api', checkMaintenanceMode);
 
-// Apply subscription check to all other API routes (except auth)
-app.use('/api', checkSubscriptionStatus());
-
-// School management routes (subscription check applies, but SUPER_ADMIN bypasses)
-app.use('/api/schools', schoolRoutes);
-
-// Continue with other routes
-app.use('/api/users', userRoutes);
-app.use('/api/classes', classRoutes);
-app.use('/api/sections', sectionRoutes);
-app.use('/api/subjects', subjectRoutes);
-app.use('/api/teachers', teacherRoutes);
-app.use('/api/parents', parentRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/exams', examRoutes);
-app.use('/api/fees', feeStructureRoutes);
-app.use('/api/fees', studentFeeRoutes);
-app.use('/api/fees', feePaymentRoutes);
-app.use('/api/expenses', expenseRoutes);
-app.use('/api/salary', salaryRoutes);
-app.use('/api/reports', reportsRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+// Apply subscription and module access checks to tenant routes
+app.use('/api/schools', checkSubscriptionStatus(), checkModuleAccess('schools'), schoolRoutes);
+app.use('/api/users', checkSubscriptionStatus(), checkModuleAccess('users'), userRoutes);
+app.use('/api/classes', checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
+app.use('/api/sections', checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
+app.use('/api/subjects', checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
+app.use('/api/teachers', checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
+app.use('/api/parents', checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
+app.use('/api/attendance', checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
+app.use('/api/students', checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
+app.use('/api/exams', checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
+app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), feeStructureRoutes);
+app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), studentFeeRoutes);
+app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), feePaymentRoutes);
+app.use('/api/expenses', checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
+app.use('/api/salary', checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
+app.use('/api/reports', checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
+app.use('/api/dashboard', checkSubscriptionStatus(), checkModuleAccess('dashboard'), dashboardRoutes);
 app.use('/api/version', versionRoutes);
 
 module.exports = app;
