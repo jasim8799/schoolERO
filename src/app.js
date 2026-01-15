@@ -42,15 +42,17 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/schools', schoolRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/auth', authRoutes);
 
 // Apply maintenance mode check to all API routes (except auth for SUPER_ADMIN login)
 app.use('/api', checkMaintenanceMode);
 
-// Apply subscription check to all other API routes (except auth and school management)
+// Apply subscription check to all other API routes (except auth)
 app.use('/api', checkSubscriptionStatus());
+
+// School management routes (subscription check applies, but SUPER_ADMIN bypasses)
+app.use('/api/schools', schoolRoutes);
 
 // Continue with other routes
 app.use('/api/users', userRoutes);
