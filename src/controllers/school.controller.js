@@ -600,6 +600,17 @@ const assignPrincipal = async (req, res) => {
 // Get Current User's School Modules
 const getCurrentUserSchoolModules = async (req, res) => {
   try {
+    // SUPER_ADMIN bypasses school checks
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: {
+          school: null,
+          modules: []
+        }
+      });
+    }
+
     const schoolId = req.user?.schoolId;
 
     if (!schoolId) {
@@ -642,6 +653,19 @@ const getCurrentUserSchoolModules = async (req, res) => {
 // Get Current User's School Online Payment Status
 const getCurrentUserSchoolOnlinePayments = async (req, res) => {
   try {
+    // SUPER_ADMIN bypasses school checks
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: {
+          available: false,
+          planAllows: false,
+          adminEnabled: false,
+          school: null
+        }
+      });
+    }
+
     const schoolId = req.user?.schoolId;
 
     if (!schoolId) {
@@ -848,6 +872,17 @@ const updateSchoolPlan = async (req, res) => {
 // Get Current User's School Subscription Status
 const getCurrentUserSchoolSubscription = async (req, res) => {
   try {
+    // SUPER_ADMIN bypasses school checks
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: {
+          school: null,
+          subscription: null
+        }
+      });
+    }
+
     const schoolId = req.user?.schoolId;
 
     if (!schoolId) {
