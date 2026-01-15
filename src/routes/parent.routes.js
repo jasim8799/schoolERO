@@ -1,8 +1,8 @@
-import express from 'express';
-import { createParent, getAllParents, getParentById, getMyChildren } from '../controllers/parent.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireMinRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { createParent, getAllParents, getParentById, getMyChildren } = require('../controllers/parent.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -21,4 +21,4 @@ router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getParentById);
 // GET /api/parents/me/children - Get current parent's children (PARENT only)
 router.get('/me/children', getMyChildren);
 
-export default router;
+module.exports = router;

@@ -1,8 +1,8 @@
-import express from 'express';
-import { register, login, getCurrentUser } from '../controllers/auth.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { register, login, getCurrentUser } = require('../controllers/auth.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireRole } = require('../middlewares/role.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -15,4 +15,4 @@ router.post('/login', login);
 // GET /api/auth/me - Get current user (protected)
 router.get('/me', authenticate, getCurrentUser);
 
-export default router;
+module.exports = router;

@@ -1,8 +1,8 @@
-import express from 'express';
-import { createTeacher, getAllTeachers, getTeacherById, updateTeacherAssignments } from '../controllers/teacher.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireMinRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { createTeacher, getAllTeachers, getTeacherById, updateTeacherAssignments } = require('../controllers/teacher.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -21,4 +21,4 @@ router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getTeacherById);
 // PATCH /api/teachers/:id - Update teacher assignments
 router.patch('/:id', requireMinRole(USER_ROLES.OPERATOR), updateTeacherAssignments);
 
-export default router;
+module.exports = router;

@@ -1,6 +1,6 @@
-import Exam from '../models/exam.model.js';
+const Exam = require('../models/exam.model.js');
 
-export const createExam = async (req, res) => {
+const createExam = async (req, res) => {
   try {
     const { name, classId, startDate, endDate } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
@@ -24,7 +24,7 @@ export const createExam = async (req, res) => {
   }
 };
 
-export const getExamsByClass = async (req, res) => {
+const getExamsByClass = async (req, res) => {
   try {
     const { classId } = req.query;
     const { schoolId, sessionId } = req.user;
@@ -35,3 +35,5 @@ export const getExamsByClass = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { createExam, getExamsByClass };

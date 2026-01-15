@@ -1,5 +1,5 @@
-import express from 'express';
-import {
+const express = require('express');
+const {
   markStudentDailyAttendance,
   getStudentDailyAttendance,
   getMyStudentAttendance,
@@ -7,10 +7,10 @@ import {
   getSubjectAttendance,
   markTeacherAttendance,
   getTeacherAttendance,
-} from '../controllers/attendance.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireMinRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+} = require('../controllers/attendance.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -65,4 +65,4 @@ router.get(
   getTeacherAttendance
 );
 
-export default router;
+module.exports = router;

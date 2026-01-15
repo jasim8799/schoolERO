@@ -1,13 +1,13 @@
-import Section from '../models/Section.js';
-import Class from '../models/Class.js';
-import School from '../models/School.js';
-import AcademicSession from '../models/AcademicSession.js';
-import { HTTP_STATUS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const Section = require('../models/Section.js');
+const Class = require('../models/Class.js');
+const School = require('../models/School.js');
+const AcademicSession = require('../models/AcademicSession.js');
+const { HTTP_STATUS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Section
-export const createSection = async (req, res) => {
+const createSection = async (req, res) => {
   try {
     const { name, classId, schoolId, sessionId } = req.body;
 
@@ -95,7 +95,7 @@ export const createSection = async (req, res) => {
 };
 
 // Get All Sections (with optional filters)
-export const getAllSections = async (req, res) => {
+const getAllSections = async (req, res) => {
   try {
     const { classId, schoolId, sessionId } = req.query;
 
@@ -127,7 +127,7 @@ export const getAllSections = async (req, res) => {
 };
 
 // Get Section by ID
-export const getSectionById = async (req, res) => {
+const getSectionById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -155,4 +155,10 @@ export const getSectionById = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createSection,
+  getAllSections,
+  getSectionById
 };

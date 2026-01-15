@@ -1,12 +1,12 @@
-import School from '../models/School.js';
-import { SCHOOL_MODULES } from '../config/constants.js';
+const School = require('../models/School.js');
+const { SCHOOL_MODULES } = require('../config/constants.js');
 
 /**
  * Middleware to check if a specific module is enabled for the user's school
  * @param {string} moduleName - The name of the module to check
  * @returns {Function} Express middleware function
  */
-export const checkModuleAccess = (moduleName) => {
+const checkModuleAccess = (moduleName) => {
   return async (req, res, next) => {
     try {
       // Get schoolId from JWT token (assuming it's set by auth middleware)
@@ -66,7 +66,7 @@ export const checkModuleAccess = (moduleName) => {
  * @param {string[]} moduleNames - Array of module names to check
  * @returns {Function} Express middleware function
  */
-export const checkAnyModuleAccess = (moduleNames) => {
+const checkAnyModuleAccess = (moduleNames) => {
   return async (req, res, next) => {
     try {
       const schoolId = req.user?.schoolId;
@@ -118,7 +118,7 @@ export const checkAnyModuleAccess = (moduleNames) => {
  * @param {string[]} moduleNames - Array of module names that must all be enabled
  * @returns {Function} Express middleware function
  */
-export const checkAllModulesAccess = (moduleNames) => {
+const checkAllModulesAccess = (moduleNames) => {
   return async (req, res, next) => {
     try {
       const schoolId = req.user?.schoolId;
@@ -163,4 +163,10 @@ export const checkAllModulesAccess = (moduleNames) => {
       });
     }
   };
+};
+
+module.exports = {
+  checkModuleAccess,
+  checkAnyModuleAccess,
+  checkAllModulesAccess
 };

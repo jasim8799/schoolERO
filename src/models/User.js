@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
-import { USER_ROLES, USER_STATUS } from '../config/constants.js';
+const mongoose = require('mongoose');
+const { USER_ROLES, USER_STATUS } = require('../config/constants');
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -65,4 +65,4 @@ userSchema.pre('save', function(next) {
 
 const User = mongoose.model('User', userSchema);
 
-export default User;
+module.exports = User;

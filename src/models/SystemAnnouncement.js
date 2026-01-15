@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
-import { USER_ROLES } from '../config/constants.js';
+const mongoose = require('mongoose');
+const { USER_ROLES } = require('../config/constants.js');
 
 const systemAnnouncementSchema = new mongoose.Schema({
   title: {
@@ -46,4 +46,4 @@ systemAnnouncementSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // 
 
 const SystemAnnouncement = mongoose.model('SystemAnnouncement', systemAnnouncementSchema);
 
-export default SystemAnnouncement;
+module.exports = SystemAnnouncement;

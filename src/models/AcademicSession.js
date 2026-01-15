@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const academicSessionSchema = new mongoose.Schema({
   schoolId: {
@@ -44,4 +44,4 @@ academicSessionSchema.pre('save', async function(next) {
 
 const AcademicSession = mongoose.model('AcademicSession', academicSessionSchema);
 
-export default AcademicSession;
+module.exports = AcademicSession;

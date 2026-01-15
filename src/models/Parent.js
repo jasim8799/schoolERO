@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const parentSchema = new mongoose.Schema({
   userId: {
@@ -27,4 +27,4 @@ const parentSchema = new mongoose.Schema({
 
 const Parent = mongoose.model('Parent', parentSchema);
 
-export default Parent;
+module.exports = Parent;

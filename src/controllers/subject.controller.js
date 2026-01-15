@@ -1,13 +1,13 @@
-import Subject from '../models/Subject.js';
-import Class from '../models/Class.js';
-import School from '../models/School.js';
-import AcademicSession from '../models/AcademicSession.js';
-import { HTTP_STATUS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const Subject = require('../models/Subject.js');
+const Class = require('../models/Class.js');
+const School = require('../models/School.js');
+const AcademicSession = require('../models/AcademicSession.js');
+const { HTTP_STATUS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Subject
-export const createSubject = async (req, res) => {
+const createSubject = async (req, res) => {
   try {
     const { name, classId, schoolId, sessionId } = req.body;
 
@@ -90,7 +90,7 @@ export const createSubject = async (req, res) => {
 };
 
 // Get All Subjects (with optional filters)
-export const getAllSubjects = async (req, res) => {
+const getAllSubjects = async (req, res) => {
   try {
     const { classId, schoolId, sessionId } = req.query;
 
@@ -122,7 +122,7 @@ export const getAllSubjects = async (req, res) => {
 };
 
 // Get Subject by ID
-export const getSubjectById = async (req, res) => {
+const getSubjectById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -150,4 +150,10 @@ export const getSubjectById = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createSubject,
+  getAllSubjects,
+  getSubjectById
 };

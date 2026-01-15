@@ -18,6 +18,48 @@ const exportProfitLossExcel = (report, res) => {
   res.send(buffer);
 };
 
+// Get profit loss report
+const getProfitLossReport = async (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    const { schoolId, role } = req.user;
+
+    // Role-based access
+    if (role === USER_ROLES.STUDENT || role === USER_ROLES.PARENT || role === USER_ROLES.TEACHER) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Placeholder implementation
+    const report = {
+      type: 'profit_loss',
+      sessionId: sessionId || 'All',
+      income: {
+        feeCollection: 0,
+        onlinePayments: 0,
+        examPayments: 0,
+        totalIncome: 0
+      },
+      expenditure: {
+        expenses: 0,
+        salaries: 0,
+        totalExpenditure: 0
+      },
+      summary: {
+        netProfit: 0
+      }
+    };
+
+    // Handle export
+    if (req.query.export === 'excel') {
+      return exportProfitLossExcel(report, res);
+    }
+
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // Get promotion report
 const getPromotionReport = async (req, res) => {
   try {
@@ -382,15 +424,6 @@ const exportHistoryExcel = (report, res) => {
 };
 
 module.exports = {
-  getStudentList,
-  getExamResults,
-  getStudentHistory,
-  getStudentAttendance,
-  getTeacherAttendance,
-  getFeeReports,
-  getPaymentReports,
-  getExpenseReport,
-  getSalaryReport,
   getProfitLossReport,
   getPromotionReport,
   getRetentionReport,

@@ -1,23 +1,23 @@
-import Student from '../models/Student.js';
-import Parent from '../models/Parent.js';
-import Class from '../models/Class.js';
-import Section from '../models/Section.js';
-import School from '../models/School.js';
-import AcademicSession from '../models/AcademicSession.js';
-import { HTTP_STATUS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const Student = require('../models/Student.js');
+const Parent = require('../models/Parent.js');
+const Class = require('../models/Class.js');
+const Section = require('../models/Section.js');
+const School = require('../models/School.js');
+const AcademicSession = require('../models/AcademicSession.js');
+const { HTTP_STATUS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Student
-export const createStudent = async (req, res) => {
+const createStudent = async (req, res) => {
   try {
-    const { 
-      name, 
-      rollNumber, 
-      classId, 
-      sectionId, 
-      parentId, 
-      schoolId, 
+    const {
+      name,
+      rollNumber,
+      classId,
+      sectionId,
+      parentId,
+      schoolId,
       sessionId,
       dateOfBirth,
       gender,
@@ -78,11 +78,11 @@ export const createStudent = async (req, res) => {
     }
 
     // Check if roll number already exists for this class
-    const existingStudent = await Student.findOne({ 
-      rollNumber, 
-      classId, 
-      schoolId, 
-      sessionId 
+    const existingStudent = await Student.findOne({
+      rollNumber,
+      classId,
+      schoolId,
+      sessionId
     });
     if (existingStudent) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -115,14 +115,14 @@ export const createStudent = async (req, res) => {
       action: 'STUDENT_CREATED',
       userId: req.user.userId,
       schoolId,
-      details: { 
+      details: {
         studentId: newStudent._id,
-        studentName: name, 
-        rollNumber, 
-        classId, 
-        sectionId, 
-        parentId, 
-        sessionId 
+        studentName: name,
+        rollNumber,
+        classId,
+        sectionId,
+        parentId,
+        sessionId
       }
     });
 
@@ -144,7 +144,7 @@ export const createStudent = async (req, res) => {
 };
 
 // Get All Students (with filters)
-export const getAllStudents = async (req, res) => {
+const getAllStudents = async (req, res) => {
   try {
     const { classId, sectionId, schoolId, sessionId, status } = req.query;
 
@@ -187,7 +187,7 @@ export const getAllStudents = async (req, res) => {
 };
 
 // Get Student by ID
-export const getStudentById = async (req, res) => {
+const getStudentById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -227,7 +227,7 @@ export const getStudentById = async (req, res) => {
 };
 
 // Update Student Status (NO DELETE - only status change)
-export const updateStudentStatus = async (req, res) => {
+const updateStudentStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -265,4 +265,11 @@ export const updateStudentStatus = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createStudent,
+  getAllStudents,
+  getStudentById,
+  updateStudentStatus
 };

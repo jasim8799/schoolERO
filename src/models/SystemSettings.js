@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const systemSettingsSchema = new mongoose.Schema({
   maintenanceMode: {
@@ -29,4 +29,4 @@ systemSettingsSchema.pre('save', async function(next) {
 
 const SystemSettings = mongoose.model('SystemSettings', systemSettingsSchema);
 
-export default SystemSettings;
+module.exports = SystemSettings;

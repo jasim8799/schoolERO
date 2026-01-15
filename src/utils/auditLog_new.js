@@ -1,5 +1,5 @@
-const AuditLog = require('../models/AuditLog');
-const { logger } = require('./logger');
+const AuditLog = require('../models/AuditLog_new.js');
+const { logger } = require('./logger.js');
 
 /**
  * Create an audit log entry

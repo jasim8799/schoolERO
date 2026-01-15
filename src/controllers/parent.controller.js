@@ -1,12 +1,12 @@
-import Parent from '../models/Parent.js';
-import User from '../models/User.js';
-import School from '../models/School.js';
-import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const Parent = require('../models/Parent.js');
+const User = require('../models/User.js');
+const School = require('../models/School.js');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Parent
-export const createParent = async (req, res) => {
+const createParent = async (req, res) => {
   try {
     const { userId, schoolId } = req.body;
 
@@ -79,7 +79,7 @@ export const createParent = async (req, res) => {
 };
 
 // Get All Parents
-export const getAllParents = async (req, res) => {
+const getAllParents = async (req, res) => {
   try {
     const { schoolId } = req.query;
 
@@ -109,7 +109,7 @@ export const getAllParents = async (req, res) => {
 };
 
 // Get Parent by ID
-export const getParentById = async (req, res) => {
+const getParentById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -147,7 +147,7 @@ export const getParentById = async (req, res) => {
 };
 
 // Get Current Parent's Children
-export const getMyChildren = async (req, res) => {
+const getMyChildren = async (req, res) => {
   try {
     const { _id: userId, schoolId } = req.user;
 
@@ -180,4 +180,11 @@ export const getMyChildren = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createParent,
+  getAllParents,
+  getParentById,
+  getMyChildren
 };

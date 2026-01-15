@@ -1,11 +1,11 @@
-import AcademicSession from '../models/AcademicSession.js';
-import School from '../models/School.js';
-import { HTTP_STATUS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const AcademicSession = require('../models/AcademicSession.js');
+const School = require('../models/School.js');
+const { HTTP_STATUS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Academic Session
-export const createSession = async (req, res) => {
+const createSession = async (req, res) => {
   try {
     const { schoolId, name, startDate, endDate, isActive } = req.body;
 
@@ -70,7 +70,7 @@ export const createSession = async (req, res) => {
 };
 
 // Get All Sessions for a School
-export const getSessionsBySchool = async (req, res) => {
+const getSessionsBySchool = async (req, res) => {
   try {
     const { schoolId } = req.params;
 
@@ -94,13 +94,13 @@ export const getSessionsBySchool = async (req, res) => {
 };
 
 // Get Active Session for a School
-export const getActiveSession = async (req, res) => {
+const getActiveSession = async (req, res) => {
   try {
     const { schoolId } = req.params;
 
-    const session = await AcademicSession.findOne({ 
-      schoolId, 
-      isActive: true 
+    const session = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
     }).populate('schoolId', 'name code');
 
     if (!session) {
@@ -125,7 +125,7 @@ export const getActiveSession = async (req, res) => {
 };
 
 // Update Session (to activate/deactivate)
-export const updateSession = async (req, res) => {
+const updateSession = async (req, res) => {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
@@ -177,4 +177,11 @@ export const updateSession = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createSession,
+  getSessionsBySchool,
+  getActiveSession,
+  updateSession
 };

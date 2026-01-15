@@ -1,12 +1,12 @@
-import User from '../models/User.js';
-import School from '../models/School.js';
-import { hashPassword } from '../utils/password.js';
-import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const User = require('../models/User.js');
+const School = require('../models/School.js');
+const { hashPassword } = require('../utils/password.js');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create User
-export const createUser = async (req, res) => {
+const createUser = async (req, res) => {
   try {
     const { name, email, mobile, password, role, schoolId, status } = req.body;
 
@@ -106,7 +106,7 @@ export const createUser = async (req, res) => {
 };
 
 // Get All Users
-export const getAllUsers = async (req, res) => {
+const getAllUsers = async (req, res) => {
   try {
     const { schoolId, role, status } = req.query;
 
@@ -146,7 +146,7 @@ export const getAllUsers = async (req, res) => {
 };
 
 // Get User by ID
-export const getUserById = async (req, res) => {
+const getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .populate('schoolId', 'name code')
@@ -174,7 +174,7 @@ export const getUserById = async (req, res) => {
 };
 
 // Update User
-export const updateUser = async (req, res) => {
+const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, mobile, status, role } = req.body;
@@ -217,7 +217,7 @@ export const updateUser = async (req, res) => {
 };
 
 // Delete User (Soft Delete)
-export const deleteUser = async (req, res) => {
+const deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
 
@@ -278,7 +278,7 @@ export const deleteUser = async (req, res) => {
 };
 
 // Reactivate User
-export const reactivateUser = async (req, res) => {
+const reactivateUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
 
@@ -337,4 +337,13 @@ export const reactivateUser = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createUser,
+  getAllUsers,
+  getUserById,
+  updateUser,
+  deleteUser,
+  reactivateUser
 };

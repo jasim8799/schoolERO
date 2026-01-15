@@ -1,4 +1,4 @@
-const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 
 // Role hierarchy for authorization
 const ROLE_HIERARCHY = {

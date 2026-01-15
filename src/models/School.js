@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
-import { SCHOOL_STATUS, SAAS_PLANS } from '../config/constants.js';
+const mongoose = require('mongoose');
+const { SCHOOL_STATUS, SAAS_PLANS } = require('../config/constants.js');
 
 const schoolSchema = new mongoose.Schema({
   name: {
@@ -96,4 +96,4 @@ const schoolSchema = new mongoose.Schema({
 
 const School = mongoose.model('School', schoolSchema);
 
-export default School;
+module.exports = School;

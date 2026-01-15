@@ -1,12 +1,12 @@
-import User from '../models/User.js';
-import { hashPassword, comparePassword } from '../utils/password.js';
-import { generateToken } from '../utils/jwt.js';
-import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const User = require('../models/User.js');
+const { hashPassword, comparePassword } = require('../utils/password.js');
+const { generateToken } = require('../utils/jwt.js');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Register User
-export const register = async (req, res) => {
+const register = async (req, res) => {
   try {
     const { name, email, mobile, password, role, schoolId } = req.body;
 
@@ -84,7 +84,7 @@ export const register = async (req, res) => {
 };
 
 // Login User
-export const login = async (req, res) => {
+const login = async (req, res) => {
   try {
     const { email, mobile, password } = req.body;
 
@@ -177,7 +177,7 @@ export const login = async (req, res) => {
 };
 
 // Get Current User
-export const getCurrentUser = async (req, res) => {
+const getCurrentUser = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
       .populate('schoolId', 'name code')
@@ -203,3 +203,5 @@ export const getCurrentUser = async (req, res) => {
     });
   }
 };
+
+module.exports = { register, login, getCurrentUser };

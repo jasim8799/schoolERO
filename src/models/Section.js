@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const sectionSchema = new mongoose.Schema({
   name: {
@@ -36,4 +36,4 @@ sectionSchema.index({ name: 1, classId: 1, schoolId: 1, sessionId: 1 }, { unique
 
 const Section = mongoose.model('Section', sectionSchema);
 
-export default Section;
+module.exports = Section;

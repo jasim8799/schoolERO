@@ -10,7 +10,7 @@ const StudentTransport = require('../models/StudentTransport');
 const ExamForm = require('../models/ExamForm');
 const Homework = require('../models/Homework');
 const Result = require('../models/Result');
-const Notice = require('../models/Notice');
+const SystemAnnouncement = require('../models/SystemAnnouncement');
 const { USER_ROLES } = require('../config/constants');
 
 // Get Principal dashboard data
@@ -195,7 +195,7 @@ const getStudentDashboard = async (req, res) => {
     const totalExams = results.length;
 
     // Notices count
-    const noticesCount = await Notice.countDocuments({ schoolId, targetRoles: role });
+    const noticesCount = await SystemAnnouncement.countDocuments({ schoolId, targetRoles: role });
 
     res.json({
       attendancePercent,

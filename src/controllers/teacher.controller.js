@@ -1,14 +1,14 @@
-import Teacher from '../models/Teacher.js';
-import User from '../models/User.js';
-import Class from '../models/Class.js';
-import Subject from '../models/Subject.js';
-import School from '../models/School.js';
-import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const Teacher = require('../models/Teacher.js');
+const User = require('../models/User.js');
+const Class = require('../models/Class.js');
+const Subject = require('../models/Subject.js');
+const School = require('../models/School.js');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Teacher
-export const createTeacher = async (req, res) => {
+const createTeacher = async (req, res) => {
   try {
     const { userId, assignedClasses, assignedSubjects, schoolId } = req.body;
 
@@ -104,7 +104,7 @@ export const createTeacher = async (req, res) => {
 };
 
 // Get All Teachers
-export const getAllTeachers = async (req, res) => {
+const getAllTeachers = async (req, res) => {
   try {
     const { schoolId } = req.query;
 
@@ -135,7 +135,7 @@ export const getAllTeachers = async (req, res) => {
 };
 
 // Get Teacher by ID
-export const getTeacherById = async (req, res) => {
+const getTeacherById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -167,7 +167,7 @@ export const getTeacherById = async (req, res) => {
 };
 
 // Update Teacher Assignments
-export const updateTeacherAssignments = async (req, res) => {
+const updateTeacherAssignments = async (req, res) => {
   try {
     const { id } = req.params;
     const { assignedClasses, assignedSubjects } = req.body;
@@ -221,4 +221,11 @@ export const updateTeacherAssignments = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createTeacher,
+  getAllTeachers,
+  getTeacherById,
+  updateTeacherAssignments
 };

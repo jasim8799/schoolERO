@@ -1,9 +1,9 @@
-import { HTTP_STATUS, USER_ROLES } from '../config/constants.js';
-import mongoose from 'mongoose';
-import School from '../models/School.js';
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
+const mongoose = require('mongoose');
+const School = require('../models/School.js');
 
 // Check if user's school is active
-export const checkSchoolStatus = async (req, res, next) => {
+const checkSchoolStatus = async (req, res, next) => {
   try {
     // SUPER_ADMIN can access regardless of school status
     if (req.user.role === USER_ROLES.SUPER_ADMIN) {
@@ -45,7 +45,7 @@ export const checkSchoolStatus = async (req, res, next) => {
 };
 
 // Ensure user can only access their own school's data
-export const enforceSchoolIsolation = (req, res, next) => {
+const enforceSchoolIsolation = (req, res, next) => {
   // SUPER_ADMIN can access all schools
   if (req.user.role === USER_ROLES.SUPER_ADMIN) {
     return next();
@@ -73,7 +73,7 @@ export const enforceSchoolIsolation = (req, res, next) => {
 };
 
 // Automatically attach user's schoolId to request body (for create operations)
-export const attachSchoolId = (req, res, next) => {
+const attachSchoolId = (req, res, next) => {
   // SUPER_ADMIN must explicitly provide schoolId
   if (req.user.role === USER_ROLES.SUPER_ADMIN) {
     return next();
@@ -88,7 +88,7 @@ export const attachSchoolId = (req, res, next) => {
 };
 
 // Filter queries by user's school
-export const filterBySchool = (req, res, next) => {
+const filterBySchool = (req, res, next) => {
   // SUPER_ADMIN can see all
   if (req.user.role === USER_ROLES.SUPER_ADMIN) {
     return next();
@@ -100,4 +100,11 @@ export const filterBySchool = (req, res, next) => {
   }
 
   next();
+};
+
+module.exports = {
+  checkSchoolStatus,
+  enforceSchoolIsolation,
+  attachSchoolId,
+  filterBySchool
 };

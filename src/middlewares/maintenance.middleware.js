@@ -1,8 +1,8 @@
-import SystemSettings from '../models/SystemSettings.js';
-import { USER_ROLES } from '../config/constants.js';
+const SystemSettings = require('../models/SystemSettings.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 // Check if system is in maintenance mode
-export const checkMaintenanceMode = async (req, res, next) => {
+const checkMaintenanceMode = async (req, res, next) => {
   try {
     // Get system settings
     let settings = await SystemSettings.findOne();
@@ -32,4 +32,8 @@ export const checkMaintenanceMode = async (req, res, next) => {
     console.error('Maintenance mode check error:', error);
     next();
   }
+};
+
+module.exports = {
+  checkMaintenanceMode
 };

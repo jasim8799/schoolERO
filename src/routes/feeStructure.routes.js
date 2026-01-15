@@ -1,8 +1,8 @@
 const express = require('express');
-const { createFeeStructure, getFeeStructures } = require('../controllers/feeStructure.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
-const { validateSchool } = require('../middlewares/school.middleware');
-const { USER_ROLES, HTTP_STATUS } = require('../config/constants');
+const { createFeeStructure, getFeeStructures } = require('../controllers/feeStructure.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
+const { USER_ROLES, HTTP_STATUS } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -28,7 +28,7 @@ const requirePrincipalOrOperator = (req, res, next) => {
 
 // All routes require authentication and school validation
 router.use(authenticate);
-router.use(validateSchool);
+router.use(checkSchoolStatus);
 
 // Only Principal and Operator can access
 router.use(requirePrincipalOrOperator);

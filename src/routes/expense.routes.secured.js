@@ -1,9 +1,9 @@
-const express = require('express');
-const { createExpense, getExpenses, getExpenseSummary, upload } = require('../controllers/expense.controller');
-const { authenticate } = require('../middlewares/auth.middleware.fixed');
-const { authorizeRoles } = require('../middlewares/role.middleware');
-const { enforceSchoolIsolation, validateFileUpload } = require('../middlewares/security.middleware.final');
-const { checkStorageLimit } = require('../middlewares/schoolLimits.middleware');
+import express from 'express';
+import { createExpense, getExpenses, getExpenseSummary, upload } from '../controllers/expense.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.fixed.js';
+import { requireRole } from '../middlewares/role.middleware.js';
+import { enforceSchoolIsolation, validateFileUpload } from '../middlewares/security.middleware.final.js';
+import { checkStorageLimit } from '../middlewares/schoolLimits.middleware.js';
 
 const router = express.Router();
 
@@ -12,11 +12,11 @@ router.use(authenticate);
 router.use(enforceSchoolIsolation);
 
 // Only Principal and Operator can access expense management
-router.use(authorizeRoles('PRINCIPAL', 'OPERATOR'));
+router.use(requireRole('PRINCIPAL', 'OPERATOR'));
 
 // Routes
 router.post('/', validateFileUpload(), checkStorageLimit, createExpense);
 router.get('/', getExpenses);
 router.get('/summary', getExpenseSummary);
 
-module.exports = router;
+export default router;

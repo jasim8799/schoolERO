@@ -1,8 +1,8 @@
-import express from 'express';
-import { createClass, getAllClasses, getClassById } from '../controllers/class.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireMinRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { createClass, getAllClasses, getClassById } = require('../controllers/class.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -18,4 +18,4 @@ router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllClasses);
 // GET /api/classes/:id - Get class by ID
 router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getClassById);
 
-export default router;
+module.exports = router;

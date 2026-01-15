@@ -6,17 +6,17 @@ const {
   verifyOnlinePayment,
   getMyPayments,
   getReceipt
-} = require('../controllers/feePayment.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
-const { requireRole } = require('../middlewares/role.middleware');
-const { validateSchool } = require('../middlewares/school.middleware');
-const { checkOnlinePaymentAccess } = require('../middlewares/onlinePayment.middleware');
+} = require('../controllers/feePayment.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireRole } = require('../middlewares/role.middleware.js');
+const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
+const { checkOnlinePaymentAccess } = require('../middlewares/onlinePayment.middleware.js');
 
 const router = express.Router();
 
 // All routes require authentication and school validation
 router.use(authenticate);
-router.use(validateSchool);
+router.use(checkSchoolStatus);
 
 // Manual payment routes (Principal/Operator only)
 router.post('/pay/manual', requireRole('PRINCIPAL', 'OPERATOR'), payManual);

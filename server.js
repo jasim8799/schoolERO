@@ -8,7 +8,7 @@ const { seedRoles } = require('./src/utils/seedRoles');
 connectDB();
 
 // Seed Roles
-seedRoles();
+// seedRoles();
 
 // Start Server
 const PORT = config.port;

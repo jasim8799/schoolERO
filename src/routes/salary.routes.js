@@ -1,29 +1,29 @@
 const express = require('express');
-const { setupSalaryProfile, getSalaryProfile, calculateSalary, getMonthlySalaries, paySalary, getSalarySlip } = require('../controllers/salary.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
-const { authorizeRoles } = require('../middlewares/role.middleware');
-const { validateSchool } = require('../middlewares/school.middleware');
+const { setupSalaryProfile, getSalaryProfile, calculateSalary, getMonthlySalaries, paySalary, getSalarySlip } = require('../controllers/salary.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireRole } = require('../middlewares/role.middleware.js');
+const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
 
 const router = express.Router();
 
 // All routes require authentication and school validation
 router.use(authenticate);
-router.use(validateSchool);
+router.use(checkSchoolStatus);
 
 // Setup salary profile - Only Principal and Operator
-router.post('/setup', authorizeRoles('PRINCIPAL', 'OPERATOR'), setupSalaryProfile);
+router.post('/setup', requireRole('PRINCIPAL', 'OPERATOR'), setupSalaryProfile);
 
 // Get salary profile - Principal, Operator, and staff (with restrictions)
-router.get('/staff/:id', authorizeRoles('PRINCIPAL', 'OPERATOR', 'TEACHER'), getSalaryProfile);
+router.get('/staff/:id', requireRole('PRINCIPAL', 'OPERATOR', 'TEACHER'), getSalaryProfile);
 
 // Calculate salary - Only Principal and Operator
-router.post('/calculate', authorizeRoles('PRINCIPAL', 'OPERATOR'), calculateSalary);
+router.post('/calculate', requireRole('PRINCIPAL', 'OPERATOR'), calculateSalary);
 
 // Get monthly salary calculations - Only Principal and Operator
-router.get('/monthly', authorizeRoles('PRINCIPAL', 'OPERATOR'), getMonthlySalaries);
+router.get('/monthly', requireRole('PRINCIPAL', 'OPERATOR'), getMonthlySalaries);
 
 // Pay salary - Only Principal and Operator
-router.post('/pay', authorizeRoles('PRINCIPAL', 'OPERATOR'), paySalary);
+router.post('/pay', requireRole('PRINCIPAL', 'OPERATOR'), paySalary);
 
 // Get salary slip - All authenticated users (staff see only their own)
 router.get('/slip/:month', getSalarySlip);

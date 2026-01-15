@@ -1,17 +1,17 @@
-import express from 'express';
-import { 
-  createUser, 
-  getAllUsers, 
-  getUserById, 
-  updateUser, 
+const express = require('express');
+const {
+  createUser,
+  getAllUsers,
+  getUserById,
+  updateUser,
   deleteUser,
   reactivateUser
-} from '../controllers/user.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireRole, requireMinRole, canAssignRole } from '../middlewares/role.middleware.js';
-import { enforceSchoolIsolation, attachSchoolId, filterBySchool } from '../middlewares/school.middleware.js';
-import { checkStudentLimit, checkTeacherLimit } from '../middlewares/schoolLimits.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+} = require('../controllers/user.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
+const { enforceSchoolIsolation, attachSchoolId, filterBySchool } = require('../middlewares/school.middleware.js');
+const { checkStudentLimit, checkTeacherLimit } = require('../middlewares/schoolLimits.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -78,4 +78,4 @@ router.patch(
   reactivateUser
 );
 
-export default router;
+module.exports = router;

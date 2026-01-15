@@ -1,10 +1,10 @@
-import School from '../models/School.js';
-import User from '../models/User.js';
-import { USER_ROLES, USER_STATUS, SAAS_PLANS, PLAN_CONFIGS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
+const School = require('../models/School.js');
+const User = require('../models/User.js');
+const { USER_ROLES, USER_STATUS, SAAS_PLANS, PLAN_CONFIGS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
 
 // Check student limit before creating students
-export const checkStudentLimit = async (req, res, next) => {
+const checkStudentLimit = async (req, res, next) => {
   try {
     const schoolId = req.user.schoolId;
 
@@ -69,7 +69,7 @@ export const checkStudentLimit = async (req, res, next) => {
 };
 
 // Check teacher limit before creating teachers
-export const checkTeacherLimit = async (req, res, next) => {
+const checkTeacherLimit = async (req, res, next) => {
   try {
     const schoolId = req.user.schoolId;
 
@@ -135,7 +135,7 @@ export const checkTeacherLimit = async (req, res, next) => {
 };
 
 // Check storage limit (placeholder - would need actual storage tracking)
-export const checkStorageLimit = async (req, res, next) => {
+const checkStorageLimit = async (req, res, next) => {
   try {
     const schoolId = req.user.schoolId;
 
@@ -229,4 +229,10 @@ const formatBytes = (bytes) => {
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+module.exports = {
+  checkStudentLimit,
+  checkTeacherLimit,
+  checkStorageLimit
 };

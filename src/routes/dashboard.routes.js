@@ -2,7 +2,7 @@ const express = require('express');
 const { getPrincipalDashboard, getOperatorDashboard, getTeacherDashboard, getStudentDashboard, getSuperAdminDashboard } = require('../controllers/dashboard.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
-const { validateSchool } = require('../middlewares/school.middleware');
+const { checkSchoolStatus } = require('../middlewares/school.middleware');
 const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
@@ -14,7 +14,7 @@ router.use(authenticate);
 router.get('/super-admin', requireRole(USER_ROLES.SUPER_ADMIN), getSuperAdminDashboard);
 
 // School-specific routes require school validation
-router.use(validateSchool);
+router.use(checkSchoolStatus);
 
 // Principal dashboard
 router.get('/principal', getPrincipalDashboard);

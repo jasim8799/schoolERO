@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const examSchema = new mongoose.Schema(
   {
@@ -23,4 +23,4 @@ const examSchema = new mongoose.Schema(
 examSchema.index({ name: 1, classId: 1, sessionId: 1, schoolId: 1 }, { unique: true });
 
 const Exam = mongoose.model('Exam', examSchema);
-export default Exam;
+module.exports = Exam;

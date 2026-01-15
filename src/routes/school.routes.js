@@ -1,8 +1,8 @@
-import express from 'express';
-import { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, reassignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool } from '../controllers/school.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireRole } from '../middlewares/role.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, reassignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool } = require('../controllers/school.controller');
+const { authenticate } = require('../middlewares/auth.middleware');
+const { requireRole } = require('../middlewares/role.middleware');
+const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
 
@@ -59,4 +59,4 @@ router.put('/:id/subscription/renew', renewSchoolSubscription);
 // POST /api/schools/:id/force-logout - Force logout all users for a school (SUPER_ADMIN only)
 router.post('/:id/force-logout', forceLogoutSchool);
 
-export default router;
+module.exports = router;

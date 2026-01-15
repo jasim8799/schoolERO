@@ -2,6 +2,7 @@
   "name": "school-erp-backend",
   "version": "1.0.0",
   "description": "School ERP Backend - Phase 1",
+  "type": "commonjs",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

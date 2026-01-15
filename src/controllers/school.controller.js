@@ -1,15 +1,15 @@
-import mongoose from 'mongoose';
-import School from '../models/School.js';
-import User from '../models/User.js';
-import AcademicSession from '../models/AcademicSession.js';
-import { HTTP_STATUS, USER_ROLES, SCHOOL_MODULES, SAAS_PLANS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
-import { applyPlanToSchool, getPlanConfig } from '../utils/planManager.js';
-import bcrypt from 'bcrypt';
+const mongoose = require('mongoose');
+const School = require('../models/School.js');
+const User = require('../models/User.js');
+const AcademicSession = require('../models/AcademicSession.js');
+const { HTTP_STATUS, USER_ROLES, SCHOOL_MODULES, SAAS_PLANS, USER_STATUS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
+const { applyPlanToSchool, getPlanConfig } = require('../utils/planManager.js');
+const bcrypt = require('bcrypt');
 
 // Create School
-export const createSchool = async (req, res) => {
+const createSchool = async (req, res) => {
   try {
     const { name, code, address, contact, plan } = req.body;
 
@@ -71,7 +71,7 @@ export const createSchool = async (req, res) => {
 };
 
 // Get School Limits
-export const getSchoolLimits = async (req, res) => {
+const getSchoolLimits = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -127,7 +127,7 @@ export const getSchoolLimits = async (req, res) => {
 };
 
 // Update School Limits
-export const updateSchoolLimits = async (req, res) => {
+const updateSchoolLimits = async (req, res) => {
   try {
     const { id } = req.params;
     const { studentLimit, teacherLimit, storageLimit } = req.body;
@@ -207,7 +207,7 @@ export const updateSchoolLimits = async (req, res) => {
 };
 
 // Get All Schools
-export const getAllSchools = async (req, res) => {
+const getAllSchools = async (req, res) => {
   try {
     const schools = await School.find().sort({ createdAt: -1 });
 
@@ -227,7 +227,7 @@ export const getAllSchools = async (req, res) => {
 };
 
 // Get School by ID
-export const getSchoolById = async (req, res) => {
+const getSchoolById = async (req, res) => {
   try {
     const school = await School.findById(req.params.id);
 
@@ -253,7 +253,7 @@ export const getSchoolById = async (req, res) => {
 };
 
 // Create School with Lifecycle (Super Admin only)
-export const createSchoolWithLifecycle = async (req, res) => {
+const createSchoolWithLifecycle = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -403,7 +403,7 @@ export const createSchoolWithLifecycle = async (req, res) => {
 };
 
 // Activate/Deactivate School
-export const toggleSchoolStatus = async (req, res) => {
+const toggleSchoolStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -465,7 +465,7 @@ export const toggleSchoolStatus = async (req, res) => {
 };
 
 // Reassign Principal
-export const reassignPrincipal = async (req, res) => {
+const reassignPrincipal = async (req, res) => {
   try {
     const { id } = req.params;
     const { newPrincipalId } = req.body;
@@ -591,7 +591,7 @@ export const reassignPrincipal = async (req, res) => {
 };
 
 // Get Current User's School Modules
-export const getCurrentUserSchoolModules = async (req, res) => {
+const getCurrentUserSchoolModules = async (req, res) => {
   try {
     const schoolId = req.user?.schoolId;
 
@@ -633,7 +633,7 @@ export const getCurrentUserSchoolModules = async (req, res) => {
 };
 
 // Get Current User's School Online Payment Status
-export const getCurrentUserSchoolOnlinePayments = async (req, res) => {
+const getCurrentUserSchoolOnlinePayments = async (req, res) => {
   try {
     const schoolId = req.user?.schoolId;
 
@@ -686,7 +686,7 @@ export const getCurrentUserSchoolOnlinePayments = async (req, res) => {
 };
 
 // Get School Modules
-export const getSchoolModules = async (req, res) => {
+const getSchoolModules = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -720,7 +720,7 @@ export const getSchoolModules = async (req, res) => {
 };
 
 // Update School Plan
-export const updateSchoolPlan = async (req, res) => {
+const updateSchoolPlan = async (req, res) => {
   try {
     const { id } = req.params;
     const { plan, confirmed } = req.body;
@@ -839,7 +839,7 @@ export const updateSchoolPlan = async (req, res) => {
 };
 
 // Get Current User's School Subscription Status
-export const getCurrentUserSchoolSubscription = async (req, res) => {
+const getCurrentUserSchoolSubscription = async (req, res) => {
   try {
     const schoolId = req.user?.schoolId;
 
@@ -895,7 +895,7 @@ export const getCurrentUserSchoolSubscription = async (req, res) => {
 };
 
 // Renew School Subscription
-export const renewSchoolSubscription = async (req, res) => {
+const renewSchoolSubscription = async (req, res) => {
   try {
     const { id } = req.params;
     const { durationMonths = 12, extendFromCurrent = true } = req.body;
@@ -989,7 +989,7 @@ export const renewSchoolSubscription = async (req, res) => {
 };
 
 // Update School Modules
-export const updateSchoolModules = async (req, res) => {
+const updateSchoolModules = async (req, res) => {
   try {
     const { id } = req.params;
     const { modules } = req.body;
@@ -1096,7 +1096,7 @@ export const updateSchoolModules = async (req, res) => {
 };
 
 // Force Logout All Users for a School
-export const forceLogoutSchool = async (req, res) => {
+const forceLogoutSchool = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1151,4 +1151,23 @@ export const forceLogoutSchool = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createSchool,
+  getSchoolLimits,
+  updateSchoolLimits,
+  getAllSchools,
+  getSchoolById,
+  createSchoolWithLifecycle,
+  toggleSchoolStatus,
+  reassignPrincipal,
+  getCurrentUserSchoolModules,
+  getCurrentUserSchoolOnlinePayments,
+  getSchoolModules,
+  updateSchoolPlan,
+  getCurrentUserSchoolSubscription,
+  renewSchoolSubscription,
+  updateSchoolModules,
+  forceLogoutSchool
 };

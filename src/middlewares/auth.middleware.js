@@ -1,13 +1,14 @@
-import { verifyToken } from '../utils/jwt.js';
-import { HTTP_STATUS } from '../config/constants.js';
-import User from '../models/User.js';
+const jwt = require('jsonwebtoken');
+const { HTTP_STATUS } = require('../config/constants');
+const User = require('../models/User');
+const { config } = require('../config/env');
 
 // Verify JWT token and attach user to request
-export const authenticate = async (req, res, next) => {
+const authenticate = async (req, res, next) => {
   try {
     // Get token from header
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
@@ -18,7 +19,7 @@ export const authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
 
     // Verify token
-    const decoded = verifyToken(token);
+    const decoded = jwt.verify(token, config.jwt.secret);
 
     // Check if user exists and is active
     const user = await User.findById(decoded.userId).select('-password');
@@ -36,32 +37,24 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // Check force logout for school users
-    if (decoded.schoolId) {
-      const School = (await import('../models/School.js')).default;
-      const school = await School.findById(decoded.schoolId);
-      if (school && school.forceLogoutAt && decoded.iat * 1000 < school.forceLogoutAt.getTime()) {
-        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-          success: false,
-          message: 'Session expired. Please login again.',
-          forceLogout: true
-        });
-      }
-    }
-
     // Attach user info to request
     req.user = {
       userId: decoded.userId,
       role: decoded.role,
-      schoolId: decoded.schoolId
+      schoolId: decoded.schoolId,
+      sessionId: decoded.sessionId // Include sessionId from JWT
     };
 
     next();
   } catch (error) {
     return res.status(HTTP_STATUS.UNAUTHORIZED).json({
       success: false,
-      message: 'Invalid or expired token',
-      error: error.message
+      message: 'Invalid or expired token'
+      // Remove error details in production for security
     });
   }
+};
+
+module.exports = {
+  authenticate
 };

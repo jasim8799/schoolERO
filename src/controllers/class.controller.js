@@ -1,12 +1,12 @@
-import Class from '../models/Class.js';
-import School from '../models/School.js';
-import AcademicSession from '../models/AcademicSession.js';
-import { HTTP_STATUS } from '../config/constants.js';
-import { logger } from '../utils/logger.js';
-import { auditLog } from '../utils/auditLog_new.js';
+const Class = require('../models/Class.js');
+const School = require('../models/School.js');
+const AcademicSession = require('../models/AcademicSession.js');
+const { HTTP_STATUS } = require('../config/constants.js');
+const { logger } = require('../utils/logger.js');
+const { auditLog } = require('../utils/auditLog_new.js');
 
 // Create Class
-export const createClass = async (req, res) => {
+const createClass = async (req, res) => {
   try {
     const { name, schoolId, sessionId } = req.body;
 
@@ -79,7 +79,7 @@ export const createClass = async (req, res) => {
 };
 
 // Get All Classes (with optional school and session filters)
-export const getAllClasses = async (req, res) => {
+const getAllClasses = async (req, res) => {
   try {
     const { schoolId, sessionId } = req.query;
 
@@ -109,7 +109,7 @@ export const getAllClasses = async (req, res) => {
 };
 
 // Get Class by ID
-export const getClassById = async (req, res) => {
+const getClassById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -136,4 +136,10 @@ export const getClassById = async (req, res) => {
       error: error.message
     });
   }
+};
+
+module.exports = {
+  createClass,
+  getAllClasses,
+  getClassById
 };

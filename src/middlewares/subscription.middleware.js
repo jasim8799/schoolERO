@@ -1,12 +1,12 @@
-import School from '../models/School.js';
-import { HTTP_STATUS } from '../config/constants.js';
+const School = require('../models/School.js');
+const { HTTP_STATUS } = require('../config/constants.js');
 
 /**
  * Middleware to check if the user's school subscription is active
  * Blocks write operations (POST, PUT, PATCH, DELETE) for expired subscriptions
  * @param {boolean} allowReadOnly - If true, allows GET requests even for expired subscriptions
  */
-export const checkSubscriptionStatus = (allowReadOnly = false) => {
+const checkSubscriptionStatus = (allowReadOnly = false) => {
   return async (req, res, next) => {
     try {
       // Get schoolId from JWT token
@@ -106,7 +106,7 @@ export const checkSubscriptionStatus = (allowReadOnly = false) => {
  * Middleware specifically for blocking write operations on expired subscriptions
  * Use this for routes that should be completely blocked for expired schools
  */
-export const blockExpiredSubscription = (req, res, next) => {
+const blockExpiredSubscription = (req, res, next) => {
   return checkSubscriptionStatus(false)(req, res, next);
 };
 
@@ -114,6 +114,12 @@ export const blockExpiredSubscription = (req, res, next) => {
  * Middleware that allows read operations but blocks writes for expired subscriptions
  * Use this for routes where expired schools can still view data but not modify it
  */
-export const allowReadOnlyExpired = (req, res, next) => {
+const allowReadOnlyExpired = (req, res, next) => {
   return checkSubscriptionStatus(true)(req, res, next);
+};
+
+module.exports = {
+  checkSubscriptionStatus,
+  blockExpiredSubscription,
+  allowReadOnlyExpired
 };

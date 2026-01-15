@@ -1,10 +1,10 @@
-import StudentDailyAttendance from '../models/StudentDailyAttendance.js';
-import StudentSubjectAttendance from '../models/StudentSubjectAttendance.js';
-import TeacherAttendance from '../models/TeacherAttendance.js';
-import Student from '../models/Student.js';
-import Parent from '../models/Parent.js';
+const StudentDailyAttendance = require('../models/StudentDailyAttendance.js');
+const StudentSubjectAttendance = require('../models/StudentSubjectAttendance.js');
+const TeacherAttendance = require('../models/TeacherAttendance.js');
+const Student = require('../models/Student.js');
+const Parent = require('../models/Parent.js');
 
-export const markStudentDailyAttendance = async (req, res) => {
+const markStudentDailyAttendance = async (req, res) => {
   try {
     const { records } = req.body;
     const { userId, schoolId, sessionId } = req.user;
@@ -49,7 +49,7 @@ export const markStudentDailyAttendance = async (req, res) => {
   }
 };
 
-export const getStudentDailyAttendance = async (req, res) => {
+const getStudentDailyAttendance = async (req, res) => {
   try {
     const { classId, sectionId, date, startDate, endDate } = req.query;
     const { schoolId, sessionId } = req.user;
@@ -83,7 +83,7 @@ export const getStudentDailyAttendance = async (req, res) => {
   }
 };
 
-export const getMyStudentAttendance = async (req, res) => {
+const getMyStudentAttendance = async (req, res) => {
   try {
     const { userId, role, schoolId, sessionId } = req.user;
     const { startDate, endDate } = req.query;
@@ -131,7 +131,7 @@ export const getMyStudentAttendance = async (req, res) => {
   }
 };
 
-export const markSubjectAttendance = async (req, res) => {
+const markSubjectAttendance = async (req, res) => {
   try {
     const { records } = req.body;
     const { userId, schoolId, sessionId } = req.user;
@@ -177,7 +177,7 @@ export const markSubjectAttendance = async (req, res) => {
   }
 };
 
-export const getSubjectAttendance = async (req, res) => {
+const getSubjectAttendance = async (req, res) => {
   try {
     const { classId, subjectId, date, studentId } = req.query;
     const { schoolId, sessionId } = req.user;
@@ -208,7 +208,7 @@ export const getSubjectAttendance = async (req, res) => {
   }
 };
 
-export const markTeacherAttendance = async (req, res) => {
+const markTeacherAttendance = async (req, res) => {
   try {
     const { date, status, checkIn, checkOut, teacherId: targetTeacherId } = req.body;
     const { userId, role, schoolId, sessionId } = req.user;
@@ -249,7 +249,7 @@ export const markTeacherAttendance = async (req, res) => {
   }
 };
 
-export const getTeacherAttendance = async (req, res) => {
+const getTeacherAttendance = async (req, res) => {
   try {
     const { date, startDate, endDate, teacherId } = req.query;
     const { userId, role, schoolId, sessionId } = req.user;
@@ -285,4 +285,14 @@ export const getTeacherAttendance = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+};
+
+module.exports = {
+  markStudentDailyAttendance,
+  getStudentDailyAttendance,
+  getMyStudentAttendance,
+  markSubjectAttendance,
+  getSubjectAttendance,
+  markTeacherAttendance,
+  getTeacherAttendance,
 };

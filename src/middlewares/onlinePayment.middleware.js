@@ -1,11 +1,11 @@
-import School from '../models/School.js';
-import { checkModuleAccess } from './moduleAccess.middleware.js';
+const School = require('../models/School.js');
+const { checkModuleAccess } = require('./moduleAccess.middleware.js');
 
 /**
  * Middleware to check if online payments are available for the user's school
  * Checks both plan-based module access and admin toggle
  */
-export const checkOnlinePaymentAccess = async (req, res, next) => {
+const checkOnlinePaymentAccess = async (req, res, next) => {
   try {
     const schoolId = req.user?.schoolId;
 
@@ -68,3 +68,5 @@ export const checkOnlinePaymentAccess = async (req, res, next) => {
     });
   }
 };
+
+module.exports = { checkOnlinePaymentAccess };
