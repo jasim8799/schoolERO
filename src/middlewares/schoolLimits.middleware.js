@@ -6,6 +6,11 @@ const { logger } = require('../utils/logger.js');
 // Check student limit before creating students
 const checkStudentLimit = async (req, res, next) => {
   try {
+    // SUPER_ADMIN bypasses limit checks
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
     const schoolId = req.user.schoolId;
 
     if (!schoolId) {
@@ -71,6 +76,11 @@ const checkStudentLimit = async (req, res, next) => {
 // Check teacher limit before creating teachers
 const checkTeacherLimit = async (req, res, next) => {
   try {
+    // SUPER_ADMIN bypasses limit checks
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
     const schoolId = req.user.schoolId;
 
     if (!schoolId) {
@@ -137,6 +147,11 @@ const checkTeacherLimit = async (req, res, next) => {
 // Check storage limit (placeholder - would need actual storage tracking)
 const checkStorageLimit = async (req, res, next) => {
   try {
+    // SUPER_ADMIN bypasses limit checks
+    if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
     const schoolId = req.user.schoolId;
 
     if (!schoolId) {

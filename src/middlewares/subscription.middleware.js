@@ -1,5 +1,5 @@
 const School = require('../models/School.js');
-const { HTTP_STATUS } = require('../config/constants.js');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 
 /**
  * Middleware to check if the user's school subscription is active
@@ -9,6 +9,11 @@ const { HTTP_STATUS } = require('../config/constants.js');
 const checkSubscriptionStatus = (allowReadOnly = false) => {
   return async (req, res, next) => {
     try {
+      // SUPER_ADMIN bypasses subscription checks
+      if (req.user?.role === USER_ROLES.SUPER_ADMIN) {
+        return next();
+      }
+
       // Get schoolId from JWT token
       const schoolId = req.user?.schoolId;
 

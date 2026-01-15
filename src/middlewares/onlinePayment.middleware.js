@@ -1,4 +1,5 @@
 const School = require('../models/School.js');
+const { USER_ROLES } = require('../config/constants.js');
 const { checkModuleAccess } = require('./moduleAccess.middleware.js');
 
 /**
@@ -7,6 +8,11 @@ const { checkModuleAccess } = require('./moduleAccess.middleware.js');
  */
 const checkOnlinePaymentAccess = async (req, res, next) => {
   try {
+    // SUPER_ADMIN bypasses online payment checks
+    if (req.user?.role === USER_ROLES.SUPER_ADMIN) {
+      return next();
+    }
+
     const schoolId = req.user?.schoolId;
 
     if (!schoolId) {

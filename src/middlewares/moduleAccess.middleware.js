@@ -1,5 +1,5 @@
 const School = require('../models/School.js');
-const { SCHOOL_MODULES } = require('../config/constants.js');
+const { SCHOOL_MODULES, USER_ROLES } = require('../config/constants.js');
 
 /**
  * Middleware to check if a specific module is enabled for the user's school
@@ -9,6 +9,11 @@ const { SCHOOL_MODULES } = require('../config/constants.js');
 const checkModuleAccess = (moduleName) => {
   return async (req, res, next) => {
     try {
+      // SUPER_ADMIN bypasses module access checks
+      if (req.user?.role === USER_ROLES.SUPER_ADMIN) {
+        return next();
+      }
+
       // Get schoolId from JWT token (assuming it's set by auth middleware)
       const schoolId = req.user?.schoolId;
 
@@ -69,6 +74,11 @@ const checkModuleAccess = (moduleName) => {
 const checkAnyModuleAccess = (moduleNames) => {
   return async (req, res, next) => {
     try {
+      // SUPER_ADMIN bypasses module access checks
+      if (req.user?.role === USER_ROLES.SUPER_ADMIN) {
+        return next();
+      }
+
       const schoolId = req.user?.schoolId;
 
       if (!schoolId) {
@@ -121,6 +131,11 @@ const checkAnyModuleAccess = (moduleNames) => {
 const checkAllModulesAccess = (moduleNames) => {
   return async (req, res, next) => {
     try {
+      // SUPER_ADMIN bypasses module access checks
+      if (req.user?.role === USER_ROLES.SUPER_ADMIN) {
+        return next();
+      }
+
       const schoolId = req.user?.schoolId;
 
       if (!schoolId) {
