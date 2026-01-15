@@ -24,6 +24,8 @@ const expenseRoutes = require('./routes/expense.routes');
 const salaryRoutes = require('./routes/salary.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const systemRoutes = require('./routes/system.routes');
+const auditRoutes = require('./routes/audit.routes');
 const versionRoutes = require('./routes/version.routes');
 
 const app = express();
@@ -49,9 +51,13 @@ app.use('/api/auth', authRoutes);
 
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
+app.use('/api/system', systemRoutes);
 
 // Apply maintenance mode check to all API routes (except auth for SUPER_ADMIN login)
 app.use('/api', checkMaintenanceMode);
+
+// Audit routes (require authentication and role checking)
+app.use('/api/audit', auditRoutes);
 
 // Apply subscription and module access checks to tenant routes
 app.use('/api/schools', checkSubscriptionStatus(), checkModuleAccess('schools'), schoolRoutes);
