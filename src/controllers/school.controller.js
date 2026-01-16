@@ -410,7 +410,7 @@ const createSchoolWithLifecycle = async (req, res) => {
           mobile: principalMobile,
           password: hashedPassword,
           role: USER_ROLES.PRINCIPAL,
-          schoolId: school[0]._id,
+          schoolId: school._id,
           status: USER_STATUS.ACTIVE
         }, { session });
       }
@@ -422,39 +422,44 @@ const createSchoolWithLifecycle = async (req, res) => {
       name: `${currentYear}-${currentYear + 1}`,
       startDate: new Date(currentYear, 3, 1), // April 1st
       endDate: new Date(currentYear + 1, 2, 31), // March 31st
-      schoolId: school[0]._id,
+      schoolId: school._id,
       isActive: true
     }], { session });
 
-    // 4. Log creation action
-    await auditLog({
-      action: 'SCHOOL_CREATED',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'SCHOOL',
-      entityId: school[0]._id,
-      description: `Created school "${school[0].name}" (${school[0].code}) with lifecycle setup`,
-      schoolId: req.user.schoolId || null,
-      details: {
-        schoolName: school[0].name,
-        schoolCode: school[0].code,
-        principalCreated: !!principal,
-        principalEmail: principalEmail,
-        defaultSessionCreated: true,
-        sessionName: defaultSession[0].name
-      },
-      req
-    });
-
     await session.commitTransaction();
 
-    logger.success(`School lifecycle created: ${school[0].name} (${school[0].code})`);
+    // Log creation action
+    try {
+      await auditLog({
+        action: 'SCHOOL_CREATED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'SCHOOL',
+        entityId: school._id,
+        description: `Created school "${school.name}" (${school.code}) with lifecycle setup`,
+        schoolId: req.user.schoolId || null,
+        details: {
+          schoolName: school.name,
+          schoolCode: school.code,
+          principalCreated: !!principal,
+          principalEmail: principalEmail,
+          defaultSessionCreated: true,
+          sessionName: defaultSession[0].name
+        },
+        req
+      });
+    } catch (auditError) {
+      console.error('[AUDIT LOG FAILED]', auditError.message);
+      // Continue with response, don't break school creation
+    }
+
+    logger.success(`School lifecycle created: ${school.name} (${school.code})`);
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'School created successfully with lifecycle setup',
       data: {
-        school: school[0],
+        school: school,
         principal: principal || null,
         defaultSession: defaultSession[0]
       }
