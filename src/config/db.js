@@ -3,7 +3,7 @@ const { config } = require('./env');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(config.mongoUri);
+    const conn = await mongoose.connect(config.mongoUri, { dbName: 'schoolero_test' });
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);
