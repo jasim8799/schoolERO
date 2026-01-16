@@ -363,7 +363,14 @@ const createSchoolWithLifecycle = async (req, res) => {
       code: schoolCode,
       address,
       contact,
-      plan: plan || SAAS_PLANS.BASIC // Default to BASIC if not specified
+      plan: plan || SAAS_PLANS.BASIC, // Default to BASIC if not specified
+      status: SCHOOL_STATUS.ACTIVE,
+      subscription: {
+        endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial
+        isExpired: false,
+        gracePeriodDays: 30,
+        lastRenewalDate: new Date()
+      }
     };
 
     // Apply plan configuration

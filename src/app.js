@@ -76,7 +76,7 @@ app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), feePa
 app.use('/api/expenses', checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
 app.use('/api/salary', checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
 app.use('/api/reports', checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
-app.use('/api/dashboard', checkSubscriptionStatus(), checkModuleAccess('dashboard'), dashboardRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/version', versionRoutes);
 
 module.exports = app;
