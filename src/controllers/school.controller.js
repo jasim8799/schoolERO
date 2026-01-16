@@ -417,6 +417,13 @@ const createSchoolWithLifecycle = async (req, res) => {
       }
     }
 
+    console.log(
+      '[PRINCIPAL CREATED]',
+      principal.email,
+      'school:',
+      school.code
+    );
+
     // 3. Apply default plan & limits (create default academic session)
     const currentYear = new Date().getFullYear();
     defaultSession = await AcademicSession.create([{
