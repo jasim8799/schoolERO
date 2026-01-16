@@ -404,7 +404,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       } else {
         // Create new principal
         const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
-        principal = await User.create([{
+        principal = await User.create({
           name: principalName,
           email: principalEmail.toLowerCase(),
           mobile: principalMobile,
@@ -412,7 +412,7 @@ const createSchoolWithLifecycle = async (req, res) => {
           role: USER_ROLES.PRINCIPAL,
           schoolId: school[0]._id,
           status: USER_STATUS.ACTIVE
-        }], { session });
+        }, { session });
       }
     }
 
@@ -455,7 +455,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       message: 'School created successfully with lifecycle setup',
       data: {
         school: school[0],
-        principal: principal ? principal[0] : null,
+        principal: principal || null,
         defaultSession: defaultSession[0]
       }
     });
