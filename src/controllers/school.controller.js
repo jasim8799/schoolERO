@@ -389,9 +389,8 @@ const createSchoolWithLifecycle = async (req, res) => {
         // Update existing user to be principal of this school
         principal.role = USER_ROLES.PRINCIPAL;
         principal.schoolId = school[0]._id;
-        if (principalPassword) {
-          principal.password = await hashPassword(principalPassword);
-        }
+        const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
+        principal.password = hashedPassword;
         await principal.save({ session });
       } else {
         // Create new principal
