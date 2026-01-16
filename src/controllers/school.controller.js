@@ -325,9 +325,12 @@ const createSchoolWithLifecycle = async (req, res) => {
       principalPassword
     } = req.body;
 
+    console.log('[DEBUG] Incoming createSchool payload:', req.body);
+
     // Validate required fields
-    if (!name || !code) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+    if (!name?.trim() || !code?.trim()) {
+      console.log('[VALIDATION FAILED - EMPTY VALUES]', { name, code });
+      return res.status(400).json({
         success: false,
         message: 'School name and code are required'
       });
@@ -342,10 +345,11 @@ const createSchoolWithLifecycle = async (req, res) => {
     }
 
     // Validate principal fields (mandatory for school creation)
-    if (!principalEmail || !principalName || !principalPassword) {
+    if (!principalEmail || !principalName) {
+      console.log('[VALIDATION FAILED]', { name, code, principalEmail });
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Principal email, name, and password are required'
+        message: 'Principal email and name are required'
       });
     }
 
@@ -388,24 +392,34 @@ const createSchoolWithLifecycle = async (req, res) => {
     const schoolDataWithPlan = applyPlanToSchool(schoolData, schoolData.plan);
 
     // 1. Create school
-    school = await School.create(schoolDataWithPlan, { session });
+    const createdSchools = await School.create([schoolDataWithPlan], { session });
+    school = createdSchools[0];
+
+    console.log('[DEBUG] School created:', school._id, school.name, school.code);
 
     // 2. Create or assign Principal
     if (principalEmail) {
+      // Auto-generate password if empty
+      const finalPassword = principalPassword?.trim() ? principalPassword : 'Temp@1234';
+      console.log('[DEBUG] Principal password auto-generated:', !principalPassword?.trim());
+
       // Check if principal with this email already exists
-      principal = await User.findOne({ email: principalEmail.toLowerCase() });
+      principal = await User.findOne(
+        { email: principalEmail.toLowerCase() }
+      ).session(session);
       if (principal) {
         // Update existing user to be principal of this school
         principal.role = USER_ROLES.PRINCIPAL;
         principal.schoolId = school._id;
         principal.status = USER_STATUS.ACTIVE;
-        const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
+        const hashedPassword = await hashPassword(finalPassword);
         principal.password = hashedPassword;
         await principal.save({ session });
       } else {
         // Create new principal
-        const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
-        principal = await User.create({
+        const hashedPassword = await hashPassword(finalPassword);
+
+        const principals = await User.create([{
           name: principalName,
           email: principalEmail.toLowerCase(),
           mobile: principalMobile,
@@ -413,16 +427,21 @@ const createSchoolWithLifecycle = async (req, res) => {
           role: USER_ROLES.PRINCIPAL,
           schoolId: school._id,
           status: USER_STATUS.ACTIVE
-        }, { session });
+        }], { session });
+
+        principal = principals[0];
       }
     }
 
     console.log(
       '[PRINCIPAL CREATED]',
+      principal._id,
       principal.email,
       'school:',
       school.code
     );
+
+    console.log('[DEBUG] Principal created:', principal._id, principal.email);
 
     // 3. Apply default plan & limits (create default academic session)
     const currentYear = new Date().getFullYear();
@@ -434,7 +453,19 @@ const createSchoolWithLifecycle = async (req, res) => {
       isActive: true
     }], { session });
 
+    console.log('[DEBUG] Academic session created:', defaultSession[0]._id, 'name:', defaultSession[0].name);
+
+    console.log('[CONFIRM TRANSACTION]', {
+      schoolId: school?._id,
+      principalId: principal?._id,
+      principalEmail: principal?.email
+    });
+
+    console.log('[DEBUG] Ready to commit transaction');
+
     await session.commitTransaction();
+
+    console.log('[DEBUG] Transaction committed successfully');
 
     logger.success(`School lifecycle created: ${school.name} (${school.code})`);
 
@@ -449,6 +480,7 @@ const createSchoolWithLifecycle = async (req, res) => {
     });
   } catch (error) {
     await session.abortTransaction();
+    console.error('[TRANSACTION ABORTED]', error.message);
     logger.error('Create school lifecycle error:', error.message);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
@@ -460,28 +492,25 @@ const createSchoolWithLifecycle = async (req, res) => {
   }
 
   // Log creation action after successful transaction
-  try {
-    await auditLog({
-      action: 'SCHOOL_CREATED',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'SCHOOL',
-      entityId: school._id,
-      description: `Created school "${school.name}" (${school.code}) with lifecycle setup`,
-      schoolId: req.user.schoolId || null,
-      details: {
-        schoolName: school.name,
-        schoolCode: school.code,
-        principalCreated: !!principal,
-        principalEmail: principalEmail,
-        defaultSessionCreated: true,
-        sessionName: defaultSession[0].name
-      },
-      req
-    });
-  } catch (auditError) {
-    console.error('[AUDIT LOG FAILED]', auditError.message);
-    // Continue with response, don't break school creation
+  if (school && school._id && req.user?._id) {
+    try {
+      await auditLog({
+        action: 'SCHOOL_CREATED',
+        userId: req.user._id,
+        role: req.user.role,
+        entityType: 'SCHOOL',
+        entityId: school._id,
+        description: `Created school "${school.name}" (${school.code})`,
+        details: {
+          principalCreated: !!principal,
+          principalEmail: principal?.email || null
+        },
+        req
+      });
+      console.log('[AUDIT LOG SUCCESS]');
+    } catch (err) {
+      console.error('[AUDIT LOG FAILED]', err.message);
+    }
   }
 };
 
