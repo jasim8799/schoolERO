@@ -86,10 +86,16 @@ const register = async (req, res) => {
 // Login User
 const login = async (req, res) => {
   try {
-    const { email, mobile, password } = req.body;
+    let { email, mobile, password } = req.body;
+
+    // Normalize email before querying MongoDB
+    if (email) email = email.toLowerCase();
+
+    console.log('LOGIN REQUEST:', { email, mobile, hasPassword: !!password });
 
     // Validate required fields
     if ((!email && !mobile) || !password) {
+      console.log('LOGIN FAILURE: Missing required fields');
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Email/mobile and password are required'
@@ -105,14 +111,18 @@ const login = async (req, res) => {
     }).select('+password').populate('schoolId', 'name code status');
 
     if (!user) {
+      console.log('LOGIN FAILURE: User not found');
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
+    console.log('LOGIN USER FOUND:', { userId: user._id, role: user.role, status: user.status, schoolStatus: user.schoolId?.status });
+
     // Check if user is active
     if (user.status !== 'active') {
+      console.log('LOGIN FAILURE: User account inactive');
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         message: 'User account is inactive'
@@ -121,6 +131,7 @@ const login = async (req, res) => {
 
     // Check if user's school is active (for non-SUPER_ADMIN users)
     if (user.role !== USER_ROLES.SUPER_ADMIN && user.schoolId && user.schoolId.status !== 'active') {
+      console.log('LOGIN FAILURE: School inactive');
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         message: 'School is currently inactive. Please contact system administrator.'
@@ -130,11 +141,14 @@ const login = async (req, res) => {
     // Compare password
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
+      console.log('LOGIN FAILURE: Invalid password');
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
+
+    console.log('LOGIN SUCCESS: Password valid');
 
     // Generate JWT token
     const token = generateToken({
@@ -161,6 +175,8 @@ const login = async (req, res) => {
     // Remove password from response
     const userResponse = user.toObject();
     delete userResponse.password;
+
+    console.log('LOGIN SUCCESS: Token generated and user logged in');
 
     res.status(HTTP_STATUS.OK).json({
       success: true,

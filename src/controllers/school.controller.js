@@ -386,7 +386,7 @@ const createSchoolWithLifecycle = async (req, res) => {
     const schoolDataWithPlan = applyPlanToSchool(schoolData, schoolData.plan);
 
     // 1. Create school
-    const school = await School.create([schoolDataWithPlan], { session });
+    const school = await School.create(schoolDataWithPlan, { session });
 
     // 2. Create or assign Principal
     let principal;
@@ -396,7 +396,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       if (principal) {
         // Update existing user to be principal of this school
         principal.role = USER_ROLES.PRINCIPAL;
-        principal.schoolId = school[0]._id;
+        principal.schoolId = school._id;
         principal.status = USER_STATUS.ACTIVE;
         const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
         principal.password = hashedPassword;
