@@ -310,6 +310,8 @@ const createSchoolWithLifecycle = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
+  let school, principal, defaultSession;
+
   try {
     const {
       name,
@@ -373,7 +375,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       address,
       contact,
       plan: plan || SAAS_PLANS.BASIC, // Default to BASIC if not specified
-      status: SCHOOL_STATUS.ACTIVE,
+      status: 'active',
       subscription: {
         endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial
         isExpired: false,
@@ -386,10 +388,9 @@ const createSchoolWithLifecycle = async (req, res) => {
     const schoolDataWithPlan = applyPlanToSchool(schoolData, schoolData.plan);
 
     // 1. Create school
-    const school = await School.create(schoolDataWithPlan, { session });
+    school = await School.create(schoolDataWithPlan, { session });
 
     // 2. Create or assign Principal
-    let principal;
     if (principalEmail) {
       // Check if principal with this email already exists
       principal = await User.findOne({ email: principalEmail.toLowerCase() });
@@ -418,7 +419,7 @@ const createSchoolWithLifecycle = async (req, res) => {
 
     // 3. Apply default plan & limits (create default academic session)
     const currentYear = new Date().getFullYear();
-    const defaultSession = await AcademicSession.create([{
+    defaultSession = await AcademicSession.create([{
       name: `${currentYear}-${currentYear + 1}`,
       startDate: new Date(currentYear, 3, 1), // April 1st
       endDate: new Date(currentYear + 1, 2, 31), // March 31st
@@ -427,31 +428,6 @@ const createSchoolWithLifecycle = async (req, res) => {
     }], { session });
 
     await session.commitTransaction();
-
-    // Log creation action
-    try {
-      await auditLog({
-        action: 'SCHOOL_CREATED',
-        userId: req.user._id,
-        role: req.user.role,
-        entityType: 'SCHOOL',
-        entityId: school._id,
-        description: `Created school "${school.name}" (${school.code}) with lifecycle setup`,
-        schoolId: req.user.schoolId || null,
-        details: {
-          schoolName: school.name,
-          schoolCode: school.code,
-          principalCreated: !!principal,
-          principalEmail: principalEmail,
-          defaultSessionCreated: true,
-          sessionName: defaultSession[0].name
-        },
-        req
-      });
-    } catch (auditError) {
-      console.error('[AUDIT LOG FAILED]', auditError.message);
-      // Continue with response, don't break school creation
-    }
 
     logger.success(`School lifecycle created: ${school.name} (${school.code})`);
 
@@ -474,6 +450,31 @@ const createSchoolWithLifecycle = async (req, res) => {
     });
   } finally {
     session.endSession();
+  }
+
+  // Log creation action after successful transaction
+  try {
+    await auditLog({
+      action: 'SCHOOL_CREATED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      description: `Created school "${school.name}" (${school.code}) with lifecycle setup`,
+      schoolId: req.user.schoolId || null,
+      details: {
+        schoolName: school.name,
+        schoolCode: school.code,
+        principalCreated: !!principal,
+        principalEmail: principalEmail,
+        defaultSessionCreated: true,
+        sessionName: defaultSession[0].name
+      },
+      req
+    });
+  } catch (auditError) {
+    console.error('[AUDIT LOG FAILED]', auditError.message);
+    // Continue with response, don't break school creation
   }
 };
 
