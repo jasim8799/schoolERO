@@ -339,6 +339,14 @@ const createSchoolWithLifecycle = async (req, res) => {
       });
     }
 
+    // Validate principal fields (mandatory for school creation)
+    if (!principalEmail || !principalName || !principalPassword) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Principal email, name, and password are required'
+      });
+    }
+
     // Check if school code already exists
     const existingSchool = await School.findOne({ code: code.toUpperCase() });
     if (existingSchool) {
@@ -389,6 +397,7 @@ const createSchoolWithLifecycle = async (req, res) => {
         // Update existing user to be principal of this school
         principal.role = USER_ROLES.PRINCIPAL;
         principal.schoolId = school[0]._id;
+        principal.status = USER_STATUS.ACTIVE;
         const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
         principal.password = hashedPassword;
         await principal.save({ session });
@@ -401,7 +410,8 @@ const createSchoolWithLifecycle = async (req, res) => {
           mobile: principalMobile,
           password: hashedPassword,
           role: USER_ROLES.PRINCIPAL,
-          schoolId: school[0]._id
+          schoolId: school[0]._id,
+          status: USER_STATUS.ACTIVE
         }], { session });
       }
     }
