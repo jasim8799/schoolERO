@@ -8,6 +8,7 @@ const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog_new.js');
 const { applyPlanToSchool, getPlanConfig } = require('../utils/planManager.js');
 const bcrypt = require('bcrypt');
+const { hashPassword } = require('../utils/password.js');
 const { createUser } = require('./user.controller.js');
 const { createTeacher: createTeacherProfile } = require('./teacher.controller.js');
 
@@ -389,12 +390,12 @@ const createSchoolWithLifecycle = async (req, res) => {
         principal.role = USER_ROLES.PRINCIPAL;
         principal.schoolId = school[0]._id;
         if (principalPassword) {
-          principal.password = await bcrypt.hash(principalPassword, 12);
+          principal.password = await hashPassword(principalPassword);
         }
         await principal.save({ session });
       } else {
         // Create new principal
-        const hashedPassword = await bcrypt.hash(principalPassword || 'TempPass123!', 12);
+        const hashedPassword = await hashPassword(principalPassword || 'TempPass123!');
         principal = await User.create([{
           name: principalName,
           email: principalEmail.toLowerCase(),
@@ -1319,7 +1320,7 @@ const createOperator = async (req, res) => {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await hashPassword(password);
 
     // Create operator (always set role to OPERATOR regardless of input)
     const operator = await User.create({
