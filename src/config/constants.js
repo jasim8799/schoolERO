@@ -19,7 +19,7 @@ const SCHOOL_STATUS = {
 
 const SCHOOL_MODULES = {
   attendance: 'attendance',
-  exam: 'exam',
+  exams: 'exams',
   fees: 'fees',
   transport: 'transport',
   hostel: 'hostel',
@@ -34,7 +34,15 @@ const SCHOOL_MODULES = {
   online_payments: 'online_payments',
   classes: 'classes',
   sections: 'sections',
-  subjects: 'subjects'
+  subjects: 'subjects',
+  schools: 'schools',
+  users: 'users',
+  teachers: 'teachers',
+  students: 'students',
+  parents: 'parents',
+  dashboard: 'dashboard',
+  system: 'system',
+  expenses: 'expenses'
 };
 
 const SAAS_PLANS = {
@@ -54,7 +62,7 @@ const PLAN_CONFIGS = {
     },
     modules: {
       attendance: true,
-      exam: false,
+      exams: false,
       fees: true,
       transport: false,
       hostel: false,
@@ -69,7 +77,15 @@ const PLAN_CONFIGS = {
       online_payments: false,
       classes: true,
       sections: true,
-      subjects: true
+      subjects: true,
+      schools: false,
+      users: false,
+      teachers: false,
+      students: false,
+      parents: false,
+      dashboard: true,
+      system: false,
+      expenses: false
     }
   },
   [SAAS_PLANS.STANDARD]: {
@@ -82,7 +98,7 @@ const PLAN_CONFIGS = {
     },
     modules: {
       attendance: true,
-      exam: true,
+      exams: true,
       fees: true,
       transport: true,
       hostel: false,
@@ -97,7 +113,15 @@ const PLAN_CONFIGS = {
       online_payments: true,
       classes: true,
       sections: true,
-      subjects: true
+      subjects: true,
+      schools: true,
+      users: true,
+      teachers: true,
+      students: true,
+      parents: true,
+      dashboard: true,
+      system: true,
+      expenses: true
     }
   },
   [SAAS_PLANS.PREMIUM]: {
@@ -110,7 +134,7 @@ const PLAN_CONFIGS = {
     },
     modules: {
       attendance: true,
-      exam: true,
+      exams: true,
       fees: true,
       transport: true,
       hostel: true,
@@ -125,7 +149,15 @@ const PLAN_CONFIGS = {
       online_payments: true,
       classes: true,
       sections: true,
-      subjects: true
+      subjects: true,
+      schools: true,
+      users: true,
+      teachers: true,
+      students: true,
+      parents: true,
+      dashboard: true,
+      system: true,
+      expenses: true
     }
   }
 };
