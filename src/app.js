@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const { config } = require('./config/env');
+const { authenticate } = require('./middlewares/auth.middleware.js');
+const { attachSchoolId } = require('./middlewares/school.middleware.js');
 const { checkSubscriptionStatus } = require('./middlewares/subscription.middleware');
 const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
@@ -59,23 +61,23 @@ app.use('/api', checkMaintenanceMode);
 // Audit routes (require authentication and role checking)
 app.use('/api/audit', auditRoutes);
 
-// Apply subscription and module access checks to tenant routes
-app.use('/api/schools', checkSubscriptionStatus(), checkModuleAccess('schools'), schoolRoutes);
-app.use('/api/users', checkSubscriptionStatus(), checkModuleAccess('users'), userRoutes);
-app.use('/api/classes', checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
-app.use('/api/sections', checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
-app.use('/api/subjects', checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
-app.use('/api/teachers', checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
-app.use('/api/parents', checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
-app.use('/api/attendance', checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
-app.use('/api/students', checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
-app.use('/api/exams', checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
-app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), feeStructureRoutes);
-app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), studentFeeRoutes);
-app.use('/api/fees', checkSubscriptionStatus(), checkModuleAccess('fees'), feePaymentRoutes);
-app.use('/api/expenses', checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
-app.use('/api/salary', checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
-app.use('/api/reports', checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
+// Apply authentication, school attachment, subscription and module access checks to tenant routes
+app.use('/api/schools', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('schools'), schoolRoutes);
+app.use('/api/users', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('users'), userRoutes);
+app.use('/api/classes', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
+app.use('/api/sections', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
+app.use('/api/subjects', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
+app.use('/api/teachers', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
+app.use('/api/parents', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
+app.use('/api/attendance', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
+app.use('/api/students', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
+app.use('/api/exams', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
+app.use('/api/fees', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), feeStructureRoutes);
+app.use('/api/fees', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), studentFeeRoutes);
+app.use('/api/fees', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), feePaymentRoutes);
+app.use('/api/expenses', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
+app.use('/api/salary', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
+app.use('/api/reports', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/version', versionRoutes);
 

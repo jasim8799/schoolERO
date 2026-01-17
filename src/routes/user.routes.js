@@ -15,9 +15,6 @@ const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authenticate);
-
 // POST /api/users - Create user
 // Only PRINCIPAL and OPERATOR can create users
 // Cannot create users for other schools
@@ -26,7 +23,6 @@ router.use(authenticate);
 router.post(
   '/',
   requireMinRole(USER_ROLES.OPERATOR),
-  attachSchoolId,
   canAssignRole,
   enforceSchoolIsolation,
   async (req, res, next) => {
