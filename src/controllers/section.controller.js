@@ -10,10 +10,11 @@ const { auditLog } = require('../utils/auditLog_new.js');
 const createSection = async (req, res) => {
   try {
     const { name, classId } = req.body;
-    const { schoolId, sessionId } = req.user;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.sessionId;
 
     // Validate required fields
-    if (!name || !classId || !req.user.schoolId || !req.user.sessionId) {
+    if (!name || !classId || !schoolId || !sessionId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Section name and classId are required, and user must have schoolId and sessionId'
@@ -103,7 +104,7 @@ const getAllSections = async (req, res) => {
     // Build filter
     const filter = {
       schoolId: req.user.schoolId,
-      sessionId: req.user.sessionId
+      sessionId: req.sessionId
     };
     if (classId) filter.classId = classId;
 
@@ -138,7 +139,7 @@ const getSectionById = async (req, res) => {
       .populate('schoolId', 'name code')
       .populate('sessionId', 'name startDate endDate');
 
-    if (!section || section.schoolId.toString() !== req.user.schoolId.toString() || section.sessionId.toString() !== req.user.sessionId.toString()) {
+    if (!section || section.schoolId.toString() !== req.user.schoolId.toString() || section.sessionId.toString() !== req.sessionId.toString()) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'Section not found'
