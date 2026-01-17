@@ -68,7 +68,7 @@ app.use('/api/users', authenticate, attachSchoolId, checkSubscriptionStatus(), c
 app.use('/api/classes', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
 app.use('/api/sections', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
 app.use('/api/subjects', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
-app.use('/api/teachers', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
+app.use('/api/teachers', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
 app.use('/api/parents', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
 app.use('/api/attendance', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
 app.use('/api/students', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
