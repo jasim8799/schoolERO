@@ -9,13 +9,14 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create Section
 const createSection = async (req, res) => {
   try {
-    const { name, classId, schoolId, sessionId } = req.body;
+    const { name, classId } = req.body;
+    const { schoolId, sessionId } = req.user;
 
     // Validate required fields
-    if (!name || !classId || !schoolId || !sessionId) {
+    if (!name || !classId || !req.user.schoolId || !req.user.sessionId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Section name, classId, schoolId, and sessionId are required'
+        message: 'Section name and classId are required, and user must have schoolId and sessionId'
       });
     }
 
@@ -97,13 +98,14 @@ const createSection = async (req, res) => {
 // Get All Sections (with optional filters)
 const getAllSections = async (req, res) => {
   try {
-    const { classId, schoolId, sessionId } = req.query;
+    const { classId } = req.query;
 
     // Build filter
-    const filter = {};
+    const filter = {
+      schoolId: req.user.schoolId,
+      sessionId: req.user.sessionId
+    };
     if (classId) filter.classId = classId;
-    if (schoolId) filter.schoolId = schoolId;
-    if (sessionId) filter.sessionId = sessionId;
 
     const sections = await Section.find(filter)
       .populate('classId', 'name')
@@ -136,7 +138,7 @@ const getSectionById = async (req, res) => {
       .populate('schoolId', 'name code')
       .populate('sessionId', 'name startDate endDate');
 
-    if (!section) {
+    if (!section || section.schoolId.toString() !== req.user.schoolId.toString() || section.sessionId.toString() !== req.user.sessionId.toString()) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'Section not found'
