@@ -49,18 +49,18 @@ const enforceSchoolIsolation = (req, res, next) => {
     return next();
   }
 
-  // Check if schoolId is provided in request body or params
-  const requestSchoolId = req.body.schoolId || req.params.schoolId || req.query.schoolId;
-
-  if (!requestSchoolId) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+  // For non-SUPER_ADMIN users, schoolId MUST come from JWT
+  const userSchoolId = req.user.schoolId;
+  if (!userSchoolId) {
+    return res.status(HTTP_STATUS.FORBIDDEN).json({
       success: false,
-      message: 'School ID is required'
+      message: 'User is not assigned to any school'
     });
   }
 
-  // Ensure user can only access their own school
-  if (req.user.schoolId && requestSchoolId !== req.user.schoolId.toString()) {
+  // If schoolId is provided in request, it must match req.user.schoolId
+  const requestSchoolId = req.body.schoolId || req.params.schoolId || req.query.schoolId;
+  if (requestSchoolId && requestSchoolId !== userSchoolId.toString()) {
     return res.status(HTTP_STATUS.FORBIDDEN).json({
       success: false,
       message: 'Access denied. Cannot access other school\'s data.'
