@@ -2,12 +2,16 @@ const express = require('express');
 const { createClass, getAllClasses, getClassById } = require('../controllers/class.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { attachSchoolId } = require('../middlewares/school.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
-// All class routes require authentication
+// Authenticate user
 router.use(authenticate);
+
+// Attach schoolId from JWT (CRITICAL)
+router.use(attachSchoolId);
 
 // POST /api/classes - Create class (SUPER_ADMIN, PRINCIPAL, OPERATOR)
 router.post('/', requireMinRole(USER_ROLES.OPERATOR), createClass);
