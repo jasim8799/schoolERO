@@ -24,16 +24,14 @@ router.post(
   '/',
   requireMinRole(USER_ROLES.OPERATOR),
   canAssignRole,
-  enforceSchoolIsolation,
   async (req, res, next) => {
-    // Check limits based on role being created
     const { role } = req.body;
+
     if (role === USER_ROLES.STUDENT) {
       return checkStudentLimit(req, res, next);
     } else if (role === USER_ROLES.TEACHER) {
       return checkTeacherLimit(req, res, next);
     }
-    // No limit check for other roles
     next();
   },
   createUser
@@ -43,18 +41,20 @@ router.post(
 // Filter by user's school (except SUPER_ADMIN)
 router.get(
   '/', 
+  enforceSchoolIsolation,
   filterBySchool,
   getAllUsers
 );
 
 // GET /api/users/:id - Get user by ID
-router.get('/:id', getUserById);
+router.get('/:id', enforceSchoolIsolation, getUserById);
 
 // PATCH /api/users/:id - Update user
 // Only PRINCIPAL and above can update users
 router.patch(
   '/:id', 
   requireMinRole(USER_ROLES.PRINCIPAL),
+  enforceSchoolIsolation,
   updateUser
 );
 
@@ -63,6 +63,7 @@ router.patch(
 router.delete(
   '/:id', 
   requireMinRole(USER_ROLES.PRINCIPAL),
+  enforceSchoolIsolation,
   deleteUser
 );
 
