@@ -43,7 +43,7 @@ const authenticate = async (req, res, next) => {
       userId: user._id,
       name: user.name,
       role: user.role,
-      schoolId: decoded.schoolId,
+      schoolId: user.schoolId,   // <-- FIX: FROM DATABASE
       sessionId: decoded.sessionId
     };
 
