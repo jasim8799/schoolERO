@@ -41,8 +41,7 @@ const authenticate = async (req, res, next) => {
     req.user = {
       userId: decoded.userId,
       role: decoded.role,
-      schoolId: decoded.schoolId,
-      sessionId: decoded.sessionId // Include sessionId from JWT
+      schoolId: decoded.schoolId
     };
 
     next();
