@@ -712,7 +712,7 @@ const getCurrentUserSchoolModules = async (req, res) => {
     if (!schoolId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'School ID not found in user token'
+        message: 'School not linked to user'
       });
     }
 
@@ -767,7 +767,7 @@ const getCurrentUserSchoolOnlinePayments = async (req, res) => {
     if (!schoolId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'School ID not found in user token'
+        message: 'School not linked to user'
       });
     }
 
@@ -984,7 +984,7 @@ const getCurrentUserSchoolSubscription = async (req, res) => {
     if (!schoolId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'School ID not found in user token'
+        message: 'School not linked to user'
       });
     }
 
@@ -1269,7 +1269,7 @@ const createOperator = async (req, res) => {
       });
     }
 
-    if (!req.user.schoolId || req.user.schoolId.toString() !== schoolId) {
+    if (!req.user.schoolId || req.user.schoolId.toString() !== schoolId.toString()) {
       await auditLog({
         action: 'OPERATOR_CREATION_FAILED',
         userId: req.user._id,
