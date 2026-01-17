@@ -7,18 +7,15 @@ const teacherSchema = new mongoose.Schema({
     required: [true, 'User ID is required'],
     unique: true
   },
-  assignedClasses: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Class'
-  }],
-  assignedSubjects: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Subject'
-  }],
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',
     required: [true, 'School ID is required']
+  },
+  sessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicSession',
+    required: [true, 'Session ID is required']
   },
   status: {
     type: String,

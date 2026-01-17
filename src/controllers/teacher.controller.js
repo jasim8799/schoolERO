@@ -10,22 +10,15 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create Teacher
 const createTeacher = async (req, res) => {
   try {
-    const { userId, assignedClasses, assignedSubjects, schoolId } = req.body;
+    const { userId } = req.body;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.sessionId;
 
     // Validate required fields
-    if (!userId || !schoolId) {
+    if (!userId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'userId and schoolId are required'
-      });
-    }
-
-    // Verify school exists
-    const school = await School.findById(schoolId);
-    if (!school) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'School not found'
+        message: 'userId is required'
       });
     }
 
@@ -47,34 +40,11 @@ const createTeacher = async (req, res) => {
       });
     }
 
-    // Validate assigned classes (if provided)
-    if (assignedClasses && assignedClasses.length > 0) {
-      const classes = await Class.find({ _id: { $in: assignedClasses }, schoolId });
-      if (classes.length !== assignedClasses.length) {
-        return res.status(HTTP_STATUS.BAD_REQUEST).json({
-          success: false,
-          message: 'One or more assigned classes do not belong to this school'
-        });
-      }
-    }
-
-    // Validate assigned subjects (if provided)
-    if (assignedSubjects && assignedSubjects.length > 0) {
-      const subjects = await Subject.find({ _id: { $in: assignedSubjects }, schoolId });
-      if (subjects.length !== assignedSubjects.length) {
-        return res.status(HTTP_STATUS.BAD_REQUEST).json({
-          success: false,
-          message: 'One or more assigned subjects do not belong to this school'
-        });
-      }
-    }
-
     // Create teacher
     const newTeacher = await Teacher.create({
       userId,
-      assignedClasses: assignedClasses || [],
-      assignedSubjects: assignedSubjects || [],
       schoolId,
+      sessionId,
       status: 'active'
     });
 
@@ -83,7 +53,7 @@ const createTeacher = async (req, res) => {
       action: 'TEACHER_CREATED',
       userId: req.user.userId,
       schoolId,
-      details: { teacherUserId: userId, teacherId: newTeacher._id, assignedClasses, assignedSubjects }
+      details: { teacherUserId: userId, teacherId: newTeacher._id }
     });
 
     logger.success(`Teacher profile created for user ${userId}`);
@@ -115,8 +85,6 @@ const getAllTeachers = async (req, res) => {
     const teachers = await Teacher.find(filter)
       .populate('userId', 'name email')
       .populate('schoolId', 'name code')
-      .populate('assignedClasses', 'name')
-      .populate('assignedSubjects', 'name')
       .sort({ createdAt: -1 });
 
     res.status(HTTP_STATUS.OK).json({
@@ -141,9 +109,7 @@ const getTeacherById = async (req, res) => {
 
     const teacher = await Teacher.findById(id)
       .populate('userId', 'name email')
-      .populate('schoolId', 'name code')
-      .populate('assignedClasses', 'name')
-      .populate('assignedSubjects', 'name');
+      .populate('schoolId', 'name code');
 
     if (!teacher) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
@@ -226,6 +192,5 @@ const updateTeacherAssignments = async (req, res) => {
 module.exports = {
   createTeacher,
   getAllTeachers,
-  getTeacherById,
-  updateTeacherAssignments
+  getTeacherById
 };
