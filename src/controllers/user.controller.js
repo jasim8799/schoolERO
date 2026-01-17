@@ -8,7 +8,8 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create User
 const createUser = async (req, res) => {
   try {
-    const { name, email, mobile, password, role, schoolId, status } = req.body;
+    const { name, email, mobile, password, role, status } = req.body;
+    const schoolId = role === USER_ROLES.SUPER_ADMIN ? null : req.user.schoolId;
 
     // Validate required fields
     if (!name || !password || !role) {
@@ -23,14 +24,6 @@ const createUser = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Either email or mobile is required'
-      });
-    }
-
-    // Validate schoolId for non-SUPER_ADMIN roles
-    if (role !== USER_ROLES.SUPER_ADMIN && !schoolId) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
-        success: false,
-        message: 'School ID is required for this role'
       });
     }
 
@@ -70,7 +63,7 @@ const createUser = async (req, res) => {
       mobile,
       password: hashedPassword,
       role,
-      schoolId: role === USER_ROLES.SUPER_ADMIN ? null : schoolId,
+      schoolId,
       status: status || 'active'
     });
 
