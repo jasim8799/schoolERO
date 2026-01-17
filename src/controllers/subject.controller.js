@@ -9,31 +9,15 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create Subject
 const createSubject = async (req, res) => {
   try {
-    const { name, classId, schoolId, sessionId } = req.body;
+    const { name, classId } = req.body;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.sessionId;
 
     // Validate required fields
-    if (!name || !classId || !schoolId || !sessionId) {
+    if (!name || !classId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Subject name, classId, schoolId, and sessionId are required'
-      });
-    }
-
-    // Verify school exists
-    const school = await School.findById(schoolId);
-    if (!school) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'School not found'
-      });
-    }
-
-    // Verify session exists and belongs to school
-    const session = await AcademicSession.findOne({ _id: sessionId, schoolId });
-    if (!session) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'Session not found or does not belong to the specified school'
+        message: 'Subject name and classId are required'
       });
     }
 
@@ -92,13 +76,11 @@ const createSubject = async (req, res) => {
 // Get All Subjects (with optional filters)
 const getAllSubjects = async (req, res) => {
   try {
-    const { classId, schoolId, sessionId } = req.query;
+    const { classId } = req.query;
 
     // Build filter
-    const filter = {};
+    const filter = { schoolId: req.user.schoolId, sessionId: req.sessionId };
     if (classId) filter.classId = classId;
-    if (schoolId) filter.schoolId = schoolId;
-    if (sessionId) filter.sessionId = sessionId;
 
     const subjects = await Subject.find(filter)
       .populate('classId', 'name')
@@ -126,7 +108,7 @@ const getSubjectById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const subject = await Subject.findById(id)
+    const subject = await Subject.findOne({ _id: id, schoolId: req.user.schoolId, sessionId: req.sessionId })
       .populate('classId', 'name')
       .populate('schoolId', 'name code')
       .populate('sessionId', 'name startDate endDate');

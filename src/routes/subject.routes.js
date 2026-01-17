@@ -1,13 +1,9 @@
 const express = require('express');
 const { createSubject, getAllSubjects, getSubjectById } = require('../controllers/subject.controller.js');
-const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
-
-// All subject routes require authentication
-router.use(authenticate);
 
 // POST /api/subjects - Create subject (PRINCIPAL, OPERATOR)
 router.post('/', requireMinRole(USER_ROLES.OPERATOR), createSubject);
