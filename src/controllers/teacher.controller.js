@@ -192,5 +192,6 @@ const updateTeacherAssignments = async (req, res) => {
 module.exports = {
   createTeacher,
   getAllTeachers,
-  getTeacherById
+  getTeacherById,
+  updateTeacherAssignments
 };
