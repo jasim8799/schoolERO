@@ -18,20 +18,23 @@ const SCHOOL_STATUS = {
 };
 
 const SCHOOL_MODULES = {
-  ATTENDANCE: 'attendance',
-  EXAM: 'exam',
-  FEES: 'fees',
-  TRANSPORT: 'transport',
-  HOSTEL: 'hostel',
-  ACADEMIC_HISTORY: 'academic_history',
-  PROMOTION: 'promotion',
-  TC: 'tc',
-  HOMEWORK: 'homework',
-  NOTICES: 'notices',
-  VIDEOS: 'videos',
-  REPORTS: 'reports',
-  SALARY: 'salary',
-  ONLINE_PAYMENTS: 'online_payments'
+  attendance: 'attendance',
+  exam: 'exam',
+  fees: 'fees',
+  transport: 'transport',
+  hostel: 'hostel',
+  academic_history: 'academic_history',
+  promotion: 'promotion',
+  tc: 'tc',
+  homework: 'homework',
+  notices: 'notices',
+  videos: 'videos',
+  reports: 'reports',
+  salary: 'salary',
+  online_payments: 'online_payments',
+  classes: 'classes',
+  sections: 'sections',
+  subjects: 'subjects'
 };
 
 const SAAS_PLANS = {
@@ -63,7 +66,10 @@ const PLAN_CONFIGS = {
       videos: false,
       reports: true,
       salary: false,
-      online_payments: false
+      online_payments: false,
+      classes: true,
+      sections: true,
+      subjects: true
     }
   },
   [SAAS_PLANS.STANDARD]: {
@@ -88,7 +94,10 @@ const PLAN_CONFIGS = {
       videos: true,
       reports: true,
       salary: true,
-      online_payments: true
+      online_payments: true,
+      classes: true,
+      sections: true,
+      subjects: true
     }
   },
   [SAAS_PLANS.PREMIUM]: {
@@ -113,7 +122,10 @@ const PLAN_CONFIGS = {
       videos: true,
       reports: true,
       salary: true,
-      online_payments: true
+      online_payments: true,
+      classes: true,
+      sections: true,
+      subjects: true
     }
   }
 };
