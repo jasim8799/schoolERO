@@ -14,8 +14,12 @@ const router = express.Router();
 // All session routes require authentication
 router.use(authenticate);
 
-// POST /api/sessions - Create session (SUPER_ADMIN/PRINCIPAL)
-router.post('/', requireMinRole(USER_ROLES.PRINCIPAL), createSession);
+// POST /api/sessions - Create session (PRINCIPAL / SUPER_ADMIN)
+router.post(
+  '/',
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  createSession
+);
 
 // GET /api/sessions/school/:schoolId - Get all sessions for a school
 router.get('/school/:schoolId', getSessionsBySchool);
@@ -23,7 +27,11 @@ router.get('/school/:schoolId', getSessionsBySchool);
 // GET /api/sessions/active/:schoolId - Get active session for a school
 router.get('/active/:schoolId', getActiveSession);
 
-// PATCH /api/sessions/:id - Update session (activate/deactivate)
-router.patch('/:id', requireMinRole(USER_ROLES.PRINCIPAL), updateSession);
+// PATCH /api/sessions/:id - Activate / deactivate session
+router.patch(
+  '/:id',
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  updateSession
+);
 
 module.exports = router;
