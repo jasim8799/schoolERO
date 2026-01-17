@@ -18,11 +18,14 @@ const checkSubscriptionStatus = (allowReadOnly = false) => {
       const schoolId = req.user?.schoolId;
 
       if (!schoolId) {
-        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-          success: false,
-          message: 'School ID not found in token'
-        });
-      }
+if (req.method === 'GET') {
+return next();
+}
+return res.status(HTTP_STATUS.FORBIDDEN).json({
+success: false,
+message: 'School context missing'
+});
+}
 
       // Fetch school with subscription details
       const school = await School.findById(schoolId).select('subscription name code');
