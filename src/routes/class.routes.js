@@ -2,18 +2,34 @@ const express = require('express');
 const { createClass, getAllClasses, getClassById } = require('../controllers/class.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
-const { attachSchoolId } = require('../middlewares/school.middleware.js');
+const { attachActiveSession } = require('../middlewares/session.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
-// POST /api/classes - Create class (SUPER_ADMIN, PRINCIPAL, OPERATOR)
-router.post('/', requireMinRole(USER_ROLES.OPERATOR), createClass);
+// 🔐 Authentication (mandatory)
+router.use(authenticate);
 
-// GET /api/classes - Get all classes (SUPER_ADMIN, PRINCIPAL, OPERATOR)
-router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllClasses);
+// POST /api/classes - Create class
+router.post(
+  '/',
+  requireMinRole(USER_ROLES.OPERATOR),
+  attachActiveSession,   // ✅ auto-adds sessionId
+  createClass
+);
+
+// GET /api/classes - Get all classes
+router.get(
+  '/',
+  requireMinRole(USER_ROLES.OPERATOR),
+  getAllClasses
+);
 
 // GET /api/classes/:id - Get class by ID
-router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getClassById);
+router.get(
+  '/:id',
+  requireMinRole(USER_ROLES.OPERATOR),
+  getClassById
+);
 
 module.exports = router;
