@@ -5,7 +5,8 @@ const {
   getUserById,
   updateUser,
   deleteUser,
-  reactivateUser
+  reactivateUser,
+  setUserPassword
 } = require('../controllers/user.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
@@ -70,9 +71,17 @@ router.delete(
 // PATCH /api/users/:id/reactivate - Reactivate user
 // Only PRINCIPAL and above can reactivate users
 router.patch(
-  '/:id/reactivate', 
+  '/:id/reactivate',
   requireMinRole(USER_ROLES.PRINCIPAL),
   reactivateUser
+);
+
+// PATCH /api/users/:id/set-password - Set user password
+// Only OPERATOR and above can reset passwords
+router.patch(
+  '/:id/set-password',
+  requireMinRole(USER_ROLES.OPERATOR),
+  setUserPassword
 );
 
 module.exports = router;

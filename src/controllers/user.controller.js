@@ -170,13 +170,29 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, mobile, status, role } = req.body;
+    const { name, email, mobile, status, role, password } = req.body;
+
+    // Block password updates
+    if (password) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Password updates are not allowed here. Use set-password API.'
+      });
+    }
 
     const user = await User.findById(id);
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    // Restrict role changes for OPERATOR
+    if (role && req.user.role === USER_ROLES.OPERATOR) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Operators cannot change user roles'
       });
     }
 
@@ -332,11 +348,76 @@ const reactivateUser = async (req, res) => {
   }
 };
 
+// Set User Password
+const setUserPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    // Validate password
+    if (!password || password.length < 6) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Find user with password
+    const user = await User.findById(id).select('+password');
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // School-level safety check
+    if (user.schoolId && user.schoolId.toString() !== req.user.schoolId && req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Access denied. Cannot reset password for users from other schools'
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await hashPassword(password);
+
+    // Update password
+    user.password = hashedPassword;
+    await user.save();
+
+    logger.success(`Password reset for user: ${user.name} by ${req.user.role}`);
+
+    // Create audit log
+    await auditLog({
+      action: 'PASSWORD_RESET',
+      userId: req.user.userId,
+      schoolId: user.schoolId,
+      targetUserId: user._id,
+      details: { resetBy: req.user.role },
+      req
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+  } catch (error) {
+    logger.error('Set user password error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error resetting password',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
   getUserById,
   updateUser,
   deleteUser,
-  reactivateUser
+  reactivateUser,
+  setUserPassword
 };
