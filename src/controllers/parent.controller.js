@@ -1,6 +1,5 @@
 const Parent = require('../models/Parent.js');
 const User = require('../models/User.js');
-const School = require('../models/School.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog_new.js');
@@ -8,30 +7,14 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create Parent
 const createParent = async (req, res) => {
   try {
-    const { userId, whatsappNumber, schoolId } = req.body;
+    const { userId, whatsappNumber } = req.body;
+    const schoolId = req.user.schoolId;
 
     // Validate required fields
-    if (!userId || !schoolId) {
+    if (!userId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'userId and schoolId are required'
-      });
-    }
-
-    // Verify school exists and matches logged-in user's school
-    const school = await School.findById(schoolId);
-    if (!school) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'School not found'
-      });
-    }
-
-    // Verify schoolId matches logged-in user's school
-    if (req.user.schoolId && req.user.schoolId.toString() !== schoolId) {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'You can only create parents for your own school'
+        message: 'userId is required'
       });
     }
 
@@ -69,18 +52,9 @@ const createParent = async (req, res) => {
     // Audit log
     await auditLog({
       action: 'PARENT_CREATED',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'Parent',
-      entityId: newParent._id,
-      description: `Parent profile created for user "${user.name}" (${user.mobile})`,
-      details: {
-        parentUserId: userId,
-        parentId: newParent._id,
-        schoolId,
-        whatsappNumber: whatsappNumber || null
-      },
-      req
+      userId: req.user.userId,
+      schoolId,
+      details: { parentUserId: userId, parentId: newParent._id }
     });
 
     logger.success(`Parent profile created for user ${userId} (${user.name})`);
