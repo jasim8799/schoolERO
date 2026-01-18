@@ -2,7 +2,6 @@ const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
 const Class = require('../models/Class.js');
 const Section = require('../models/Section.js');
-const School = require('../models/School.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
@@ -17,27 +16,19 @@ const createStudent = async (req, res) => {
       classId,
       sectionId,
       parentId,
-      schoolId,
-      sessionId,
       dateOfBirth,
       gender,
       address
     } = req.body;
 
+    const schoolId = req.user.schoolId;
+    const sessionId = req.sessionId;
+
     // Validate required fields
-    if (!name || !rollNumber || !classId || !sectionId || !parentId || !schoolId || !sessionId) {
+    if (!name || !rollNumber || !classId || !sectionId || !parentId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'name, rollNumber, classId, sectionId, parentId, schoolId, and sessionId are required'
-      });
-    }
-
-    // Verify school exists
-    const school = await School.findById(schoolId);
-    if (!school) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'School not found'
+        message: 'name, rollNumber, classId, sectionId, and parentId are required'
       });
     }
 
