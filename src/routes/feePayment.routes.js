@@ -15,7 +15,6 @@ const router = express.Router();
 
 // Manual payments (Principal / Operator logic handled in controller)
 router.post('/pay/manual', payManual);
-router.get('/payments/student/:id', getPaymentsByStudent);
 
 // Online payments (Parent logic handled in controller)
 router.post('/pay/online/initiate', checkOnlinePaymentAccess, initiateOnlinePayment);
@@ -25,6 +24,8 @@ router.get(
   requireRole('PARENT'),
   getMyPayments
 );
+
+router.get('/payments/student/:id', getPaymentsByStudent);
 
 // Receipt download
 router.get('/receipt/:receiptNo', getReceipt);

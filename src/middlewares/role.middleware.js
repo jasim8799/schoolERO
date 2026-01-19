@@ -13,14 +13,6 @@ const ROLE_HIERARCHY = {
 // Check if user has required role
 const requireRole = (...allowedRoles) => {
   return (req, res, next) => {
-    // TEMPORARY DEBUG LOGS - REMOVE AFTER FIXING
-    console.log('=== REQUIRE ROLE DEBUG ===');
-    console.log('URL:', req.originalUrl);
-    console.log('Method:', req.method);
-    console.log('Full req.user:', JSON.stringify(req.user, null, 2));
-    console.log('Allowed Roles:', allowedRoles);
-    console.log('===========================');
-
     if (!req.user) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
