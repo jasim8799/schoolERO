@@ -32,7 +32,7 @@ const checkOnlinePaymentAccess = async (req, res, next) => {
     }
 
     // Check if online payments module is enabled for the plan
-    const planAllowsOnlinePayments = school.modules?.online_payments ?? false;
+    const planAllowsOnlinePayments = school.modules?.online_payments ?? true;
 
     // Check if admin has enabled online payments
     const adminEnabledOnlinePayments = school.onlinePaymentsEnabled ?? true;
