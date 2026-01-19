@@ -274,12 +274,7 @@ const verifyOnlinePayment = async (req, res) => {
 // Get payments for logged-in parent's child
 const getMyPayments = async (req, res) => {
   try {
-    const { schoolId, _id: userId, role } = req.user;
-
-    // Validate user is a parent
-    if (role !== 'PARENT') {
-      return res.status(403).json({ message: 'Only parents can access this endpoint' });
-    }
+    const { schoolId, _id: userId } = req.user;
 
     // Get parent details to find associated student
     const parent = await Parent.findOne({ userId, schoolId });
