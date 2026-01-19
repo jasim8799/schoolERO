@@ -22,7 +22,7 @@ router.post('/pay/manual', requireRole('PRINCIPAL', 'OPERATOR'), payManual);
 router.get('/payments/student/:id', requireRole('PRINCIPAL', 'OPERATOR'), getPaymentsByStudent);
 
 // Online payment routes (Parents only)
-router.post('/pay/online/init', requireRole('PARENT'), checkOnlinePaymentAccess, initiateOnlinePayment);
+router.post('/pay/online/initiate', requireRole('PARENT'), checkOnlinePaymentAccess, initiateOnlinePayment);
 router.post('/pay/online/verify', requireRole('PRINCIPAL', 'OPERATOR'), verifyOnlinePayment);
 router.get('/payments/student/me', requireRole('PARENT'), getMyPayments);
 
