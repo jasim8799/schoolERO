@@ -20,10 +20,11 @@ const requireRole = (...allowedRoles) => {
       });
     }
 
-    const userRole = req.user.role;
+    const userRole = req.user.role?.toUpperCase();
+    const normalizedAllowedRoles = allowedRoles.map(r => r.toUpperCase());
 
     // Check if user's role is in allowed roles
-    if (!allowedRoles.includes(userRole)) {
+    if (!normalizedAllowedRoles.includes(userRole)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         message: 'Access denied. Insufficient permissions.'
@@ -44,8 +45,8 @@ const requireMinRole = (minRole) => {
       });
     }
 
-    const userRoleLevel = ROLE_HIERARCHY[req.user.role] || 0;
-    const minRoleLevel = ROLE_HIERARCHY[minRole] || 0;
+    const userRoleLevel = ROLE_HIERARCHY[req.user.role?.toUpperCase()] || 0;
+    const minRoleLevel = ROLE_HIERARCHY[minRole?.toUpperCase()] || 0;
 
     if (userRoleLevel < minRoleLevel) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
@@ -61,8 +62,8 @@ const requireMinRole = (minRole) => {
 // Prevent users from assigning roles higher than their own
 const canAssignRole = (req, res, next) => {
   const { role: targetRole } = req.body;
-  const userRoleLevel = ROLE_HIERARCHY[req.user.role] || 0;
-  const targetRoleLevel = ROLE_HIERARCHY[targetRole] || 0;
+  const userRoleLevel = ROLE_HIERARCHY[req.user.role?.toUpperCase()] || 0;
+  const targetRoleLevel = ROLE_HIERARCHY[targetRole?.toUpperCase()] || 0;
 
   if (targetRoleLevel >= userRoleLevel) {
     return res.status(HTTP_STATUS.FORBIDDEN).json({
