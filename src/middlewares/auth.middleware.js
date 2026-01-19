@@ -42,7 +42,7 @@ const authenticate = async (req, res, next) => {
       _id: user._id,
       userId: user._id,
       name: user.name,
-      role: user.role,
+      role: user.role?.toUpperCase(),
       schoolId: user.schoolId ? user.schoolId.toString() : null,
       sessionId: decoded.sessionId
     };
