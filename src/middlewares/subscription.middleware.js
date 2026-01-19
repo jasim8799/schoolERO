@@ -14,6 +14,11 @@ const checkSubscriptionStatus = (allowReadOnly = false) => {
         return next();
       }
 
+      // PARENT bypass (allow online payments even if subscription expired)
+      if (req.user?.role === USER_ROLES.PARENT) {
+        return next();
+      }
+
       // Get schoolId from JWT token
       const schoolId = req.user?.schoolId;
 
