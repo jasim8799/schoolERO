@@ -9,6 +9,7 @@ const {
 } = require('../controllers/feePayment.controller.js');
 
 const { checkOnlinePaymentAccess } = require('../middlewares/onlinePayment.middleware.js');
+const { requireRole } = require('../middlewares/role.middleware.js');
 
 const router = express.Router();
 
@@ -19,7 +20,11 @@ router.get('/payments/student/:id', getPaymentsByStudent);
 // Online payments (Parent logic handled in controller)
 router.post('/pay/online/initiate', checkOnlinePaymentAccess, initiateOnlinePayment);
 router.post('/pay/online/verify', verifyOnlinePayment);
-router.get('/payments/student/me', getMyPayments);
+router.get(
+  '/payments/student/me',
+  requireRole('PARENT'),
+  getMyPayments
+);
 
 // Receipt download
 router.get('/receipt/:receiptNo', getReceipt);
