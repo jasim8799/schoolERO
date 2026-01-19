@@ -19,6 +19,11 @@ const generateReceiptNo = (schoolId) => {
 // Manual fee payment
 const payManual = async (req, res) => {
   try {
+    const { role } = req.user;
+    if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
+      return res.status(403).json({ message: 'Access denied. Insufficient permissions.' });
+    }
+
     const { studentFeeId, amount, mode } = req.body;
     const { schoolId, _id: collectedBy } = req.user;
 
@@ -91,6 +96,11 @@ const payManual = async (req, res) => {
 // Get payments for a student
 const getPaymentsByStudent = async (req, res) => {
   try {
+    const { role } = req.user;
+    if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
+      return res.status(403).json({ message: 'Access denied. Insufficient permissions.' });
+    }
+
     const { id: studentId } = req.params;
     const { schoolId } = req.user;
 
@@ -180,6 +190,11 @@ const initiateOnlinePayment = async (req, res) => {
 // Verify online payment
 const verifyOnlinePayment = async (req, res) => {
   try {
+    const { role } = req.user;
+    if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
+      return res.status(403).json({ message: 'Access denied. Insufficient permissions.' });
+    }
+
     const { gatewayRef, status } = req.body;
     const { schoolId } = req.user;
 
@@ -274,6 +289,11 @@ const verifyOnlinePayment = async (req, res) => {
 // Get payments for logged-in parent's child
 const getMyPayments = async (req, res) => {
   try {
+    const { role } = req.user;
+    if (role !== 'PARENT') {
+      return res.status(403).json({ message: 'Access denied. Insufficient permissions.' });
+    }
+
     const { schoolId, _id: userId } = req.user;
 
     // Get parent details to find associated student
