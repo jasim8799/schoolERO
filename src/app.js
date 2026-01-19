@@ -80,9 +80,8 @@ app.use(
 );
 
 app.use(
-  '/api/fees',
+  '/api/fees/structure',
   authenticate,
-  checkMaintenanceMode,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
@@ -90,9 +89,8 @@ app.use(
 );
 
 app.use(
-  '/api/fees',
+  '/api/fees/student',
   authenticate,
-  checkMaintenanceMode,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
