@@ -14,6 +14,9 @@ const { checkOnlinePaymentAccess } = require('../middlewares/onlinePayment.middl
 
 const router = express.Router();
 
+// All routes require authentication
+router.use(authenticate);
+
 // Manual payment routes (Principal/Operator only)
 router.post('/pay/manual', requireRole('PRINCIPAL', 'OPERATOR'), payManual);
 router.get('/payments/student/:id', requireRole('PRINCIPAL', 'OPERATOR'), getPaymentsByStudent);
