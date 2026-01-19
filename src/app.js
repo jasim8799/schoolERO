@@ -73,9 +73,30 @@ app.use('/api/parents', authenticate, attachSchoolId, checkSubscriptionStatus(),
 app.use('/api/attendance', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
 app.use('/api/students', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
 app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
-app.use('/api/fees', attachSchoolId, feePaymentRoutes);
-app.use('/api/fees', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), feeStructureRoutes);
-app.use('/api/fees', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), studentFeeRoutes);
+app.use(
+  '/api/fees',
+  authenticate,
+  attachSchoolId,
+  feePaymentRoutes
+);
+
+app.use(
+  '/api/fees',
+  authenticate,
+  attachSchoolId,
+  checkSubscriptionStatus(),
+  checkModuleAccess('fees'),
+  feeStructureRoutes
+);
+
+app.use(
+  '/api/fees',
+  authenticate,
+  attachSchoolId,
+  checkSubscriptionStatus(),
+  checkModuleAccess('fees'),
+  studentFeeRoutes
+);
 app.use('/api/expenses', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
 app.use('/api/salary', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
 app.use('/api/reports', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
