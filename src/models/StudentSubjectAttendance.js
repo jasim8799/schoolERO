@@ -22,7 +22,7 @@ const studentSubjectAttendanceSchema = new mongoose.Schema(
       required: true,
     },
     period: {
-      type: String,
+      type: Number,
     },
     status: {
       type: String,
@@ -50,7 +50,7 @@ const studentSubjectAttendanceSchema = new mongoose.Schema(
   }
 );
 
-studentSubjectAttendanceSchema.index({ studentId: 1, subjectId: 1, date: 1, schoolId: 1 });
+studentSubjectAttendanceSchema.index({ studentId: 1, subjectId: 1, date: 1, period: 1, schoolId: 1 }, { unique: true });
 studentSubjectAttendanceSchema.index({ classId: 1, subjectId: 1, date: 1, schoolId: 1 });
 studentSubjectAttendanceSchema.index({ schoolId: 1, sessionId: 1 });
 

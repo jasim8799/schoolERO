@@ -50,5 +50,6 @@ const studentDailyAttendanceSchema = new mongoose.Schema(
 studentDailyAttendanceSchema.index({ studentId: 1, date: 1, schoolId: 1 }, { unique: true });
 studentDailyAttendanceSchema.index({ classId: 1, date: 1, schoolId: 1 });
 studentDailyAttendanceSchema.index({ schoolId: 1, sessionId: 1 });
+studentDailyAttendanceSchema.index({ studentId: 1, schoolId: 1, sessionId: 1, date: -1 });
 
 module.exports = mongoose.model('StudentDailyAttendance', studentDailyAttendanceSchema);

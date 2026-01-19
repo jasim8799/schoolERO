@@ -2,14 +2,15 @@ const express = require('express');
 const {
   markStudentDailyAttendance,
   getStudentDailyAttendance,
-  getMyStudentAttendance,
   markSubjectAttendance,
   getSubjectAttendance,
   markTeacherAttendance,
   getTeacherAttendance,
+  getParentAttendance,
+  getAttendanceForParent,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
-const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
@@ -29,11 +30,7 @@ router.get(
   getStudentDailyAttendance
 );
 
-router.get(
-  '/students/me',
-  authenticate,
-  getMyStudentAttendance
-);
+
 
 // Subject Attendance
 router.post(
@@ -63,6 +60,20 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   getTeacherAttendance
+);
+
+router.get(
+  '/parent/:studentId',
+  authenticate,
+  requireRole(USER_ROLES.PARENT),
+  getAttendanceForParent
+);
+
+router.get(
+  '/parents/attendance',
+  authenticate,
+  requireMinRole(USER_ROLES.PARENT),
+  getParentAttendance
 );
 
 module.exports = router;
