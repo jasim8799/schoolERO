@@ -74,6 +74,7 @@ app.use('/api/students', authenticate, attachSchoolId, attachActiveSession, chec
 app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
 app.use(
   '/api/fees',
+  authenticate,
   checkMaintenanceMode,
   feePaymentRoutes
 );

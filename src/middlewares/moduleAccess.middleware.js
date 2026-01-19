@@ -23,14 +23,11 @@ const checkModuleAccess = (moduleName) => {
       const schoolId = req.user?.schoolId;
 
       if (!schoolId) {
-if (req.method === 'GET') {
-return next();
-}
-return res.status(403).json({
-success: false,
-message: 'School context missing'
-});
-}
+        return res.status(403).json({
+          success: false,
+          message: 'School context missing'
+        });
+      }
 
       // Validate module name
       if (!SCHOOL_MODULES[moduleName]) {
@@ -90,14 +87,11 @@ const checkAnyModuleAccess = (moduleNames) => {
       const schoolId = req.user?.schoolId;
 
       if (!schoolId) {
-if (req.method === 'GET') {
-return next();
-}
-return res.status(403).json({
-success: false,
-message: 'School context missing'
-});
-}
+        return res.status(403).json({
+          success: false,
+          message: 'School context missing'
+        });
+      }
 
       const school = await School.findById(schoolId).select('modules name');
 
@@ -150,14 +144,11 @@ const checkAllModulesAccess = (moduleNames) => {
       const schoolId = req.user?.schoolId;
 
       if (!schoolId) {
-if (req.method === 'GET') {
-return next();
-}
-return res.status(403).json({
-success: false,
-message: 'School context missing'
-});
-}
+        return res.status(403).json({
+          success: false,
+          message: 'School context missing'
+        });
+      }
 
       const school = await School.findById(schoolId).select('modules name');
 
