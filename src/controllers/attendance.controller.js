@@ -19,17 +19,38 @@ const markStudentDailyAttendance = async (req, res) => {
     const studentIds = records.map(record => record.studentId);
     const students = await Student.find({
       _id: { $in: studentIds },
-      schoolId: schoolId,
-      sessionId: sessionId
+      schoolId: schoolId
     });
     const studentMap = new Map(students.map(student => [student._id.toString(), student]));
 
     for (const record of records) {
       const student = studentMap.get(record.studentId.toString());
-      if (!student || student.classId.toString() !== record.classId.toString() || student.sectionId.toString() !== record.sectionId.toString()) {
+
+      if (!student) {
         return res.status(400).json({
           success: false,
-          message: 'One or more students do not belong to the specified class or section'
+          message: 'Student not found or does not belong to this school'
+        });
+      }
+
+      if (student.classId.toString() !== record.classId.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Student does not belong to the specified class'
+        });
+      }
+
+      if (student.sectionId.toString() !== record.sectionId.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Student does not belong to the specified section'
+        });
+      }
+
+      if (student.sessionId.toString() !== req.user.sessionId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Student does not belong to the active academic session'
         });
       }
     }
