@@ -72,17 +72,26 @@ const enforceSchoolIsolation = (req, res, next) => {
 
 // Automatically attach user's schoolId to request body (for create operations)
 const attachSchoolId = (req, res, next) => {
-  // SUPER_ADMIN must explicitly provide schoolId
-  if (req.user.role === USER_ROLES.SUPER_ADMIN) {
+  // If user is not authenticated yet, skip safely
+  if (!req.user) {
     return next();
   }
 
-  // For other roles, automatically use their schoolId
-  if (!req.body.schoolId && req.user.schoolId) {
-    req.body.schoolId = req.user.schoolId;
+  // SUPER_ADMIN does not require school context
+  if (req.user.role === 'SUPER_ADMIN') {
+    return next();
   }
 
-  next();
+  // If schoolId already present, continue
+  if (req.user.schoolId) {
+    req.schoolId = req.user.schoolId;
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    message: 'School context missing'
+  });
 };
 
 // Filter queries by user's school
