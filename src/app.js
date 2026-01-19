@@ -56,8 +56,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/system', systemRoutes);
 
-// Apply maintenance mode check to all API routes (except auth for SUPER_ADMIN login)
-app.use('/api', checkMaintenanceMode);
+// Maintenance mode check is applied per route after authenticate
 
 // Audit routes (require authentication and role checking)
 app.use('/api/audit', auditRoutes);
@@ -76,12 +75,14 @@ app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSu
 app.use(
   '/api/fees',
   authenticate,
+  checkMaintenanceMode,
   feePaymentRoutes
 );
 
 app.use(
   '/api/fees',
   authenticate,
+  checkMaintenanceMode,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
@@ -91,6 +92,7 @@ app.use(
 app.use(
   '/api/fees',
   authenticate,
+  checkMaintenanceMode,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
