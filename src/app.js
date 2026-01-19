@@ -76,7 +76,6 @@ app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSu
 app.use(
   '/api/fees',
   authenticate,
-  attachSchoolId,
   feePaymentRoutes
 );
 
