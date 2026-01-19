@@ -2,8 +2,39 @@ import ExamPayment from '../models/ExamPayment.js';
 
 export const payExamFee = async (req, res) => {
   try {
-    const { examFormId, amount } = req.body;
-    const { studentId, schoolId, sessionId, _id: userId } = req.user;
+    const { studentId, examFormId, amount } = req.body;
+    const { schoolId, _id: userId, role } = req.user;
+
+    // Validate user is a parent
+    if (role !== 'PARENT') {
+      return res.status(403).json({ message: 'Only parents can pay exam fees' });
+    }
+
+    // Get parent details
+    const Parent = require('../models/Parent.js');
+    const parent = await Parent.findOne({ userId, schoolId });
+    if (!parent) {
+      return res.status(400).json({ message: 'Parent profile not found' });
+    }
+
+    // Validate studentId is in parent's children
+    if (!parent.children.includes(studentId)) {
+      return res.status(403).json({ message: 'Access denied. Student not associated with this parent.' });
+    }
+
+    // Get active session
+    const AcademicSession = require('../models/AcademicSession.js');
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
 
     const examPayment = await ExamPayment.create({
       studentId,
@@ -12,7 +43,7 @@ export const payExamFee = async (req, res) => {
       paymentMode: 'Online',
       status: 'Paid',
       receiptNumber: `EXAM-${Date.now()}`,
-      sessionId,
+      sessionId: activeSession._id,
       schoolId,
       createdBy: userId,
     });
@@ -28,7 +59,21 @@ export const payExamFee = async (req, res) => {
 export const manualExamPayment = async (req, res) => {
   try {
     const { studentId, examFormId, amount } = req.body;
-    const { schoolId, sessionId, _id: userId } = req.user;
+    const { schoolId, _id: userId } = req.user;
+
+    // Get active session
+    const AcademicSession = require('../models/AcademicSession.js');
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
 
     const examPayment = await ExamPayment.create({
       studentId,
@@ -37,7 +82,7 @@ export const manualExamPayment = async (req, res) => {
       paymentMode: 'Manual',
       status: 'Paid',
       receiptNumber: `EXAM-${Date.now()}`,
-      sessionId,
+      sessionId: activeSession._id,
       schoolId,
       createdBy: userId,
     });
@@ -52,9 +97,39 @@ export const manualExamPayment = async (req, res) => {
 
 export const getMyExamPayments = async (req, res) => {
   try {
-    const { studentId, schoolId, sessionId } = req.user;
+    const { schoolId, _id: userId, role } = req.user;
 
-    const payments = await ExamPayment.find({ studentId, schoolId, sessionId })
+    // Validate user is a parent
+    if (role !== 'PARENT') {
+      return res.status(403).json({ message: 'Only parents can access this endpoint' });
+    }
+
+    // Get parent details
+    const Parent = require('../models/Parent.js');
+    const parent = await Parent.findOne({ userId, schoolId });
+    if (!parent) {
+      return res.status(400).json({ message: 'Parent profile not found' });
+    }
+
+    // Get active session
+    const AcademicSession = require('../models/AcademicSession.js');
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
+
+    const payments = await ExamPayment.find({
+      studentId: { $in: parent.children },
+      schoolId,
+      sessionId: activeSession._id
+    })
       .populate({
         path: 'examFormId',
         populate: {

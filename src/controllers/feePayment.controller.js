@@ -136,7 +136,7 @@ const initiateOnlinePayment = async (req, res) => {
     // Validate studentFee exists and belongs to parent's child
     const studentFee = await StudentFee.findOne({
       _id: studentFeeId,
-      studentId: parent.studentId,
+      studentId: { $in: parent.children },
       schoolId
     });
     if (!studentFee) {
@@ -288,7 +288,7 @@ const getMyPayments = async (req, res) => {
     }
 
     // Get all student fees for this student
-    const studentFees = await StudentFee.find({ studentId: parent.studentId, schoolId }).select('_id');
+    const studentFees = await StudentFee.find({ studentId: { $in: parent.children }, schoolId }).select('_id');
     const studentFeeIds = studentFees.map(fee => fee._id);
 
     // Get payments for these student fees
@@ -326,7 +326,7 @@ const getReceipt = async (req, res) => {
     } else if (role === 'PARENT') {
       // Parent can only view their child's receipts
       const parent = await Parent.findOne({ userId, schoolId });
-      if (!parent || parent.studentId.toString() !== payment.studentFeeId.studentId.toString()) {
+      if (!parent || !parent.children.some(id => id.toString() === payment.studentFeeId.studentId.toString())) {
         return res.status(403).json({ message: 'Access denied. You can only view your child\'s receipts.' });
       }
     }

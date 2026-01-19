@@ -13,7 +13,7 @@ const FeePaymentSchema = new mongoose.Schema({
   },
   mode: {
     type: String,
-    enum: ['Cash', 'Bank'],
+    enum: ['Cash', 'Bank', 'Online'],
     required: true
   },
   date: {
@@ -24,7 +24,7 @@ const FeePaymentSchema = new mongoose.Schema({
   collectedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false
   },
   receiptNo: {
     type: String,

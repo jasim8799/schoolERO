@@ -153,7 +153,7 @@ const getExpenses = async (req, res) => {
 const getExpenseSummary = async (req, res) => {
   try {
     const { month } = req.query;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
 
     // Validate mandatory month parameter
     if (!month) {
@@ -166,6 +166,19 @@ const getExpenseSummary = async (req, res) => {
       return res.status(400).json({ message: 'Invalid month format. Use YYYY-MM' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
+
     // Parse month to date range
     const [year, monthNum] = month.split('-');
     const startDate = new Date(year, monthNum - 1, 1);
@@ -176,7 +189,7 @@ const getExpenseSummary = async (req, res) => {
       {
         $match: {
           schoolId,
-          sessionId,
+          sessionId: activeSession._id,
           date: {
             $gte: startDate,
             $lt: endDate
