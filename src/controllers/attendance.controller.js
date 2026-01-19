@@ -5,6 +5,7 @@ const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
 const Teacher = require('../models/Teacher.js');
+const AcademicSession = require('../models/AcademicSession.js');
 const { auditLog } = require('../utils/auditLog_new.js');
 
 const markStudentDailyAttendance = async (req, res) => {
@@ -14,6 +15,18 @@ const markStudentDailyAttendance = async (req, res) => {
 
     if (!records || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ success: false, message: 'Records array is required' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
     }
 
     const studentIds = records.map(record => record.studentId);
@@ -47,7 +60,7 @@ const markStudentDailyAttendance = async (req, res) => {
         });
       }
 
-      if (student.sessionId.toString() !== req.user.sessionId) {
+      if (student.sessionId.toString() !== activeSession._id.toString()) {
         return res.status(400).json({
           success: false,
           message: 'Student does not belong to the active academic session'
@@ -69,7 +82,7 @@ const markStudentDailyAttendance = async (req, res) => {
             status: record.status,
             markedBy: userId,
             schoolId: schoolId,
-            sessionId: sessionId,
+            sessionId: activeSession._id,
           },
         },
         upsert: true,
@@ -105,11 +118,23 @@ const markStudentDailyAttendance = async (req, res) => {
 const getStudentDailyAttendance = async (req, res) => {
   try {
     const { classId, sectionId, date, startDate, endDate } = req.query;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
 
     const filter = {
       schoolId: schoolId,
-      sessionId: sessionId,
+      sessionId: activeSession._id,
     };
 
     if (classId) filter.classId = classId;
@@ -141,7 +166,7 @@ const getStudentDailyAttendance = async (req, res) => {
 const markSubjectAttendance = async (req, res) => {
   try {
     const { records } = req.body;
-    const { userId, schoolId, sessionId, role } = req.user;
+    const { userId, schoolId, role } = req.user;
 
     if (role !== 'TEACHER') {
       return res.status(403).json({ success: false, message: 'Only teachers can mark subject attendance' });
@@ -149,6 +174,18 @@ const markSubjectAttendance = async (req, res) => {
 
     if (!records || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ success: false, message: 'Records array is required' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
     }
 
     // Normalize period and validate status
@@ -163,8 +200,7 @@ const markSubjectAttendance = async (req, res) => {
     const studentIds = [...new Set(records.map(record => record.studentId))];
     const students = await Student.find({
       _id: { $in: studentIds },
-      schoolId: schoolId,
-      sessionId: sessionId
+      schoolId: schoolId
     });
     const studentMap = new Map(students.map(student => [student._id.toString(), student]));
 
@@ -182,7 +218,7 @@ const markSubjectAttendance = async (req, res) => {
       const subject = subjectMap.get(record.subjectId.toString());
 
       if (!student) {
-        return res.status(400).json({ success: false, message: 'One or more students do not exist or do not belong to this school/session' });
+        return res.status(400).json({ success: false, message: 'One or more students do not exist or do not belong to this school' });
       }
       if (!subject) {
         return res.status(400).json({ success: false, message: 'One or more subjects do not exist or do not belong to this school' });
@@ -192,6 +228,9 @@ const markSubjectAttendance = async (req, res) => {
       }
       if (student.classId.toString() !== record.classId.toString()) {
         return res.status(400).json({ success: false, message: 'Student does not belong to the specified class' });
+      }
+      if (student.sessionId.toString() !== activeSession._id.toString()) {
+        return res.status(400).json({ success: false, message: 'Student does not belong to the active academic session' });
       }
     }
 
@@ -210,7 +249,7 @@ const markSubjectAttendance = async (req, res) => {
             status: record.status,
             teacherId: userId,
             schoolId: schoolId,
-            sessionId: sessionId,
+            sessionId: activeSession._id,
           },
         },
         upsert: true,
@@ -248,11 +287,23 @@ const markSubjectAttendance = async (req, res) => {
 const getSubjectAttendance = async (req, res) => {
   try {
     const { classId, subjectId, date, studentId } = req.query;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
 
     const filter = {
       schoolId: schoolId,
-      sessionId: sessionId,
+      sessionId: activeSession._id,
     };
 
     if (classId) filter.classId = classId;
@@ -279,11 +330,23 @@ const getSubjectAttendance = async (req, res) => {
 const markTeacherAttendance = async (req, res) => {
   try {
     const { date, status, checkIn, checkOut, teacherId: targetTeacherId } = req.body;
-    const { userId, role, schoolId, sessionId } = req.user;
+    const { userId, role, schoolId } = req.user;
 
     // Role-based access
     if (role === 'STUDENT' || role === 'PARENT') {
       return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
     }
 
     let teacherId = userId;
@@ -348,7 +411,7 @@ const markTeacherAttendance = async (req, res) => {
           status: status,
           checkIn: checkIn,
           checkOut: checkOut,
-          sessionId: sessionId,
+          sessionId: activeSession._id,
         },
       },
       {
@@ -383,15 +446,27 @@ const markTeacherAttendance = async (req, res) => {
 const getTeacherAttendance = async (req, res) => {
   try {
     const { date, startDate, endDate, teacherId } = req.query;
-    const { userId, role, schoolId, sessionId } = req.user;
+    const { userId, role, schoolId } = req.user;
 
     if (role === 'STUDENT' || role === 'PARENT') {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
+
     const filter = {
       schoolId: schoolId,
-      sessionId: sessionId,
+      sessionId: activeSession._id,
     };
 
     if (role === 'TEACHER' && !teacherId) {
@@ -420,8 +495,20 @@ const getTeacherAttendance = async (req, res) => {
 
 const getParentAttendance = async (req, res) => {
   try {
-    const { userId, schoolId, sessionId } = req.user;
+    const { userId, schoolId } = req.user;
     const { startDate, endDate } = req.query;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
 
     const parent = await Parent.findOne({ userId, schoolId });
     if (!parent) {
@@ -435,7 +522,7 @@ const getParentAttendance = async (req, res) => {
     const filter = {
       studentId: { $in: parent.children },
       schoolId: schoolId,
-      sessionId: sessionId,
+      sessionId: activeSession._id,
     };
 
     if (startDate && endDate) {
@@ -460,7 +547,19 @@ const getParentAttendance = async (req, res) => {
 const getAttendanceForParent = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const { userId, schoolId, sessionId } = req.user;
+    const { userId, schoolId } = req.user;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: schoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
 
     const parent = await Parent.findOne({ userId, schoolId });
     if (!parent) {
@@ -482,7 +581,7 @@ const getAttendanceForParent = async (req, res) => {
     const attendance = await StudentDailyAttendance.find({
       studentId,
       schoolId,
-      sessionId
+      sessionId: activeSession._id
     }).sort({ date: -1 });
 
     res.status(200).json({
