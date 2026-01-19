@@ -16,15 +16,10 @@ const attachActiveSession = async (req, res, next) => {
       isActive: true
     });
 
-    if (!activeSession) {
-      return res.status(400).json({
-        success: false,
-        message: 'No active academic session found for this school'
-      });
+    if (activeSession) {
+      // Attach sessionId to req
+      req.sessionId = activeSession._id;
     }
-
-    // Attach sessionId to req
-    req.sessionId = activeSession._id;
 
     next();
   } catch (error) {

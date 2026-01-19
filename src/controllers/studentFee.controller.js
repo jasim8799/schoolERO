@@ -6,7 +6,7 @@ const AcademicSession = require('../models/AcademicSession');
 const assignFee = async (req, res) => {
   try {
     const { studentId, feeStructureId } = req.body;
-    const { sessionId, schoolId, _id: assignedBy } = req.user;
+    const { schoolId, _id: assignedBy } = req.user;
 
     // Validate student belongs to same school
     const student = await Student.findOne({ _id: studentId, schoolId });
@@ -20,11 +20,13 @@ const assignFee = async (req, res) => {
       return res.status(400).json({ message: 'Invalid feeStructureId' });
     }
 
-    // Validate session is active for school
-    const session = await AcademicSession.findOne({ _id: sessionId, schoolId, status: 'ACTIVE' });
-    if (!session) {
-      return res.status(400).json({ message: 'Invalid sessionId' });
+    // Get active session for school
+    const activeSession = await AcademicSession.findOne({ schoolId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active academic session found for this school' });
     }
+
+    const sessionId = activeSession._id;
 
     const totalAmount = feeStructure.amount;
     const paidAmount = 0;

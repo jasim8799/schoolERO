@@ -5,7 +5,7 @@ const AcademicSession = require('../models/AcademicSession');
 const createFeeStructure = async (req, res) => {
   try {
     const { name, amount, frequency, classId, isOptional, status } = req.body;
-    const { sessionId, schoolId, _id: createdBy } = req.user;
+    const { schoolId, _id: createdBy } = req.user;
 
     // Validate classId belongs to same school
     const classDoc = await Class.findOne({ _id: classId, schoolId });
@@ -13,11 +13,13 @@ const createFeeStructure = async (req, res) => {
       return res.status(400).json({ message: 'Invalid classId' });
     }
 
-    // Validate sessionId is active for school
-    const sessionDoc = await AcademicSession.findOne({ _id: sessionId, schoolId, status: 'ACTIVE' });
-    if (!sessionDoc) {
-      return res.status(400).json({ message: 'Invalid sessionId' });
+    // Get active session for school
+    const activeSession = await AcademicSession.findOne({ schoolId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active academic session found for this school' });
     }
+
+    const sessionId = activeSession._id;
 
     const feeStructure = await FeeStructure.create({
       name,
