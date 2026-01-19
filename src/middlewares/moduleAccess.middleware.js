@@ -14,6 +14,11 @@ const checkModuleAccess = (moduleName) => {
         return next();
       }
 
+      // Allow PARENT role to access 'fees' module for online payment operations
+      if (req.user?.role === USER_ROLES.PARENT && moduleName === 'fees') {
+        return next();
+      }
+
       // Get schoolId from JWT token (assuming it's set by auth middleware)
       const schoolId = req.user?.schoolId;
 
