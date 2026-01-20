@@ -15,7 +15,7 @@ const ExamFormSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  lastDate: {
+  endDate: {
     type: Date,
     required: true
   },
@@ -25,8 +25,8 @@ const ExamFormSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Open', 'Closed'],
-    default: 'Open'
+    enum: ['ACTIVE', 'CLOSED'],
+    default: 'ACTIVE'
   },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
