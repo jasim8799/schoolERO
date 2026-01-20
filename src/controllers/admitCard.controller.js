@@ -1,8 +1,8 @@
-import AdmitCard from '../models/AdmitCard.js';
-import ExamPayment from '../models/ExamPayment.js';
-import ExamForm from '../models/ExamForm.js';
+const AdmitCard = require('../models/AdmitCard.js');
+const ExamPayment = require('../models/ExamPayment.js');
+const ExamForm = require('../models/ExamForm.js');
 
-export const generateAdmitCard = async (req, res) => {
+const generateAdmitCard = async (req, res) => {
   try {
     const { studentId, examId, rollNumber, examCenter } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
@@ -43,7 +43,7 @@ export const generateAdmitCard = async (req, res) => {
   }
 };
 
-export const getMyAdmitCard = async (req, res) => {
+const getMyAdmitCard = async (req, res) => {
   try {
     const { studentId, schoolId, sessionId } = req.user;
     const { examId } = req.query;
@@ -60,7 +60,7 @@ export const getMyAdmitCard = async (req, res) => {
   }
 };
 
-export const getAdmitCardPDF = async (req, res) => {
+const getAdmitCardPDF = async (req, res) => {
   try {
     const { id } = req.params;
     const admitCard = await AdmitCard.findById(id)
@@ -112,3 +112,5 @@ export const getAdmitCardPDF = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { generateAdmitCard, getMyAdmitCard, getAdmitCardPDF };
