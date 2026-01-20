@@ -26,6 +26,12 @@ const createSession = async (req, res) => {
       });
     }
 
+    // Check for existing active session
+    const existingActiveSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+
     // Validate dates
     if (new Date(startDate) >= new Date(endDate)) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -40,7 +46,7 @@ const createSession = async (req, res) => {
       name,
       startDate,
       endDate,
-      isActive: isActive || false
+      isActive: existingActiveSession ? false : true
     });
 
     logger.success(`Academic session created: ${session.name} for school ${school.code}`);
