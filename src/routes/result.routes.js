@@ -1,5 +1,5 @@
 import express from 'express';
-import { createOrUpdateResult, publishResult, getMyResult, getResultPDF } from '../controllers/result.controller.js';
+import { createOrUpdateResult, publishResult, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults } from '../controllers/result.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { requireRole } from '../middlewares/role.middleware.js';
 import { enforceSchoolIsolation } from '../middlewares/school.middleware.js';
@@ -24,11 +24,27 @@ router.put(
 );
 
 router.get(
-  '/student/me',
+  '/exam/:examId',
   authenticate,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT),
-  getMyResult
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  getResultsByExam
+);
+
+router.get(
+  '/children',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PARENT),
+  getChildrenResults
+);
+
+router.get(
+  '/me',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.STUDENT),
+  getMyResults
 );
 
 router.get(

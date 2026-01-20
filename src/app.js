@@ -20,6 +20,8 @@ const parentRoutes = require('./routes/parent.routes');
 const studentRoutes = require('./routes/student.routes');
 const attendanceRoutes = require('./routes/attendance.routes');
 const examRoutes = require('./routes/exam.routes');
+const examSubjectRoutes = require('./routes/examSubject.routes');
+const resultRoutes = require('./routes/result.routes');
 const feeStructureRoutes = require('./routes/feeStructure.routes');
 const studentFeeRoutes = require('./routes/studentFee.routes');
 const feePaymentRoutes = require('./routes/feePayment.routes');
@@ -72,6 +74,8 @@ app.use('/api/parents', authenticate, attachSchoolId, checkSubscriptionStatus(),
 app.use('/api/attendance', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
 app.use('/api/students', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
 app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
+app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examSubjectRoutes);
+app.use('/api/results', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), resultRoutes);
 app.use(
   '/api/fees',
   authenticate,
