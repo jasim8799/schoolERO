@@ -2,18 +2,13 @@ const Exam = require('../models/Exam.js');
 
 const createExam = async (req, res) => {
   try {
-    const { name, classId, startDate, endDate } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
 
     const exam = await Exam.create({
-      name,
-      classId,
-      sessionId,
-      startDate,
-      endDate,
-      status: 'Draft',
+      ...req.body,
       schoolId,
-      createdBy: userId,
+      sessionId,
+      createdBy: userId
     });
     res.status(201).json(exam);
   } catch (err) {
