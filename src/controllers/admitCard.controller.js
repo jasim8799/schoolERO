@@ -48,9 +48,20 @@ const getMyAdmitCard = async (req, res) => {
     const { studentId, schoolId, sessionId } = req.user;
     const { examId } = req.query;
 
-    const admitCard = await AdmitCard.findOne({ studentId, examId, schoolId, sessionId })
-      .populate('studentId', 'name rollNumber')
-      .populate('examId', 'name');
+    let admitCard;
+    if (examId) {
+      // If examId is provided, find specific admit card
+      admitCard = await AdmitCard.findOne({ studentId, examId, schoolId, sessionId })
+        .populate('studentId', 'name rollNumber')
+        .populate('examId', 'name');
+    } else {
+      // If no examId, fetch the latest admit card for the student
+      admitCard = await AdmitCard.findOne({ studentId, schoolId, sessionId })
+        .populate('studentId', 'name rollNumber')
+        .populate('examId', 'name')
+        .sort({ createdAt: -1 }); // Get the most recent one
+    }
+
     if (!admitCard) {
       return res.status(404).json({ message: 'Admit card not found.' });
     }
