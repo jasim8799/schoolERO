@@ -4,6 +4,10 @@ const createExam = async (req, res) => {
   try {
     const { schoolId, sessionId, _id: userId } = req.user;
 
+    if (!sessionId) {
+      return res.status(400).json({ message: "Active academic session not found" });
+    }
+
     const exam = await Exam.create({
       ...req.body,
       schoolId,

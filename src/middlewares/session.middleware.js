@@ -16,10 +16,12 @@ const attachActiveSession = async (req, res, next) => {
       isActive: true
     });
 
-    if (activeSession) {
-      // Attach sessionId to req
-      req.sessionId = activeSession._id;
+    if (!activeSession) {
+      return res.status(400).json({ message: "No active academic session found" });
     }
+
+    // Attach sessionId to req.user
+    req.user.sessionId = activeSession._id;
 
     next();
   } catch (error) {
