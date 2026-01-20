@@ -9,8 +9,10 @@ const attachActiveSession = async (req, res, next) => {
       return res.status(400).json({ message: 'School context missing' });
     }
 
+    const querySchoolId = schoolId instanceof mongoose.Types.ObjectId ? schoolId : new mongoose.Types.ObjectId(schoolId);
+
     const activeSession = await AcademicSession.findOne({
-      schoolId: mongoose.Types.ObjectId(schoolId),
+      schoolId: querySchoolId,
       isActive: true
     });
 
