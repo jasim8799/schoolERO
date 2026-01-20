@@ -1,20 +1,14 @@
 const express = require('express');
 const { createClass, getAllClasses, getClassById } = require('../controllers/class.controller.js');
-const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
-const { attachActiveSession } = require('../middlewares/session.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
-
-// 🔐 Authentication (mandatory)
-router.use(authenticate);
 
 // POST /api/classes - Create class
 router.post(
   '/',
   requireMinRole(USER_ROLES.OPERATOR),
-  attachActiveSession,   // ✅ auto-adds sessionId
   createClass
 );
 

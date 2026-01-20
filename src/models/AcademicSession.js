@@ -27,8 +27,11 @@ const academicSessionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Ensure only one active session per school
-academicSessionSchema.index({ schoolId: 1, isActive: 1 });
+// Enforce only one active session per school at DB level
+academicSessionSchema.index(
+  { schoolId: 1 },
+  { unique: true, partialFilterExpression: { isActive: true } }
+);
 
 // Prevent duplicate session names per school
 academicSessionSchema.index(
