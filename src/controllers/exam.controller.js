@@ -28,7 +28,12 @@ const getExamsByClass = async (req, res) => {
     const { classId } = req.query;
     const { schoolId, sessionId } = req.user;
 
-    const exams = await Exam.find({ classId, schoolId, sessionId }).sort({ startDate: 1 });
+    const query = { schoolId, sessionId };
+    if (classId) {
+      query.classId = classId;
+    }
+
+    const exams = await Exam.find(query).sort({ startDate: 1 });
     res.json(exams);
   } catch (err) {
     res.status(500).json({ message: err.message });
