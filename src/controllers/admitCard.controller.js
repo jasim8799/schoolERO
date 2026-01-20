@@ -45,18 +45,40 @@ const generateAdmitCard = async (req, res) => {
 
 const getMyAdmitCard = async (req, res) => {
   try {
-    const { studentId, schoolId, sessionId } = req.user;
+    const { schoolId, sessionId, _id: userId, role } = req.user;
     const { examId } = req.query;
+
+    let studentIds = [];
+
+    if (role === 'STUDENT') {
+      // Fetch Student document to get studentId
+      const Student = require('../models/Student.js');
+      const student = await Student.findOne({ userId, schoolId, sessionId });
+      if (!student) {
+        return res.status(404).json({ message: 'Student profile not found.' });
+      }
+      studentIds = [student._id];
+    } else if (role === 'PARENT') {
+      // Fetch Parent profile to get children studentIds
+      const Parent = require('../models/Parent.js');
+      const parent = await Parent.findOne({ userId, schoolId });
+      if (!parent || !parent.children || parent.children.length === 0) {
+        return res.status(404).json({ message: 'Parent profile not found or no children associated.' });
+      }
+      studentIds = parent.children;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only students and parents can access this endpoint.' });
+    }
 
     let admitCard;
     if (examId) {
-      // If examId is provided, find specific admit card
-      admitCard = await AdmitCard.findOne({ studentId, examId, schoolId, sessionId })
+      // If examId is provided, find specific admit card for the student(s)
+      admitCard = await AdmitCard.findOne({ studentId: { $in: studentIds }, examId, schoolId, sessionId })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name');
     } else {
-      // If no examId, fetch the latest admit card for the student
-      admitCard = await AdmitCard.findOne({ studentId, schoolId, sessionId })
+      // If no examId, fetch the latest admit card for the student(s)
+      admitCard = await AdmitCard.findOne({ studentId: { $in: studentIds }, schoolId, sessionId })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name')
         .sort({ createdAt: -1 }); // Get the most recent one
