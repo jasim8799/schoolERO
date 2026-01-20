@@ -30,6 +30,12 @@ const academicSessionSchema = new mongoose.Schema({
 // Ensure only one active session per school
 academicSessionSchema.index({ schoolId: 1, isActive: 1 });
 
+// Prevent duplicate session names per school
+academicSessionSchema.index(
+  { schoolId: 1, name: 1 },
+  { unique: true }
+);
+
 // Pre-save middleware to ensure only one active session per school
 academicSessionSchema.pre('save', async function(next) {
   if (this.isActive) {

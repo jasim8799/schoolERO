@@ -5,10 +5,7 @@ const attachActiveSession = async (req, res, next) => {
     const schoolId = req.user?.schoolId;
 
     if (!schoolId) {
-      return res.status(400).json({
-        success: false,
-        message: 'School context missing'
-      });
+      return res.status(400).json({ message: 'School context missing' });
     }
 
     const activeSession = await AcademicSession.findOne({
@@ -17,19 +14,17 @@ const attachActiveSession = async (req, res, next) => {
     });
 
     if (!activeSession) {
-      return res.status(400).json({ message: "No active academic session found" });
+      return res.status(400).json({
+        message: 'Active academic session not found'
+      });
     }
 
-    // Attach sessionId to req.user
+    // IMPORTANT
     req.user.sessionId = activeSession._id;
 
     next();
   } catch (error) {
-    console.error('Attach session error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to attach academic session'
-    });
+    res.status(500).json({ message: 'Failed to attach academic session' });
   }
 };
 

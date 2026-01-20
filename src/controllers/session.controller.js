@@ -40,6 +40,19 @@ const createSession = async (req, res) => {
       });
     }
 
+    // Check for existing session with same name
+    const existingSession = await AcademicSession.findOne({
+      schoolId,
+      name
+    });
+
+    if (existingSession) {
+      return res.status(409).json({
+        success: false,
+        message: 'Academic session with this name already exists'
+      });
+    }
+
     // Create session
     const session = await AcademicSession.create({
       schoolId,
