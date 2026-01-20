@@ -1,6 +1,6 @@
-import ExamPayment from '../models/ExamPayment.js';
+const ExamPayment = require('../models/ExamPayment.js');
 
-export const payExamFee = async (req, res) => {
+const payExamFee = async (req, res) => {
   try {
     const { studentId, examFormId, amount } = req.body;
     const { schoolId, _id: userId, role } = req.user;
@@ -56,7 +56,7 @@ export const payExamFee = async (req, res) => {
   }
 };
 
-export const manualExamPayment = async (req, res) => {
+const manualExamPayment = async (req, res) => {
   try {
     const { studentId, examFormId, amount } = req.body;
     const { schoolId, _id: userId } = req.user;
@@ -95,7 +95,7 @@ export const manualExamPayment = async (req, res) => {
   }
 };
 
-export const getMyExamPayments = async (req, res) => {
+const getMyExamPayments = async (req, res) => {
   try {
     const { schoolId, _id: userId, role } = req.user;
 
@@ -143,3 +143,5 @@ export const getMyExamPayments = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { payExamFee, manualExamPayment, getMyExamPayments };
