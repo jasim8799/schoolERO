@@ -63,4 +63,25 @@ const updateExam = async (req, res) => {
   }
 };
 
-module.exports = { createExam, getExamsByClass, updateExam };
+const publishExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    if (!exam) {
+      return res.status(404).json({ message: 'Exam not found' });
+    }
+
+    if (exam.status !== 'Draft') {
+      return res.status(403).json({ message: 'Exam is already published' });
+    }
+
+    const updatedExam = await Exam.findByIdAndUpdate(examId, { status: 'Published' }, { new: true });
+    res.json(updatedExam);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { createExam, getExamsByClass, updateExam, publishExam };
