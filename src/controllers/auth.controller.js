@@ -163,8 +163,7 @@ const login = async (req, res) => {
     const token = generateToken({
       userId: user._id,
       role: user.role,
-      schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null,
-      sessionId: activeSession ? activeSession._id.toString() : null
+      schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null
     });
 
     logger.success(`User logged in: ${user.name} (${user.role})`);
