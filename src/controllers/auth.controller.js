@@ -1,4 +1,5 @@
 const User = require('../models/User.js');
+const AcademicSession = require('../models/AcademicSession.js');
 const { hashPassword, comparePassword } = require('../utils/password.js');
 const { generateToken } = require('../utils/jwt.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
@@ -150,11 +151,20 @@ const login = async (req, res) => {
 
     console.log('LOGIN SUCCESS: Password valid');
 
+    // Fetch active academic session for the user's school
+    const activeSession = user.schoolId
+      ? await AcademicSession.findOne({
+          schoolId: user.schoolId._id || user.schoolId,
+          isActive: true
+        })
+      : null;
+
     // Generate JWT token
     const token = generateToken({
       userId: user._id,
       role: user.role,
-      schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null
+      schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null,
+      sessionId: activeSession ? activeSession._id.toString() : null
     });
 
     logger.success(`User logged in: ${user.name} (${user.role})`);
