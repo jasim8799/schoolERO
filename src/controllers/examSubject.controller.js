@@ -1,6 +1,6 @@
-import ExamSubject from '../models/ExamSubject.js';
+const ExamSubject = require('../models/ExamSubject.js');
 
-export const createExamSubject = async (req, res) => {
+const createExamSubject = async (req, res) => {
   try {
     const { examId, subjectId, maxMarks, passMarks, teacherId } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
@@ -23,7 +23,7 @@ export const createExamSubject = async (req, res) => {
   }
 };
 
-export const getExamSubjects = async (req, res) => {
+const getExamSubjects = async (req, res) => {
   try {
     const { examId } = req.params;
     const { schoolId, sessionId } = req.user;
@@ -36,3 +36,5 @@ export const getExamSubjects = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { createExamSubject, getExamSubjects };

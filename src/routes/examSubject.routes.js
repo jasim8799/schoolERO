@@ -1,9 +1,9 @@
-import express from 'express';
-import { createExamSubject, getExamSubjects } from '../controllers/examSubject.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { requireRole } from '../middlewares/role.middleware.js';
-import { enforceSchoolIsolation } from '../middlewares/school.middleware.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { createExamSubject, getExamSubjects } = require('../controllers/examSubject.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireRole } = require('../middlewares/role.middleware.js');
+const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
@@ -23,4 +23,4 @@ router.get(
   getExamSubjects
 );
 
-export default router;
+module.exports = router;

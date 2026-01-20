@@ -1,8 +1,8 @@
-import Result from '../models/Result.js';
-import ExamSubject from '../models/ExamSubject.js';
-import Student from '../models/Student.js';
+const Result = require('../models/Result.js');
+const ExamSubject = require('../models/ExamSubject.js');
+const Student = require('../models/Student.js');
 
-export const createOrUpdateResult = async (req, res) => {
+const createOrUpdateResult = async (req, res) => {
   try {
     const { studentId, examId, marks } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
@@ -109,7 +109,7 @@ export const createOrUpdateResult = async (req, res) => {
   }
 };
 
-export const publishResult = async (req, res) => {
+const publishResult = async (req, res) => {
   try {
     const { studentId, examId } = req.body;
     const { schoolId, sessionId } = req.user;
@@ -136,7 +136,7 @@ export const publishResult = async (req, res) => {
   }
 };
 
-export const getMyResult = async (req, res) => {
+const getMyResult = async (req, res) => {
   try {
     const { studentId, schoolId, sessionId } = req.user;
     const { examId } = req.query;
@@ -154,7 +154,7 @@ export const getMyResult = async (req, res) => {
   }
 };
 
-export const getResultsByExam = async (req, res) => {
+const getResultsByExam = async (req, res) => {
   try {
     const { examId } = req.params;
     const { schoolId, sessionId } = req.user;
@@ -170,7 +170,7 @@ export const getResultsByExam = async (req, res) => {
   }
 };
 
-export const getChildrenResults = async (req, res) => {
+const getChildrenResults = async (req, res) => {
   try {
     const { _id: parentId, schoolId, sessionId } = req.user;
     const { examId } = req.query;
@@ -193,7 +193,7 @@ export const getChildrenResults = async (req, res) => {
   }
 };
 
-export const getMyResults = async (req, res) => {
+const getMyResults = async (req, res) => {
   try {
     const { studentId, schoolId, sessionId } = req.user;
 
@@ -207,7 +207,7 @@ export const getMyResults = async (req, res) => {
   }
 };
 
-export const getResultPDF = async (req, res) => {
+const getResultPDF = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await Result.findById(id)
@@ -322,4 +322,14 @@ const calculateExamRanks = async (examId, schoolId, sessionId) => {
     console.error('Error calculating exam ranks:', err);
     // Don't throw error to avoid breaking the publish flow
   }
+};
+
+module.exports = {
+  createOrUpdateResult,
+  publishResult,
+  getMyResult,
+  getResultsByExam,
+  getChildrenResults,
+  getMyResults,
+  getResultPDF
 };
