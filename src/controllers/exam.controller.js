@@ -2,25 +2,26 @@ const Exam = require('../models/Exam.js');
 
 const createExam = async (req, res) => {
   try {
-    const { schoolId, sessionId, _id: userId } = req.user;
+    const { _id: userId, schoolId, sessionId } = req.user;
 
-    if (!sessionId) {
-      return res.status(400).json({ message: "Active academic session not found" });
-    }
-
-    const { sessionId: _ignoredSession, schoolId: _ignoredSchool, createdBy: _ignoredBy, ...safeBody } = req.body;
+    const {
+      sessionId: _ignoreSession,
+      schoolId: _ignoreSchool,
+      createdBy: _ignoreCreatedBy,
+      ...safeBody
+    } = req.body;
 
     const exam = await Exam.create({
       ...safeBody,
-      schoolId,     // from JWT
-      sessionId,    // from attachActiveSession (ACTIVE session only)
+      schoolId,
+      sessionId,
       createdBy: userId
     });
+
     res.status(201).json(exam);
+
+
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(409).json({ message: 'Exam already exists for this class, session, and school.' });
-    }
     res.status(500).json({ message: err.message });
   }
 };
