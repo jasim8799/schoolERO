@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const AcademicSession = require('../models/AcademicSession');
 
 const attachActiveSession = async (req, res, next) => {
@@ -9,7 +10,7 @@ const attachActiveSession = async (req, res, next) => {
     }
 
     const activeSession = await AcademicSession.findOne({
-      schoolId,
+      schoolId: mongoose.Types.ObjectId(schoolId),
       isActive: true
     });
 
