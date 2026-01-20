@@ -1,11 +1,21 @@
 const Result = require('../models/Result.js');
 const ExamSubject = require('../models/ExamSubject.js');
+const Exam = require('../models/Exam.js');
 const Student = require('../models/Student.js');
 
 const createOrUpdateResult = async (req, res) => {
   try {
     const { studentId, examId, marks } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
+
+    // Check if exam is published
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    if (!exam) {
+      return res.status(404).json({ message: 'Exam not found' });
+    }
+    if (exam.status !== 'Published') {
+      return res.status(403).json({ message: 'Results can only be entered after exam is published' });
+    }
 
     // Check if result exists and is published
     const existingResult = await Result.findOne({ studentId, examId, schoolId, sessionId });
@@ -111,7 +121,7 @@ const createOrUpdateResult = async (req, res) => {
 
 const publishResult = async (req, res) => {
   try {
-    const { studentId, examId } = req.body;
+    const { examId, studentId } = req.params;
     const { schoolId, sessionId } = req.user;
 
     const result = await Result.findOne({ studentId, examId, schoolId, sessionId });
@@ -120,7 +130,7 @@ const publishResult = async (req, res) => {
     }
 
     if (result.status === 'Published') {
-      return res.status(400).json({ message: 'Result already published.' });
+      return res.status(403).json({ message: 'Result is already published.' });
     }
 
     result.status = 'Published';
@@ -139,7 +149,7 @@ const publishResult = async (req, res) => {
 const getMyResult = async (req, res) => {
   try {
     const { studentId, schoolId, sessionId } = req.user;
-    const { examId } = req.query;
+    const { examId } = req.params;
 
     const result = await Result.findOne({ studentId, examId, schoolId, sessionId })
       .populate('studentId', 'name rollNumber')

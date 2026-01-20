@@ -15,8 +15,8 @@ router.post(
   createOrUpdateResult
 );
 
-router.put(
-  '/publish',
+router.patch(
+  '/:examId/:studentId/publish',
   authenticate,
   enforceSchoolIsolation,
   requireRole(USER_ROLES.PRINCIPAL),
@@ -45,6 +45,14 @@ router.get(
   enforceSchoolIsolation,
   requireRole(USER_ROLES.STUDENT),
   getMyResults
+);
+
+router.get(
+  '/me/:examId',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.STUDENT),
+  getMyResult
 );
 
 router.get(
