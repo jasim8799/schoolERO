@@ -8,10 +8,12 @@ const createExam = async (req, res) => {
       return res.status(400).json({ message: "Active academic session not found" });
     }
 
+    const { sessionId: _ignoredSession, schoolId: _ignoredSchool, createdBy: _ignoredBy, ...safeBody } = req.body;
+
     const exam = await Exam.create({
-      ...req.body,
-      schoolId,
-      sessionId,
+      ...safeBody,
+      schoolId,     // from JWT
+      sessionId,    // from attachActiveSession (ACTIVE session only)
       createdBy: userId
     });
     res.status(201).json(exam);
