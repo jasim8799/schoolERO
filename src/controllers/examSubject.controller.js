@@ -5,7 +5,7 @@ const createExamSubject = async (req, res) => {
   try {
     const { subjectId, maxMarks, passMarks, teacherId } = req.body;
     const { examId } = req.params;
-    const { schoolId, sessionId, _id: userId } = req.user;
+    const { schoolId, _id: userId } = req.user;
 
     if (passMarks > maxMarks) {
       return res.status(400).json({
@@ -13,7 +13,9 @@ const createExamSubject = async (req, res) => {
       });
     }
 
-    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    // 🔴 FIX: REMOVE sessionId from exam lookup
+    const exam = await Exam.findOne({ _id: examId, schoolId });
+
     if (!exam) {
       return res.status(404).json({ message: 'Exam not found' });
     }
@@ -30,12 +32,17 @@ const createExamSubject = async (req, res) => {
       teacherId,
       maxMarks,
       passMarks,
-      sessionId,
+      sessionId: exam.sessionId, // ✅ USE EXAM SESSION
       schoolId,
       createdBy: userId
     });
 
-    res.status(201).json(examSubject);
+    res.status(201).json({
+      success: true,
+      message: 'Exam subject linked successfully',
+      data: examSubject
+    });
+
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({
@@ -49,12 +56,19 @@ const createExamSubject = async (req, res) => {
 const getExamSubjects = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
 
-    const examSubjects = await ExamSubject.find({ examId, schoolId, sessionId })
+    // 🔴 FIX: REMOVE sessionId filter
+    const examSubjects = await ExamSubject.find({ examId, schoolId })
       .populate('subjectId', 'name')
       .populate('teacherId', 'name');
-    res.json(examSubjects);
+
+    res.json({
+      success: true,
+      count: examSubjects.length,
+      data: examSubjects
+    });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

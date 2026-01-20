@@ -8,6 +8,12 @@ const createOrUpdateResult = async (req, res) => {
     const { studentId, examId, marks } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
 
+    if (!Array.isArray(marks) || marks.length === 0) {
+      return res.status(400).json({
+        message: 'Marks array cannot be empty'
+      });
+    }
+
     // Check if exam is published
     const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
     if (!exam) {
@@ -21,6 +27,12 @@ const createOrUpdateResult = async (req, res) => {
     const existingResult = await Result.findOne({ studentId, examId, schoolId, sessionId });
     if (existingResult && existingResult.status === 'Published') {
       return res.status(403).json({ message: 'Result is already published and cannot be updated.' });
+    }
+
+    if (existingResult && existingResult.marks?.length > 0) {
+      return res.status(403).json({
+        message: 'Marks already entered. Please contact administrator.'
+      });
     }
 
     // Fetch all ExamSubject records once for performance optimization
