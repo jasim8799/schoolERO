@@ -160,8 +160,15 @@ const publishResult = async (req, res) => {
 
 const getMyResult = async (req, res) => {
   try {
-    const { studentId, schoolId, sessionId } = req.user;
+    const { schoolId, sessionId, _id: userId } = req.user;
     const { examId } = req.params;
+
+    // Fetch studentId for STUDENT role
+    const student = await Student.findOne({ userId, schoolId, sessionId });
+    if (!student) {
+      return res.status(404).json({ message: 'Student profile not found.' });
+    }
+    const studentId = student._id;
 
     const result = await Result.findOne({ studentId, examId, schoolId, sessionId })
       .populate('studentId', 'name rollNumber')
@@ -217,7 +224,14 @@ const getChildrenResults = async (req, res) => {
 
 const getMyResults = async (req, res) => {
   try {
-    const { studentId, schoolId, sessionId } = req.user;
+    const { schoolId, sessionId, _id: userId } = req.user;
+
+    // Fetch studentId for STUDENT role
+    const student = await Student.findOne({ userId, schoolId, sessionId });
+    if (!student) {
+      return res.status(404).json({ message: 'Student profile not found.' });
+    }
+    const studentId = student._id;
 
     const results = await Result.find({ studentId, schoolId, sessionId })
       .populate('examId', 'name')

@@ -25,6 +25,8 @@ const examFormRoutes = require('./routes/examForm.routes');
 const examPaymentRoutes = require('./routes/examPayment.routes');
 const admitCardRoutes = require('./routes/admitCard.routes');
 const resultRoutes = require('./routes/result.routes');
+const promotionRoutes = require('./routes/promotion.routes');
+const academicHistoryRoutes = require('./routes/academicHistory.routes');
 const feeStructureRoutes = require('./routes/feeStructure.routes');
 const studentFeeRoutes = require('./routes/studentFee.routes');
 const feePaymentRoutes = require('./routes/feePayment.routes');
@@ -82,6 +84,8 @@ app.use('/api/exam-forms', authenticate, attachSchoolId, attachActiveSession, ch
 app.use('/api/exam-payments', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examPaymentRoutes);
 app.use('/api/admit-cards', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), admitCardRoutes);
 app.use('/api/results', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), resultRoutes);
+app.use('/api/promotion', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), promotionRoutes);
+app.use('/api/academic-history', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('students'), academicHistoryRoutes);
 app.use(
   '/api/fees',
   authenticate,

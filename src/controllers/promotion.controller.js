@@ -1,21 +1,86 @@
-import Student from '../models/Student.js';
-import AcademicHistory from '../models/AcademicHistory.js';
+const Student = require('../models/Student.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
+const Result = require('../models/Result.js');
+const Class = require('../models/Class.js');
 
-export const previewPromotion = async (req, res) => {
+// Shared helper function for consistent promotion logic
+async function getNextClass(currentClassId, schoolId, toSessionId) {
+  // 1. Fetch current class to get its order
+  const currentClass = await Class.findById(currentClassId);
+  if (!currentClass) {
+    throw new Error('Current class not found');
+  }
+
+  // 2. Get all classes for the school and toSessionId, sorted by order
+  const toSessionClasses = await Class.find({
+    schoolId,
+    sessionId: toSessionId,
+    status: 'active'
+  }).sort({ order: 1 }); // Sort by academic order
+
+  // 3. Find the class in toSession with the next order
+  const nextOrder = currentClass.order + 1;
+  const nextClass = toSessionClasses.find(c => c.order === nextOrder);
+
+  if (!nextClass) {
+    // No next class, terminal class
+    return null;
+  }
+
+  return nextClass._id;
+}
+
+const previewPromotion = async (req, res) => {
   try {
     const { fromSessionId, toSessionId, classId } = req.body;
+    const { schoolId } = req.user;
 
     if (fromSessionId === toSessionId) {
       return res.status(400).json({ message: 'Sessions must be different' });
     }
 
-    const students = await Student.find({ classId, sessionId: fromSessionId, status: 'ACTIVE' }).select('name rollNumber classId');
-    const result = students.map(student => ({
-      studentId: student._id,
-      name: student.name,
-      rollNumber: student.rollNumber,
-      currentClassId: student.classId,
-      suggestedNextClassId: student.classId + 1, // assume classId is number
+    const students = await Student.find({ classId, sessionId: fromSessionId, status: 'ACTIVE', schoolId }).select('name rollNumber classId');
+
+    // Get all results for these students in the fromSessionId
+    const studentIds = students.map(s => s._id);
+    const results = await Result.find({
+      studentId: { $in: studentIds },
+      sessionId: fromSessionId,
+      schoolId,
+      status: 'Published'
+    }).select('studentId promotionStatus');
+
+    // Create a map of studentId to promotionStatus
+    const promotionMap = {};
+    results.forEach(result => {
+      promotionMap[result.studentId.toString()] = result.promotionStatus;
+    });
+
+    const result = await Promise.all(students.map(async (student) => {
+      const promotionStatus = promotionMap[student._id.toString()] || 'NOT_ELIGIBLE';
+      let suggestedNextClassId = student.classId;
+      let action = 'RETAIN';
+
+      if (promotionStatus === 'ELIGIBLE') {
+        const nextClassId = await getNextClass(student.classId, schoolId, toSessionId);
+        if (nextClassId) {
+          suggestedNextClassId = nextClassId;
+          action = 'PROMOTE';
+        } else {
+          // Terminal class, but still eligible? Perhaps retain or complete
+          action = 'RETAIN';
+        }
+      }
+
+      return {
+        studentId: student._id,
+        name: student.name,
+        rollNumber: student.rollNumber,
+        currentClassId: student.classId,
+        suggestedNextClassId,
+        promotionStatus,
+        action
+      };
     }));
 
     res.json(result);
@@ -24,7 +89,7 @@ export const previewPromotion = async (req, res) => {
   }
 };
 
-export const executePromotion = async (req, res) => {
+const executePromotion = async (req, res) => {
   try {
     const { fromSessionId, toSessionId, promotions } = req.body;
     const { role } = req.user;
@@ -42,8 +107,14 @@ export const executePromotion = async (req, res) => {
       let newClassId = student.classId;
       let status = 'Retained';
       if (promo.action === 'PROMOTE') {
-        newClassId = student.classId + 1;
-        status = 'Promoted';
+        const nextClassId = await getNextClass(student.classId, student.schoolId, toSessionId);
+        if (nextClassId) {
+          newClassId = nextClassId;
+          status = 'Promoted';
+        } else {
+          // Terminal class
+          status = 'Completed';
+        }
       }
 
       await Student.findByIdAndUpdate(promo.studentId, { classId: newClassId, sessionId: toSessionId });
@@ -63,4 +134,9 @@ export const executePromotion = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
+};
+
+module.exports = {
+  previewPromotion,
+  executePromotion
 };

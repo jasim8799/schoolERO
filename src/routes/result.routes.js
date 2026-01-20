@@ -11,7 +11,7 @@ router.post(
   '/',
   authenticate,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.TEACHER),
+  requireRole(USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   createOrUpdateResult
 );
 

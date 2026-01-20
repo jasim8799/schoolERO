@@ -1,13 +1,26 @@
-import express from 'express';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { enforceSchoolIsolation } from '../middlewares/school.middleware.js';
-import { requireRole } from '../middlewares/role.middleware.js';
-import { previewPromotion, executePromotion } from '../controllers/promotion.controller.js';
-import { USER_ROLES } from '../config/constants.js';
+const express = require('express');
+const { previewPromotion, executePromotion } = require('../controllers/promotion.controller.js');
+const { authenticate } = require('../middlewares/auth.middleware.js');
+const { requireRole } = require('../middlewares/role.middleware.js');
+const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
+const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
 
-router.post('/preview', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), previewPromotion);
-router.post('/execute', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), executePromotion);
+router.post(
+  '/preview',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  previewPromotion
+);
 
-export default router;
+router.post(
+  '/execute',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  executePromotion
+);
+
+module.exports = router;

@@ -16,6 +16,11 @@ const classSchema = new mongoose.Schema({
     ref: 'AcademicSession',
     required: [true, 'Session ID is required']
   },
+  order: {
+    type: Number,
+    required: [true, 'Class order is required'],
+    min: 1
+  },
   status: {
     type: String,
     enum: ['active', 'inactive'],
