@@ -170,15 +170,9 @@ const getMyResult = async (req, res) => {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
 
-    // Automatically migrate old student to active session
-    if (!student.sessionId) {
-      student.sessionId = req.user.sessionId;
-      await student.save();
-    }
-
     const studentId = student._id;
 
-    const result = await Result.findOne({ studentId, examId, schoolId, sessionId })
+    const result = await Result.findOne({ studentId, examId, schoolId, sessionId: student.sessionId })
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name');
@@ -249,15 +243,9 @@ const getMyResults = async (req, res) => {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
 
-    // Automatically migrate old student to active session
-    if (!student.sessionId) {
-      student.sessionId = req.user.sessionId;
-      await student.save();
-    }
-
     const studentId = student._id;
 
-    const results = await Result.find({ studentId, schoolId, sessionId })
+    const results = await Result.find({ studentId, schoolId, sessionId: student.sessionId })
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name')
       .sort({ createdAt: -1 });
