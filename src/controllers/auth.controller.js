@@ -160,7 +160,7 @@ const login = async (req, res) => {
         const student = await Student.findOne({
           schoolId: user.schoolId,
           mobile: user.mobile,
-          userId: { $in: [null, undefined] }
+          $or: [{ userId: null }, { userId: { $exists: false } }]
         }).sort({ createdAt: -1 });
 
         if (student) {
