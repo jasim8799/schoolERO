@@ -23,7 +23,15 @@ const createStudent = async (req, res) => {
     } = req.body;
 
     const schoolId = req.user.schoolId;
-    const sessionId = req.sessionId;
+
+    if (!req.user.sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Active academic session not found'
+      });
+    }
+
+    const sessionId = req.user.sessionId;
 
     // Validate required fields
     if (!name || !rollNumber || !classId || !sectionId || !parentId) {
