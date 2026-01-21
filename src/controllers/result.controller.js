@@ -165,10 +165,17 @@ const getMyResult = async (req, res) => {
     const { examId } = req.params;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user._id, schoolId, sessionId });
+    const student = await Student.findOne({ userId: req.user._id, schoolId });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
+
+    // Automatically migrate old student to active session
+    if (!student.sessionId) {
+      student.sessionId = req.user.sessionId;
+      await student.save();
+    }
+
     const studentId = student._id;
 
     const result = await Result.findOne({ studentId, examId, schoolId, sessionId })
@@ -237,10 +244,17 @@ const getMyResults = async (req, res) => {
     const { schoolId, sessionId, _id: userId } = req.user;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user._id, schoolId, sessionId });
+    const student = await Student.findOne({ userId: req.user._id, schoolId });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
+
+    // Automatically migrate old student to active session
+    if (!student.sessionId) {
+      student.sessionId = req.user.sessionId;
+      await student.save();
+    }
+
     const studentId = student._id;
 
     const results = await Result.find({ studentId, schoolId, sessionId })
