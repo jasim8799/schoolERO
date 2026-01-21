@@ -69,7 +69,8 @@ const createStudent = async (req, res) => {
     }
 
     // Verify parent exists and belongs to school
-    const parent = await Parent.findOne({ _id: parentId, schoolId });
+    const parent = await Parent.findOne({ _id: parentId, schoolId })
+      .populate('userId', 'mobile');
     if (!parent) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
@@ -103,7 +104,8 @@ const createStudent = async (req, res) => {
       status: 'ACTIVE',
       dateOfBirth,
       gender,
-      address
+      address,
+      mobile: parent.userId?.mobile || null
     });
 
     // Add student to parent's children array

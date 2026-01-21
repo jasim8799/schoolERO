@@ -31,6 +31,11 @@ const studentSchema = new mongoose.Schema({
     ref: 'User',
     index: true
   },
+  mobile: {
+    type: String,
+    trim: true,
+    index: true
+  },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',
