@@ -5,7 +5,7 @@ const createExamSubject = async (req, res) => {
   try {
     const { subjectId, maxMarks, passMarks, teacherId } = req.body;
     const { examId } = req.params;
-    const { schoolId, _id: userId } = req.user;
+    const { schoolId, sessionId, _id: userId } = req.user;
 
     if (passMarks > maxMarks) {
       return res.status(400).json({
@@ -13,8 +13,7 @@ const createExamSubject = async (req, res) => {
       });
     }
 
-    // 🔴 FIX: REMOVE sessionId from exam lookup
-    const exam = await Exam.findOne({ _id: examId, schoolId });
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
 
     if (!exam) {
       return res.status(404).json({ message: 'Exam not found' });
@@ -56,10 +55,9 @@ const createExamSubject = async (req, res) => {
 const getExamSubjects = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
-    // 🔴 FIX: REMOVE sessionId filter
-    const examSubjects = await ExamSubject.find({ examId, schoolId })
+    const examSubjects = await ExamSubject.find({ examId, schoolId, sessionId })
       .populate('subjectId', 'name')
       .populate('teacherId', 'name');
 

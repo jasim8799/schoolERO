@@ -26,7 +26,7 @@ const ExamSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Draft', 'Active', 'Closed'],
+    enum: ['Draft', 'Published', 'Closed'],
     default: 'Draft'
   },
   schoolId: {
