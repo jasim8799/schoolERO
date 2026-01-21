@@ -26,6 +26,11 @@ const studentSchema = new mongoose.Schema({
     ref: 'Parent',
     required: [true, 'Parent ID is required']
   },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true
+  },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',
