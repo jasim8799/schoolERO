@@ -45,21 +45,21 @@ router.get(
 );
 
 router.get(
-  '/student/:studentId',
-  authenticate,
-  attachActiveSession,
-  enforceSchoolIsolation,
-  requireRole(USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL),
-  getResultsByStudentId
-);
-
-router.get(
   '/student/me',
   authenticate,
   attachActiveSession,
   enforceSchoolIsolation,
   requireRole(USER_ROLES.STUDENT),
   getMyResults
+);
+
+router.get(
+  '/student/:studentId',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL),
+  getResultsByStudentId
 );
 
 router.get(

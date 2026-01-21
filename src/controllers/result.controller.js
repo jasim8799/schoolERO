@@ -162,7 +162,7 @@ const publishResult = async (req, res) => {
 const getMyResult = async (req, res) => {
   try {
     const { schoolId, sessionId, _id: userId } = req.user;
-    const { examId } = req.query;
+    const { examId } = req.params;
 
     // Fetch studentId for STUDENT role
     const student = await Student.findOne({ userId: req.user.userId, schoolId });
