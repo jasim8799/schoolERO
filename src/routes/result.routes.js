@@ -1,5 +1,5 @@
 const express = require('express');
-const { createOrUpdateResult, publishResult, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults } = require('../controllers/result.controller.js');
+const { createOrUpdateResult, publishResult, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
@@ -45,7 +45,16 @@ router.get(
 );
 
 router.get(
-  '/me',
+  '/student/:studentId',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL),
+  getResultsByStudentId
+);
+
+router.get(
+  '/student/me',
   authenticate,
   attachActiveSession,
   enforceSchoolIsolation,

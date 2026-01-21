@@ -257,10 +257,28 @@ const getMyResults = async (req, res) => {
 
     const studentId = student._id;
 
-    const results = await Result.find({ studentId, schoolId, status: 'Published' })
+    const results = await Result.find({ studentId, schoolId, sessionId, status: 'Published' })
       .populate('examId', 'name')
+      .populate('studentId', 'name rollNumber')
       .populate('marks.subjectId', 'name')
       .sort({ createdAt: -1 });
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getResultsByStudentId = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const results = await Result.find({ studentId, schoolId, sessionId, status: 'Published' })
+      .populate('examId', 'name')
+      .populate('studentId', 'name rollNumber')
+      .populate('marks.subjectId', 'name')
+      .sort({ createdAt: -1 });
+
     res.json(results);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -391,5 +409,6 @@ module.exports = {
   getResultsByExam,
   getChildrenResults,
   getMyResults,
+  getResultsByStudentId,
   getResultPDF
 };
