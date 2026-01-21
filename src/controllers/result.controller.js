@@ -162,7 +162,7 @@ const publishResult = async (req, res) => {
 const getMyResult = async (req, res) => {
   try {
     const { schoolId, sessionId, _id: userId } = req.user;
-    const { examId } = req.params;
+    const { examId } = req.query;
 
     // Fetch studentId for STUDENT role
     const student = await Student.findOne({ userId: req.user.userId, schoolId });
@@ -172,10 +172,22 @@ const getMyResult = async (req, res) => {
 
     const studentId = student._id;
 
-    const result = await Result.findOne({ studentId, examId, schoolId })
-      .populate('studentId', 'name rollNumber')
-      .populate('examId', 'name')
-      .populate('marks.subjectId', 'name');
+    let result;
+    if (examId) {
+      // Return specific exam result
+      result = await Result.findOne({ studentId, examId, schoolId, status: 'Published' })
+        .populate('studentId', 'name rollNumber')
+        .populate('examId', 'name')
+        .populate('marks.subjectId', 'name');
+    } else {
+      // Return latest published result
+      result = await Result.findOne({ studentId, schoolId, status: 'Published' })
+        .populate('studentId', 'name rollNumber')
+        .populate('examId', 'name')
+        .populate('marks.subjectId', 'name')
+        .sort({ createdAt: -1 });
+    }
+
     if (!result) {
       return res.status(404).json({ message: 'Result not found.' });
     }
@@ -245,7 +257,7 @@ const getMyResults = async (req, res) => {
 
     const studentId = student._id;
 
-    const results = await Result.find({ studentId, schoolId })
+    const results = await Result.find({ studentId, schoolId, status: 'Published' })
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name')
       .sort({ createdAt: -1 });
