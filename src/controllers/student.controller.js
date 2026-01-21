@@ -1,5 +1,6 @@
 const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
+const User = require('../models/User.js');
 const Class = require('../models/Class.js');
 const Section = require('../models/Section.js');
 const AcademicSession = require('../models/AcademicSession.js');
@@ -258,9 +259,91 @@ const updateStudentStatus = async (req, res) => {
   }
 };
 
+// Link User to Student
+const linkUserToStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'userId is required'
+      });
+    }
+
+    // Find student
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Validate user role
+    if (user.role !== 'STUDENT') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User must have STUDENT role'
+      });
+    }
+
+    // Validate school match
+    if (user.schoolId.toString() !== student.schoolId.toString()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User and student must belong to the same school'
+      });
+    }
+
+    // Link user to student
+    student.userId = userId;
+    await student.save();
+
+    // Audit log
+    await auditLog({
+      action: 'STUDENT_USER_LINKED',
+      userId: req.user.userId,
+      schoolId: req.user.schoolId,
+      details: {
+        studentId: student._id,
+        studentName: student.name,
+        linkedUserId: userId,
+        linkedUserName: user.name
+      }
+    });
+
+    logger.success(`Student linked to user: ${student.name} -> ${user.name}`);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Student linked to user successfully',
+      data: student
+    });
+  } catch (error) {
+    logger.error('Link user to student error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error linking user to student',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createStudent,
   getAllStudents,
   getStudentById,
-  updateStudentStatus
+  updateStudentStatus,
+  linkUserToStudent
 };

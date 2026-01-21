@@ -1,5 +1,5 @@
 const express = require('express');
-const { createStudent, getAllStudents, getStudentById, updateStudentStatus } = require('../controllers/student.controller.js');
+const { createStudent, getAllStudents, getStudentById, updateStudentStatus, linkUserToStudent } = require('../controllers/student.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
@@ -20,5 +20,8 @@ router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getStudentById);
 
 // PATCH /api/students/:id/status - Update student status (NO DELETE)
 router.patch('/:id/status', requireMinRole(USER_ROLES.OPERATOR), updateStudentStatus);
+
+// PATCH /api/students/:id/link-user - Link user to student (PRINCIPAL, OPERATOR)
+router.patch('/:id/link-user', requireMinRole(USER_ROLES.OPERATOR), linkUserToStudent);
 
 module.exports = router;
