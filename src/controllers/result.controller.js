@@ -2,6 +2,7 @@ const Result = require('../models/Result.js');
 const ExamSubject = require('../models/ExamSubject.js');
 const Exam = require('../models/Exam.js');
 const Student = require('../models/Student.js');
+const Parent = require('../models/Parent.js');
 
 const createOrUpdateResult = async (req, res) => {
   try {
@@ -201,21 +202,30 @@ const getResultsByExam = async (req, res) => {
 
 const getChildrenResults = async (req, res) => {
   try {
-    const { _id: parentId, schoolId, sessionId } = req.user;
+    const { _id: userId, schoolId, sessionId } = req.user;
     const { examId } = req.query;
 
-    // Find children of the parent
-    const students = await Student.find({ parentId, schoolId, sessionId }).select('_id');
+    const parent = await Parent.findOne({
+      userId,
+      schoolId,
+      status: 'active'
+    });
+
+    if (!parent || !parent.children.length) {
+      return res.json([]);
+    }
 
     const results = await Result.find({
-      studentId: { $in: students.map(s => s._id) },
+      studentId: { $in: parent.children },
       examId,
       schoolId,
-      sessionId
+      sessionId,
+      status: 'Published'
     })
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name');
+
     res.json(results);
   } catch (err) {
     res.status(500).json({ message: err.message });
