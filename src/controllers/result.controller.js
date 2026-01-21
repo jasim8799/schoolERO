@@ -165,14 +165,14 @@ const getMyResult = async (req, res) => {
     const { examId } = req.params;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user.userId });
+    const student = await Student.findOne({ userId: req.user.userId, schoolId });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
 
     const studentId = student._id;
 
-    const result = await Result.findOne({ studentId, examId, schoolId, sessionId: student.sessionId })
+    const result = await Result.findOne({ studentId, examId, schoolId })
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name');
@@ -238,14 +238,14 @@ const getMyResults = async (req, res) => {
     const { schoolId, sessionId, _id: userId } = req.user;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user.userId });
+    const student = await Student.findOne({ userId: req.user.userId, schoolId });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
 
     const studentId = student._id;
 
-    const results = await Result.find({ studentId, schoolId, sessionId: student.sessionId })
+    const results = await Result.find({ studentId, schoolId })
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name')
       .sort({ createdAt: -1 });
