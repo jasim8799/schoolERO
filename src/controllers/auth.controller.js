@@ -1,4 +1,5 @@
 const User = require('../models/User.js');
+const Student = require('../models/Student.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { hashPassword, comparePassword } = require('../utils/password.js');
 const { generateToken } = require('../utils/jwt.js');
@@ -150,6 +151,25 @@ const login = async (req, res) => {
     }
 
     console.log('LOGIN SUCCESS: Password valid');
+
+    // Auto-link STUDENT user to Student document if not already linked
+    if (user.role === USER_ROLES.STUDENT) {
+      const existingLinkedStudent = await Student.findOne({ userId: user._id });
+
+      if (!existingLinkedStudent) {
+        const student = await Student.findOne({
+          schoolId: user.schoolId,
+          mobile: user.mobile,
+          userId: { $in: [null, undefined] }
+        }).sort({ createdAt: -1 });
+
+        if (student) {
+          student.userId = user._id;
+          await student.save();
+          console.log(`Auto-linked STUDENT ${user.name} -> ${student._id}`);
+        }
+      }
+    }
 
     // Fetch active academic session for the user's school
     const activeSession = user.schoolId
