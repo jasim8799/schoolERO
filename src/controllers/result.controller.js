@@ -165,7 +165,7 @@ const getMyResult = async (req, res) => {
     const { examId } = req.params;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user._id, schoolId });
+    const student = await Student.findOne({ userId: req.user._id });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
@@ -238,7 +238,7 @@ const getMyResults = async (req, res) => {
     const { schoolId, sessionId, _id: userId } = req.user;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user._id, schoolId });
+    const student = await Student.findOne({ userId: req.user._id });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
