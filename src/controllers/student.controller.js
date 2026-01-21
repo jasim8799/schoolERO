@@ -348,10 +348,43 @@ const linkUserToStudent = async (req, res) => {
   }
 };
 
+// Move Student to Active Session
+const moveStudentToActiveSession = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    if (!sessionId) {
+      return res.status(400).json({ message: 'Active academic session not found' });
+    }
+
+    const student = await Student.findById(id);
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    if (student.schoolId.toString() !== schoolId.toString()) {
+      return res.status(403).json({ message: 'School mismatch' });
+    }
+
+    student.sessionId = sessionId;
+    await student.save();
+
+    res.json({
+      success: true,
+      message: 'Student moved to active session successfully',
+      data: student
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   createStudent,
   getAllStudents,
   getStudentById,
   updateStudentStatus,
-  linkUserToStudent
+  linkUserToStudent,
+  moveStudentToActiveSession
 };

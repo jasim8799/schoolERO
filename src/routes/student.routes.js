@@ -1,5 +1,5 @@
 const express = require('express');
-const { createStudent, getAllStudents, getStudentById, updateStudentStatus, linkUserToStudent } = require('../controllers/student.controller.js');
+const { createStudent, getAllStudents, getStudentById, updateStudentStatus, linkUserToStudent, moveStudentToActiveSession } = require('../controllers/student.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
@@ -23,5 +23,8 @@ router.patch('/:id/status', requireMinRole(USER_ROLES.OPERATOR), updateStudentSt
 
 // PATCH /api/students/:id/link-user - Link user to student (PRINCIPAL, OPERATOR)
 router.patch('/:id/link-user', requireMinRole(USER_ROLES.OPERATOR), linkUserToStudent);
+
+// PATCH /api/students/:id/move-session - Move student to active session (PRINCIPAL, OPERATOR)
+router.patch('/:id/move-session', requireMinRole(USER_ROLES.OPERATOR), moveStudentToActiveSession);
 
 module.exports = router;
