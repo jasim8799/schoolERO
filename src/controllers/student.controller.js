@@ -115,7 +115,7 @@ const createStudent = async (req, res) => {
     });
 
     // Add student to parent's children array
-    if (!parent.children.includes(newStudent._id)) {
+    if (!parent.children.some(id => id.toString() === newStudent._id.toString())) {
       parent.children.push(newStudent._id);
     }
     await parent.save();
@@ -327,6 +327,13 @@ const linkUserToStudent = async (req, res) => {
     // Link user to student
     student.userId = userId;
     await student.save();
+
+    // Ensure parent.children is updated
+    const parent = await Parent.findById(student.parentId);
+    if (parent && !parent.children.some(id => id.toString() === student._id.toString())) {
+      parent.children.push(student._id);
+      await parent.save();
+    }
 
     // Audit log
     await auditLog({

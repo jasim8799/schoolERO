@@ -12,7 +12,7 @@ router.use(authenticate);
 router.use(enforceSchoolIsolation);
 
 // POST /api/homework - Create homework (TEACHER, PRINCIPAL, OPERATOR)
-router.post('/', requireMinRole(USER_ROLES.OPERATOR), createHomework);
+router.post('/', requireMinRole(USER_ROLES.TEACHER), createHomework);
 
 // GET /api/homework/class - Get homework by class (TEACHER, PRINCIPAL, OPERATOR)
 router.get('/class', requireMinRole(USER_ROLES.OPERATOR), getHomeworkByClass);
