@@ -1,5 +1,6 @@
 const Parent = require('../models/Parent.js');
 const User = require('../models/User.js');
+const Student = require('../models/Student.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog_new.js');
@@ -48,6 +49,17 @@ const createParent = async (req, res) => {
       schoolId,
       status: 'active'
     });
+
+    // ✅ Backfill existing students linked to this parent
+    const students = await Student.find({
+      parentId: newParent._id,
+      schoolId
+    });
+
+    if (students.length) {
+      newParent.children = students.map(s => s._id);
+      await newParent.save();
+    }
 
     // Audit log
     await auditLog({
