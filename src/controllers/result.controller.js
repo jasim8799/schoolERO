@@ -165,7 +165,7 @@ const getMyResult = async (req, res) => {
     const { examId } = req.params;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user.userId, schoolId });
+    const student = await Student.findOne({ userId, schoolId });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
@@ -175,13 +175,13 @@ const getMyResult = async (req, res) => {
     let result;
     if (examId) {
       // Return specific exam result
-      result = await Result.findOne({ studentId, examId, schoolId, status: 'Published' })
+      result = await Result.findOne({ studentId, examId, schoolId, sessionId, status: 'Published' })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name')
         .populate('marks.subjectId', 'name');
     } else {
       // Return latest published result
-      result = await Result.findOne({ studentId, schoolId, status: 'Published' })
+      result = await Result.findOne({ studentId, schoolId, sessionId, status: 'Published' })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name')
         .populate('marks.subjectId', 'name')
@@ -228,13 +228,16 @@ const getChildrenResults = async (req, res) => {
       return res.json([]);
     }
 
-    const results = await Result.find({
+    const filter = {
       studentId: { $in: parent.children },
-      examId,
       schoolId,
       sessionId,
       status: 'Published'
-    })
+    };
+
+    if (examId) filter.examId = examId;
+
+    const results = await Result.find(filter)
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name');
@@ -250,7 +253,7 @@ const getMyResults = async (req, res) => {
     const { schoolId, sessionId, _id: userId } = req.user;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId: req.user.userId, schoolId });
+    const student = await Student.findOne({ userId, schoolId });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
