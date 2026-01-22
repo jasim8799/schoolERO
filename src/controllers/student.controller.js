@@ -22,16 +22,22 @@ const createStudent = async (req, res) => {
       address
     } = req.body;
 
-    const schoolId = req.user.schoolId;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
 
-    if (!req.user.sessionId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Active academic session not found'
+    let sessionId = req.user.sessionId;
+    if (!sessionId) {
+      const activeSession = await AcademicSession.findOne({
+        schoolId,
+        isActive: true
       });
+      if (!activeSession) {
+        return res.status(400).json({
+          success: false,
+          message: 'No active academic session found'
+        });
+      }
+      sessionId = activeSession._id;
     }
-
-    const sessionId = req.user.sessionId;
 
     // Validate required fields
     if (!name || !rollNumber || !classId || !sectionId || !parentId) {
@@ -109,7 +115,9 @@ const createStudent = async (req, res) => {
     });
 
     // Add student to parent's children array
-    parent.children.push(newStudent._id);
+    if (!parent.children.includes(newStudent._id)) {
+      parent.children.push(newStudent._id);
+    }
     await parent.save();
 
     // Audit log
@@ -356,8 +364,18 @@ const moveStudentToActiveSession = async (req, res) => {
     const { id } = req.params;
     const { schoolId, sessionId } = req.user;
 
-    if (!sessionId) {
-      return res.status(400).json({ message: 'Active academic session not found' });
+    const normalizedSchoolId = schoolId._id || schoolId;
+
+    let activeSessionId = sessionId;
+    if (!activeSessionId) {
+      const activeSession = await AcademicSession.findOne({
+        schoolId: normalizedSchoolId,
+        isActive: true
+      });
+      if (!activeSession) {
+        return res.status(400).json({ message: 'No active academic session found' });
+      }
+      activeSessionId = activeSession._id;
     }
 
     const student = await Student.findById(id);
@@ -365,11 +383,11 @@ const moveStudentToActiveSession = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    if (student.schoolId.toString() !== schoolId.toString()) {
+    if (student.schoolId.toString() !== normalizedSchoolId.toString()) {
       return res.status(403).json({ message: 'School mismatch' });
     }
 
-    student.sessionId = sessionId;
+    student.sessionId = activeSessionId;
     await student.save();
 
     res.json({
