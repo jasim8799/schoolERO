@@ -11,7 +11,7 @@ const createSubject = async (req, res) => {
   try {
     const { name, classId } = req.body;
     const schoolId = req.user.schoolId;
-    const sessionId = req.sessionId;
+    const sessionId = req.user.sessionId;
 
     // Validate required fields
     if (!name || !classId) {
@@ -79,7 +79,7 @@ const getAllSubjects = async (req, res) => {
     const { classId } = req.query;
 
     // Build filter
-    const filter = { schoolId: req.user.schoolId, sessionId: req.sessionId };
+    const filter = { schoolId: req.user.schoolId, sessionId: req.user.sessionId };
     if (classId) filter.classId = classId;
 
     const subjects = await Subject.find(filter)
@@ -108,7 +108,7 @@ const getSubjectById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const subject = await Subject.findOne({ _id: id, schoolId: req.user.schoolId, sessionId: req.sessionId })
+    const subject = await Subject.findOne({ _id: id, schoolId: req.user.schoolId, sessionId: req.user.sessionId })
       .populate('classId', 'name')
       .populate('schoolId', 'name code')
       .populate('sessionId', 'name startDate endDate');
