@@ -8,7 +8,7 @@ const { auditLog } = require('../utils/auditLog_new.js');
 // Create Class
 const createClass = async (req, res) => {
   try {
-    const { name, schoolId, sessionId } = req.body;
+    const { name, schoolId, sessionId, order } = req.body;
 
     // Validate required fields
     if (!name || !schoolId || !sessionId) {
@@ -50,6 +50,7 @@ const createClass = async (req, res) => {
       name,
       schoolId,
       sessionId,
+      order,
       status: 'active'
     });
 
