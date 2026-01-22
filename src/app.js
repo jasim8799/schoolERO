@@ -36,6 +36,7 @@ const reportsRoutes = require('./routes/reports.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const systemRoutes = require('./routes/system.routes');
 const auditRoutes = require('./routes/audit.routes');
+const homeworkRoutes = require('./routes/homework.routes');
 const versionRoutes = require('./routes/version.routes');
 const tcRoutes = require('./routes/tc.routes');
 
@@ -79,6 +80,7 @@ app.use('/api/teachers', authenticate, attachSchoolId, attachActiveSession, chec
 app.use('/api/parents', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
 app.use('/api/attendance', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
 app.use('/api/students', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
+app.use('/api/homework', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('homework'), homeworkRoutes);
 app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
 app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examSubjectRoutes);
 app.use('/api/exam-forms', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examFormRoutes);
