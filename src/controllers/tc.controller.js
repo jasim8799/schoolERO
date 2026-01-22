@@ -1,8 +1,9 @@
-import TC from '../models/TC.js';
-import Student from '../models/Student.js';
-import AcademicHistory from '../models/AcademicHistory.js';
+const TC = require('../models/TC.js');
+const Student = require('../models/Student.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
+const Parent = require('../models/Parent.js');
 
-export const issueTC = async (req, res) => {
+const issueTC = async (req, res) => {
   try {
     const { studentId, reason, issueDate } = req.body;
     const { role, schoolId } = req.user;
@@ -51,16 +52,22 @@ export const issueTC = async (req, res) => {
   }
 };
 
-export const getStudentTC = async (req, res) => {
+const getStudentTC = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { schoolId, role, studentId: loggedStudentId } = req.user;
 
-    if (role === 'STUDENT' || role === 'PARENT') {
+    if (role === 'STUDENT') {
       if (studentId !== loggedStudentId) {
         return res.status(403).json({ message: 'Access denied' });
       }
+    } else if (role === 'PARENT') {
+      const parent = await Parent.findOne({ userId: req.user._id, schoolId });
+      if (!parent || !parent.children.includes(studentId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
     }
+    // For PRINCIPAL/OPERATOR, no restriction
 
     const tc = await TC.findOne({ studentId, schoolId });
     if (!tc) {
@@ -72,3 +79,5 @@ export const getStudentTC = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { issueTC, getStudentTC };

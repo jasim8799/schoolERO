@@ -37,6 +37,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const systemRoutes = require('./routes/system.routes');
 const auditRoutes = require('./routes/audit.routes');
 const versionRoutes = require('./routes/version.routes');
+const tcRoutes = require('./routes/tc.routes');
 
 const app = express();
 
@@ -116,6 +117,7 @@ app.use(
 app.use('/api/expenses', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
 app.use('/api/salary', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
 app.use('/api/reports', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
+app.use('/api/tc', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('tc'), tcRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/version', versionRoutes);
 
