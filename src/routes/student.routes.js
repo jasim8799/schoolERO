@@ -21,8 +21,8 @@ router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getStudentById);
 // PATCH /api/students/:id/status - Update student status (NO DELETE)
 router.patch('/:id/status', requireMinRole(USER_ROLES.OPERATOR), updateStudentStatus);
 
-// PATCH /api/students/:id/link-user - Link user to student (PRINCIPAL, OPERATOR)
-router.patch('/:id/link-user', requireMinRole(USER_ROLES.OPERATOR), linkUserToStudent);
+// POST /api/students/:id/link-user - Link user to student (PRINCIPAL, OPERATOR)
+router.post('/:id/link-user', requireMinRole(USER_ROLES.OPERATOR), linkUserToStudent);
 
 // PATCH /api/students/:id/move-session - Move student to active session (PRINCIPAL, OPERATOR)
 router.patch('/:id/move-session', requireMinRole(USER_ROLES.OPERATOR), moveStudentToActiveSession);
