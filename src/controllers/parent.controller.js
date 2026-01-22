@@ -157,7 +157,7 @@ const getParentById = async (req, res) => {
 // Get Current Parent's Children
 const getMyChildren = async (req, res) => {
   try {
-    const { _id: userId, schoolId } = req.user;
+    const { userId, schoolId } = req.user;
 
     const parent = await Parent.findOne({ userId, schoolId })
       .populate({
