@@ -1,5 +1,5 @@
 const express = require('express');
-const { createStudent, getAllStudents, getStudentById, updateStudentStatus, linkUserToStudent, moveStudentToActiveSession } = require('../controllers/student.controller.js');
+const { createStudent, getAllStudents, getStudentById, updateStudentStatus, linkUserToStudent, moveStudentToActiveSession, getMyStudentProfile } = require('../controllers/student.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
@@ -14,6 +14,13 @@ router.post('/', requireMinRole(USER_ROLES.OPERATOR), createStudent);
 
 // GET /api/students - Get all students (PRINCIPAL, OPERATOR)
 router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllStudents);
+
+// GET /api/students/me - Student self profile
+router.get(
+  '/me',
+  requireMinRole(USER_ROLES.STUDENT),
+  getMyStudentProfile
+);
 
 // GET /api/students/:id - Get student by ID
 router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getStudentById);

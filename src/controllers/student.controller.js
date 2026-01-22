@@ -400,11 +400,42 @@ const moveStudentToActiveSession = async (req, res) => {
   }
 };
 
+// Get logged-in student's own profile
+const getMyStudentProfile = async (req, res) => {
+  try {
+    const student = await Student.findOne({
+      userId: req.user.userId
+    })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('schoolId', 'name code')
+      .populate('sessionId', 'name startDate endDate');
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: student
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
+
 module.exports = {
   createStudent,
   getAllStudents,
   getStudentById,
   updateStudentStatus,
   linkUserToStudent,
-  moveStudentToActiveSession
+  moveStudentToActiveSession,
+  getMyStudentProfile
 };
