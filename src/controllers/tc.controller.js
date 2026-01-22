@@ -58,7 +58,8 @@ const getStudentTC = async (req, res) => {
     const { schoolId, role, studentId: loggedStudentId } = req.user;
 
     if (role === 'STUDENT') {
-      if (studentId !== loggedStudentId) {
+      const student = await Student.findOne({ userId: req.user._id, schoolId });
+      if (!student || student._id.toString() !== studentId) {
         return res.status(403).json({ message: 'Access denied' });
       }
     } else if (role === 'PARENT') {
