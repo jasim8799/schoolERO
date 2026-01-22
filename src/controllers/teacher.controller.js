@@ -12,7 +12,7 @@ const createTeacher = async (req, res) => {
   try {
     const { userId } = req.body;
     const schoolId = req.user.schoolId;
-    const sessionId = req.sessionId;
+    const sessionId = req.user.sessionId;
 
     // Validate required fields
     if (!userId) {
