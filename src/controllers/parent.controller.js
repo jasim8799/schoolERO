@@ -9,7 +9,7 @@ const { auditLog } = require('../utils/auditLog_new.js');
 const createParent = async (req, res) => {
   try {
     const { userId, whatsappNumber } = req.body;
-    const schoolId = req.user.schoolId;
+    const schoolId = req.user.schoolId?._id || req.user.schoolId;
 
     // Validate required fields
     if (!userId) {
@@ -34,11 +34,11 @@ const createParent = async (req, res) => {
     }
 
     // Check if parent profile already exists
-    const existingParent = await Parent.findOne({ userId });
+    const existingParent = await Parent.findOne({ userId, schoolId });
     if (existingParent) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Parent profile already exists for this user'
+        message: 'Parent profile already exists for this user in this school'
       });
     }
 
@@ -52,7 +52,7 @@ const createParent = async (req, res) => {
 
     // ✅ Backfill existing students linked to this parent
     const students = await Student.find({
-      parentId: newParent._id,
+      parentUserId: userId,
       schoolId
     });
 
@@ -158,8 +158,9 @@ const getParentById = async (req, res) => {
 const getMyChildren = async (req, res) => {
   try {
     const { userId, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
-    const parent = await Parent.findOne({ userId, schoolId })
+    const parent = await Parent.findOne({ userId, schoolId: normalizedSchoolId })
       .populate({
         path: 'children',
         select: 'name rollNumber classId sectionId',
@@ -190,9 +191,54 @@ const getMyChildren = async (req, res) => {
   }
 };
 
+// TEMPORARY ADMIN-ONLY MIGRATION: Backfill parentUserId for existing students
+const migrateParentUserId = async (req, res) => {
+  try {
+    // Only allow SUPER_ADMIN
+    if (req.user.role !== 'SUPER_ADMIN') {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Forbidden: Only SUPER_ADMIN can run migrations'
+      });
+    }
+
+    const students = await Student.find({
+      parentUserId: { $exists: false }
+    }).populate({
+      path: 'parentId',
+      select: 'userId'
+    });
+
+    let updatedCount = 0;
+    for (const student of students) {
+      if (student.parentId?.userId) {
+        student.parentUserId = student.parentId.userId;
+        await student.save();
+        updatedCount++;
+      }
+    }
+
+    logger.success(`Migration completed: ${updatedCount} students updated with parentUserId`);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: `Migration completed successfully`,
+      data: { updatedStudents: updatedCount }
+    });
+  } catch (error) {
+    logger.error('Migration error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Migration failed',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createParent,
   getAllParents,
   getParentById,
-  getMyChildren
+  getMyChildren,
+  migrateParentUserId
 };

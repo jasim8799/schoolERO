@@ -105,6 +105,7 @@ const createStudent = async (req, res) => {
       classId,
       sectionId,
       parentId,
+      parentUserId: parent.userId._id,
       schoolId,
       sessionId,
       status: 'ACTIVE',

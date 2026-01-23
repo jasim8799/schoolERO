@@ -1,5 +1,6 @@
 const express = require('express');
 const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, assignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, updateSchoolPlan, renewSchoolSubscription, forceLogoutSchool, createOperator, createParent, createStudent, createTeacher } = require('../controllers/school.controller');
+const { migrateParentUserId } = require('../controllers/parent.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
@@ -60,5 +61,8 @@ router.post('/schools/:id/student', createStudent);
 
 // POST /api/admin/schools/:id/teacher - Create teacher for school (SUPER_ADMIN only)
 router.post('/schools/:id/teacher', createTeacher);
+
+// POST /api/admin/migrate-parent-user-id - Migrate parentUserId for existing students (SUPER_ADMIN only)
+router.post('/migrate-parent-user-id', migrateParentUserId);
 
 module.exports = router;
