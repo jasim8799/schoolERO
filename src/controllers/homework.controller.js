@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Homework = require('../models/Homework.js');
 const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
@@ -98,7 +99,7 @@ const getHomeworkByClass = async (req, res) => {
       });
     }
 
-    const homework = await Homework.find({ classId, schoolId, sessionId })
+    const homework = await Homework.find({ classId, schoolId: new mongoose.Types.ObjectId(schoolId), sessionId })
       .populate('classId', 'name')
       .populate('subjectId', 'name')
       .sort({ dueDate: 1 });
@@ -122,9 +123,17 @@ const getHomeworkForStudent = async (req, res) => {
   try {
     const { role, userId, schoolId, sessionId } = req.user;
 
+    const schoolObjectId = mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : null;
+    if (!schoolObjectId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid schoolId'
+      });
+    }
+
     if (role === USER_ROLES.STUDENT) {
       // Find student by userId
-      const student = await Student.findOne({ userId, schoolId, sessionId });
+      const student = await Student.findOne({ userId, schoolId: schoolObjectId, sessionId });
       if (!student) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({
           success: false,
@@ -135,7 +144,7 @@ const getHomeworkForStudent = async (req, res) => {
       // Find homework for the student's class with section filtering
       const homework = await Homework.find({
         classId: student.classId,
-        schoolId,
+        schoolId: schoolObjectId,
         sessionId,
         $or: [
           { sectionId: null },
@@ -154,7 +163,7 @@ const getHomeworkForStudent = async (req, res) => {
       });
     } else if (role === USER_ROLES.PARENT) {
       // Find parent by userId
-      const parent = await Parent.findOne({ userId, schoolId })
+      const parent = await Parent.findOne({ userId, schoolId: schoolObjectId })
         .populate('children', '_id name classId sectionId');
       if (!parent || !parent.children.length) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({
@@ -169,7 +178,7 @@ const getHomeworkForStudent = async (req, res) => {
       for (const child of parent.children) {
         const homework = await Homework.find({
           classId: child.classId,
-          schoolId,
+          schoolId: schoolObjectId,
           sessionId,
           $or: [
             { sectionId: null },
