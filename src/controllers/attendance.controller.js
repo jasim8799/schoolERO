@@ -8,17 +8,24 @@ const Teacher = require('../models/Teacher.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { auditLog } = require('../utils/auditLog_new.js');
 
+const normalizeDate = (d) => {
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
 const markStudentDailyAttendance = async (req, res) => {
   try {
     const { records } = req.body;
     const { userId, schoolId, sessionId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     if (!records || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ success: false, message: 'Records array is required' });
     }
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -32,7 +39,7 @@ const markStudentDailyAttendance = async (req, res) => {
     const studentIds = records.map(record => record.studentId);
     const students = await Student.find({
       _id: { $in: studentIds },
-      schoolId: schoolId
+      schoolId: normalizedSchoolId
     });
     const studentMap = new Map(students.map(student => [student._id.toString(), student]));
 
@@ -68,26 +75,29 @@ const markStudentDailyAttendance = async (req, res) => {
       }
     }
 
-    const bulkOps = records.map((record) => ({
-      updateOne: {
-        filter: {
-          studentId: record.studentId,
-          date: record.date,
-          schoolId: schoolId,
-        },
-        update: {
-          $set: {
-            classId: record.classId,
-            sectionId: record.sectionId,
-            status: record.status,
-            markedBy: userId,
-            schoolId: schoolId,
-            sessionId: activeSession._id,
+    const bulkOps = records.map((record) => {
+      const attendanceDate = normalizeDate(record.date);
+      return {
+        updateOne: {
+          filter: {
+            studentId: record.studentId,
+            date: attendanceDate,
+            schoolId: normalizedSchoolId,
           },
+          update: {
+            $set: {
+              classId: record.classId,
+              sectionId: record.sectionId,
+              status: record.status,
+              markedBy: userId,
+              schoolId: normalizedSchoolId,
+              sessionId: activeSession._id,
+            },
+          },
+          upsert: true,
         },
-        upsert: true,
-      },
-    }));
+      };
+    });
 
     const result = await StudentDailyAttendance.bulkWrite(bulkOps);
 
@@ -119,9 +129,10 @@ const getStudentDailyAttendance = async (req, res) => {
   try {
     const { classId, sectionId, date, startDate, endDate } = req.query;
     const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -133,16 +144,21 @@ const getStudentDailyAttendance = async (req, res) => {
     }
 
     const filter = {
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       sessionId: activeSession._id,
     };
 
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
-    if (date) filter.date = date;
+    if (date) {
+      filter.date = normalizeDate(date);
+    }
 
     if (startDate && endDate) {
-      filter.date = { $gte: startDate, $lte: endDate };
+      const start = normalizeDate(startDate);
+      const end = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
     }
 
     const attendance = await StudentDailyAttendance.find(filter)
@@ -167,6 +183,7 @@ const markSubjectAttendance = async (req, res) => {
   try {
     const { records } = req.body;
     const { userId, schoolId, role } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     if (role !== 'TEACHER') {
       return res.status(403).json({ success: false, message: 'Only teachers can mark subject attendance' });
@@ -177,7 +194,7 @@ const markSubjectAttendance = async (req, res) => {
     }
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -200,7 +217,7 @@ const markSubjectAttendance = async (req, res) => {
     const studentIds = [...new Set(records.map(record => record.studentId))];
     const students = await Student.find({
       _id: { $in: studentIds },
-      schoolId: schoolId
+      schoolId: normalizedSchoolId
     });
     const studentMap = new Map(students.map(student => [student._id.toString(), student]));
 
@@ -208,7 +225,7 @@ const markSubjectAttendance = async (req, res) => {
     const subjectIds = [...new Set(records.map(record => record.subjectId))];
     const subjects = await Subject.find({
       _id: { $in: subjectIds },
-      schoolId: schoolId
+      schoolId: normalizedSchoolId
     });
     const subjectMap = new Map(subjects.map(subject => [subject._id.toString(), subject]));
 
@@ -234,27 +251,30 @@ const markSubjectAttendance = async (req, res) => {
       }
     }
 
-    const bulkOps = records.map((record) => ({
-      updateOne: {
-        filter: {
-          studentId: record.studentId,
-          subjectId: record.subjectId,
-          date: record.date,
-          period: record.period,
-          schoolId: schoolId,
-        },
-        update: {
-          $set: {
-            classId: record.classId,
-            status: record.status,
-            teacherId: userId,
-            schoolId: schoolId,
-            sessionId: activeSession._id,
+    const bulkOps = records.map((record) => {
+      const attendanceDate = normalizeDate(record.date);
+      return {
+        updateOne: {
+          filter: {
+            studentId: record.studentId,
+            subjectId: record.subjectId,
+            date: attendanceDate,
+            period: record.period,
+            schoolId: normalizedSchoolId,
           },
+          update: {
+            $set: {
+              classId: record.classId,
+              status: record.status,
+              teacherId: userId,
+              schoolId: normalizedSchoolId,
+              sessionId: activeSession._id,
+            },
+          },
+          upsert: true,
         },
-        upsert: true,
-      },
-    }));
+      };
+    });
 
     const result = await StudentSubjectAttendance.bulkWrite(bulkOps);
 
@@ -288,9 +308,10 @@ const getSubjectAttendance = async (req, res) => {
   try {
     const { classId, subjectId, date, studentId } = req.query;
     const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -302,13 +323,15 @@ const getSubjectAttendance = async (req, res) => {
     }
 
     const filter = {
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       sessionId: activeSession._id,
     };
 
     if (classId) filter.classId = classId;
     if (subjectId) filter.subjectId = subjectId;
-    if (date) filter.date = date;
+    if (date) {
+      filter.date = normalizeDate(date);
+    }
     if (studentId) filter.studentId = studentId;
 
     const attendance = await StudentSubjectAttendance.find(filter)
@@ -331,6 +354,7 @@ const markTeacherAttendance = async (req, res) => {
   try {
     const { date, status, checkIn, checkOut, teacherId: targetTeacherId } = req.body;
     const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     // Role-based access
     if (role === 'STUDENT' || role === 'PARENT') {
@@ -338,7 +362,7 @@ const markTeacherAttendance = async (req, res) => {
     }
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -381,7 +405,7 @@ const markTeacherAttendance = async (req, res) => {
     }
 
     // Verify teacher exists and belongs to school
-    const teacher = await Teacher.findOne({ userId: teacherId, schoolId });
+    const teacher = await Teacher.findOne({ userId: teacherId, schoolId: normalizedSchoolId });
     if (!teacher) {
       return res.status(404).json({ success: false, message: 'Teacher not found or does not belong to this school' });
     }
@@ -390,21 +414,26 @@ const markTeacherAttendance = async (req, res) => {
     }
 
     // Check if attendance already exists
+    const attendanceDate = normalizeDate(date);
     const existingAttendance = await TeacherAttendance.findOne({
       teacherId,
-      date,
-      schoolId
+      date: attendanceDate,
+      schoolId: normalizedSchoolId
     });
 
     if (existingAttendance && role === 'TEACHER') {
       return res.status(400).json({ success: false, message: 'Attendance already marked for today. Contact admin to update.' });
     }
 
+    if (existingAttendance && role !== 'TEACHER') {
+      // Allow overwrite for non-TEACHER roles
+    }
+
     const result = await TeacherAttendance.findOneAndUpdate(
       {
         teacherId: teacherId,
-        date: date,
-        schoolId: schoolId,
+        date: attendanceDate,
+        schoolId: normalizedSchoolId,
       },
       {
         $set: {
@@ -447,13 +476,14 @@ const getTeacherAttendance = async (req, res) => {
   try {
     const { date, startDate, endDate, teacherId } = req.query;
     const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     if (role === 'STUDENT' || role === 'PARENT') {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -465,7 +495,7 @@ const getTeacherAttendance = async (req, res) => {
     }
 
     const filter = {
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       sessionId: activeSession._id,
     };
 
@@ -475,9 +505,14 @@ const getTeacherAttendance = async (req, res) => {
       filter.teacherId = teacherId;
     }
 
-    if (date) filter.date = date;
+    if (date) {
+      filter.date = normalizeDate(date);
+    }
     if (startDate && endDate) {
-      filter.date = { $gte: startDate, $lte: endDate };
+      const start = normalizeDate(startDate);
+      const end = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
     }
 
     const attendance = await TeacherAttendance.find(filter)
@@ -497,9 +532,10 @@ const getParentAttendance = async (req, res) => {
   try {
     const { userId, schoolId } = req.user;
     const { startDate, endDate } = req.query;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -510,7 +546,7 @@ const getParentAttendance = async (req, res) => {
       });
     }
 
-    const parent = await Parent.findOne({ userId, schoolId });
+    const parent = await Parent.findOne({ userId, schoolId: normalizedSchoolId });
     if (!parent) {
       return res.status(404).json({ success: false, message: 'Parent record not found' });
     }
@@ -521,12 +557,15 @@ const getParentAttendance = async (req, res) => {
 
     const filter = {
       studentId: { $in: parent.children },
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       sessionId: activeSession._id,
     };
 
     if (startDate && endDate) {
-      filter.date = { $gte: startDate, $lte: endDate };
+      const start = normalizeDate(startDate);
+      const end = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
     }
 
     const attendance = await StudentDailyAttendance.find(filter)
@@ -548,9 +587,10 @@ const getAttendanceForParent = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { userId, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
     const activeSession = await AcademicSession.findOne({
-      schoolId: schoolId,
+      schoolId: normalizedSchoolId,
       isActive: true
     });
 
@@ -561,12 +601,12 @@ const getAttendanceForParent = async (req, res) => {
       });
     }
 
-    const parent = await Parent.findOne({ userId, schoolId });
+    const parent = await Parent.findOne({ userId, schoolId: normalizedSchoolId });
     if (!parent) {
       return res.status(404).json({ success: false, message: 'Parent record not found' });
     }
 
-    if (!parent.children.includes(studentId)) {
+    if (!parent.children.some(id => id.toString() === studentId.toString())) {
       return res.status(403).json({ success: false, message: 'Access denied. Student not associated with this parent.' });
     }
 
@@ -580,9 +620,68 @@ const getAttendanceForParent = async (req, res) => {
 
     const attendance = await StudentDailyAttendance.find({
       studentId,
-      schoolId,
+      schoolId: normalizedSchoolId,
       sessionId: activeSession._id
     }).sort({ date: -1 });
+
+    res.status(200).json({
+      success: true,
+      student: {
+        name: student.name,
+        rollNumber: student.rollNumber,
+        class: student.classId.name,
+        section: student.sectionId.name
+      },
+      attendance: attendance.map(att => ({
+        date: att.date,
+        status: att.status
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getStudentSelfAttendance = async (req, res) => {
+  try {
+    const { userId, schoolId } = req.user;
+    const { startDate, endDate } = req.query;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school'
+      });
+    }
+
+    const student = await Student.findOne({ userId, schoolId: normalizedSchoolId })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name');
+
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student record not found' });
+    }
+
+    const filter = {
+      studentId: student._id,
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+    };
+
+    if (startDate && endDate) {
+      const start = normalizeDate(startDate);
+      const end = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
+    }
+
+    const attendance = await StudentDailyAttendance.find(filter).sort({ date: -1 });
 
     res.status(200).json({
       success: true,
@@ -611,4 +710,5 @@ module.exports = {
   getTeacherAttendance,
   getParentAttendance,
   getAttendanceForParent,
+  getStudentSelfAttendance,
 };

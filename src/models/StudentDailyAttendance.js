@@ -18,8 +18,9 @@ const studentDailyAttendanceSchema = new mongoose.Schema(
       required: true,
     },
     date: {
-      type: String,
+      type: Date,
       required: true,
+      index: true
     },
     status: {
       type: String,

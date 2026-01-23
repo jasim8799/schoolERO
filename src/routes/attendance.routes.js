@@ -8,6 +8,7 @@ const {
   getTeacherAttendance,
   getParentAttendance,
   getAttendanceForParent,
+  getStudentSelfAttendance,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
@@ -74,6 +75,13 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.PARENT),
   getParentAttendance
+);
+
+router.get(
+  '/student/me',
+  authenticate,
+  requireRole(USER_ROLES.STUDENT),
+  getStudentSelfAttendance
 );
 
 module.exports = router;
