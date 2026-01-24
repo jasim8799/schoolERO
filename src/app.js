@@ -43,6 +43,8 @@ const hostelRoutes = require('./routes/hostel.routes');
 const hostelLeaveRoutes = require('./routes/hostelLeave.routes');
 const roomRoutes = require('./routes/room.routes');
 const studentHostelRoutes = require('./routes/studentHostel.routes');
+const transportRoutes = require('./routes/transport.routes');
+const studentTransportRoutes = require('./routes/studentTransport.routes');
 
 const app = express();
 
@@ -128,6 +130,8 @@ app.use('/api/hostels', authenticate, attachSchoolId, checkSubscriptionStatus(),
 app.use('/api/hostel-leaves', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelLeaveRoutes);
 app.use('/api/rooms', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), roomRoutes);
 app.use('/api/student-hostel', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), studentHostelRoutes);
+app.use('/api/transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportRoutes);
+app.use('/api/student-transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/version', versionRoutes);
 
