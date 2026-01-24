@@ -1,7 +1,7 @@
 const express = require('express');
 const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, assignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool, createOperator, createParent, createStudent, createTeacher } = require('../controllers/school.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
-const { requireRole } = require('../middlewares/role.middleware');
+const { requireRole, requireMinRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
@@ -30,7 +30,7 @@ router.post('/:id/teacher', authenticate, requireRole(USER_ROLES.SUPER_ADMIN), c
 
 // All other school routes require SUPER_ADMIN authentication
 router.use(authenticate);
-router.use(requireRole(USER_ROLES.SUPER_ADMIN));
+router.use(requireMinRole(USER_ROLES.SUPER_ADMIN));
 
 // POST /api/schools - Create school (SUPER_ADMIN only)
 router.post('/', createSchool);
@@ -68,7 +68,7 @@ router.put('/:id/modules', updateSchoolModules);
 // PUT /api/schools/:id/subscription/renew - Renew school subscription (SUPER_ADMIN only)
 router.put('/:id/subscription/renew', renewSchoolSubscription);
 
-// POST /api/schools/:id/force-logout - Force logout all users for a school (SUPER_ADMIN only)
-router.post('/:id/force-logout', forceLogoutSchool);
+// PATCH /api/schools/:id/force-logout - Force logout all users for a school (SUPER_ADMIN only)
+router.patch('/:id/force-logout', forceLogoutSchool);
 
 module.exports = router;
