@@ -191,7 +191,7 @@ const getTCReport = async (req, res) => {
     if (sessionId) filter.sessionId = sessionId;
 
     const tcs = await TC.find(filter)
-      .populate('studentId', 'userId rollNumber')
+      .populate('studentId', 'name userId rollNumber')
       .populate('studentId.userId', 'name')
       .populate('sessionId', 'name')
       .populate('issuedBy', 'name')
@@ -207,7 +207,7 @@ const getTCReport = async (req, res) => {
         tcId: tc._id,
         tcNumber: tc.tcNumber,
         studentId: tc.studentId?._id || null,
-        studentName: tc.studentId?.userId?.name || 'N/A',
+        studentName: tc.studentId?.name || tc.studentId?.userId?.name || 'N/A',
         rollNumber: tc.studentId?.rollNumber || 'N/A',
         session: tc.sessionId?.name || 'N/A',
         issueDate: tc.issueDate,
