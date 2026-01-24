@@ -1,6 +1,6 @@
-import Hostel from '../models/Hostel.js';
+const Hostel = require('../models/Hostel.js');
 
-export const createHostel = async (req, res) => {
+const createHostel = async (req, res) => {
   try {
     const { name, capacity } = req.body;
     const { schoolId, _id: createdBy } = req.user;
@@ -20,7 +20,7 @@ export const createHostel = async (req, res) => {
   }
 };
 
-export const getHostels = async (req, res) => {
+const getHostels = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const hostels = await Hostel.find({ schoolId });
@@ -29,3 +29,5 @@ export const getHostels = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { createHostel, getHostels };

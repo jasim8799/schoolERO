@@ -1,8 +1,8 @@
-import HostelLeave from '../models/HostelLeave.js';
-import StudentHostel from '../models/StudentHostel.js';
-import Student from '../models/Student.js';
+const HostelLeave = require('../models/HostelLeave.js');
+const StudentHostel = require('../models/StudentHostel.js');
+const Student = require('../models/Student.js');
 
-export const createLeave = async (req, res) => {
+const createLeave = async (req, res) => {
   try {
     const { studentId, fromDate, toDate, reason } = req.body;
     const { schoolId, _id: createdBy } = req.user;
@@ -33,7 +33,7 @@ export const createLeave = async (req, res) => {
   }
 };
 
-export const approveLeave = async (req, res) => {
+const approveLeave = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -53,7 +53,7 @@ export const approveLeave = async (req, res) => {
   }
 };
 
-export const getLeaves = async (req, res) => {
+const getLeaves = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
@@ -65,7 +65,7 @@ export const getLeaves = async (req, res) => {
   }
 };
 
-export const getHostelFees = async (req, res) => {
+const getHostelFees = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
@@ -79,3 +79,5 @@ export const getHostelFees = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+module.exports = { createLeave, approveLeave, getLeaves, getHostelFees };
