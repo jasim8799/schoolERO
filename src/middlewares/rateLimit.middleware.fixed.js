@@ -58,10 +58,16 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
         req
       }).catch(() => {});
 
+      const retryAfterSeconds = Math.ceil((userRequests.resetTime - now) / 1000);
+      const retryAfterMinutes = Math.ceil(retryAfterSeconds / 60);
+
+      res.set('Retry-After', retryAfterSeconds);
+
       return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
         success: false,
         message: 'Too many requests. Please try again later.',
-        retryAfter: Math.ceil((userRequests.resetTime - now) / 1000)
+        retryAfter: retryAfterSeconds,
+        retryAfterHuman: `${retryAfterMinutes} minute(s)`
       });
     }
 
