@@ -1,8 +1,8 @@
-import StudentHostel from '../models/StudentHostel.js';
-import Student from '../models/Student.js';
-import Room from '../models/Room.js';
+const StudentHostel = require('../models/StudentHostel.js');
+const Student = require('../models/Student.js');
+const Room = require('../models/Room.js');
 
-export const assignHostel = async (req, res) => {
+const assignHostel = async (req, res) => {
   try {
     const { studentId, hostelId, roomId, bedNumber } = req.body;
     const { schoolId } = req.user;
@@ -43,7 +43,7 @@ export const assignHostel = async (req, res) => {
   }
 };
 
-export const getStudentHostel = async (req, res) => {
+const getStudentHostel = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
@@ -53,4 +53,9 @@ export const getStudentHostel = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
+};
+
+module.exports = {
+  assignHostel,
+  getStudentHostel
 };
