@@ -145,10 +145,17 @@ const calculateSalary = async (req, res) => {
     const workingDays = new Date(year, monthNum, 0).getDate();
 
     // Get attendance days (count of PRESENT records)
+    const startDate = new Date(`${month}-01`);
+    const endDate = new Date(startDate);
+    endDate.setMonth(endDate.getMonth() + 1);
+
     const attendanceCount = await TeacherAttendance.countDocuments({
       teacherId: staffId,
       schoolId,
-      date: { $regex: `^${month}` },
+      date: {
+        $gte: startDate,
+        $lt: endDate
+      },
       status: 'PRESENT'
     });
 
