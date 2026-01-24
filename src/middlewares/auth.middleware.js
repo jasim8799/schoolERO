@@ -51,7 +51,11 @@ const authenticate = async (req, res, next) => {
     // Check for force logout (skip for SUPER_ADMIN and users without schoolId)
     if (req.user.role !== USER_ROLES.SUPER_ADMIN && req.user.schoolId) {
       const school = await School.findById(req.user.schoolId);
-      if (school && school.forceLogoutAt && user.updatedAt < school.forceLogoutAt) {
+      if (
+        school &&
+        school.forceLogoutAt &&
+        decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()
+      ) {
         return res.status(HTTP_STATUS.UNAUTHORIZED).json({
           success: false,
           message: 'You have been logged out by the school administrator'
