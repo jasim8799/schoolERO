@@ -5,6 +5,7 @@ const User = require('../models/User');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const PDFDocument = require('pdfkit');
 const { USER_ROLES } = require('../config/constants');
+const { auditLog } = require('../utils/auditLog');
 
 // Setup salary profile
 const setupSalaryProfile = async (req, res) => {
@@ -190,6 +191,19 @@ const calculateSalary = async (req, res) => {
     // Populate staff details
     await salaryCalculation.populate('staffId', 'name email mobile role');
 
+    // Audit log
+    await auditLog({
+      action: 'SALARY_CALCULATION',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SalaryCalculation',
+      entityId: salaryCalculation._id,
+      description: `Salary calculated for ${staff.name} for month ${month}`,
+      schoolId: req.user.schoolId,
+      sessionId: req.user.sessionId,
+      req
+    });
+
     res.status(201).json({
       message: 'Salary calculated successfully',
       salaryCalculation
@@ -287,6 +301,19 @@ const paySalary = async (req, res) => {
 
     // Populate payment details
     await salaryPayment.populate('paidBy', 'name');
+
+    // Audit log
+    await auditLog({
+      action: 'SALARY_PAYMENT',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SalaryPayment',
+      entityId: salaryPayment._id,
+      description: `Salary paid to ${salaryCalculation.staffId.name} for month ${salaryCalculation.month}`,
+      schoolId: req.user.schoolId,
+      sessionId: req.user.sessionId,
+      req
+    });
 
     res.status(201).json({
       message: 'Salary paid successfully',

@@ -8,6 +8,7 @@ const School = require('../models/School');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const FeeStructure = require('../models/FeeStructure');
+const { auditLog } = require('../utils/auditLog');
 
 // Generate unique receipt number
 const generateReceiptNo = (schoolId) => {
@@ -74,6 +75,19 @@ const payManual = async (req, res) => {
       paidAmount: newPaidAmount,
       dueAmount: newDueAmount,
       status: newStatus
+    });
+
+    // Audit log
+    await auditLog({
+      action: 'FEE_PAYMENT_MANUAL',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'FeePayment',
+      entityId: payment._id,
+      description: `Manual fee payment of ₹${amount} recorded for student fee ${studentFeeId}`,
+      schoolId: req.user.schoolId,
+      sessionId: req.user.sessionId,
+      req
     });
 
     res.status(201).json({
@@ -271,6 +285,19 @@ const verifyOnlinePayment = async (req, res) => {
         status: newStatus
       };
     }
+
+    // Audit log
+    await auditLog({
+      action: status === 'Success' ? 'FEE_PAYMENT_ONLINE_SUCCESS' : 'FEE_PAYMENT_ONLINE_FAILED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'OnlinePayment',
+      entityId: onlinePayment._id,
+      description: `Online payment ${status.toLowerCase()} for ₹${onlinePayment.amount}`,
+      schoolId: req.user.schoolId,
+      sessionId: req.user.sessionId,
+      req
+    });
 
     res.json({
       message: `Payment ${status.toLowerCase()} processed successfully`,

@@ -1,31 +1,5 @@
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
-
-/**
- * Enforce school isolation - schoolId must come from JWT only, never from request
- * This prevents users from accessing other schools' data by manipulating request parameters
- */
-const enforceSchoolIsolation = (req, res, next) => {
-  // SUPER_ADMIN can access all schools
-  if (req.user.role === USER_ROLES.SUPER_ADMIN) {
-    return next();
-  }
-
-  // Ensure schoolId in request matches JWT schoolId
-  const requestSchoolId = req.body.schoolId || req.params.schoolId || req.query.schoolId;
-
-  if (requestSchoolId && requestSchoolId !== req.user.schoolId.toString()) {
-    return res.status(HTTP_STATUS.FORBIDDEN).json({
-      success: false,
-      message: 'Access denied. Cannot access other school\'s data.'
-    });
-  }
-
-  // Override any schoolId in request with JWT schoolId for security
-  if (req.body.schoolId) req.body.schoolId = req.user.schoolId;
-  if (req.query.schoolId) req.query.schoolId = req.user.schoolId.toString();
-
-  next();
-};
+const { enforceSchoolIsolation } = require('./school.middleware');
 
 /**
  * Sanitize response data - remove sensitive fields

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
-const { HTTP_STATUS } = require('../config/constants');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 const User = require('../models/User');
+const School = require('../models/School');
 const { config } = require('../config/env');
 
 // Verify JWT token and attach user to request
@@ -46,6 +47,17 @@ const authenticate = async (req, res, next) => {
       schoolId: user.schoolId ? user.schoolId.toString() : null,
       sessionId: decoded.sessionId || null
     };
+
+    // Check for force logout (skip for SUPER_ADMIN and users without schoolId)
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN && req.user.schoolId) {
+      const school = await School.findById(req.user.schoolId);
+      if (school && school.forceLogoutAt && user.updatedAt < school.forceLogoutAt) {
+        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+          success: false,
+          message: 'You have been logged out by the school administrator'
+        });
+      }
+    }
 
     next();
   } catch (error) {

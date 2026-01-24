@@ -7,6 +7,7 @@ const { checkSubscriptionStatus } = require('./middlewares/subscription.middlewa
 const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
 const { attachActiveSession } = require('./middlewares/session.middleware.js');
+const { productionErrorHandler } = require('./middlewares/security.middleware.js');
 const adminRoutes = require('./routes/admin.routes');
 const schoolRoutes = require('./routes/school.routes');
 const sessionRoutes = require('./routes/session.routes');
@@ -134,5 +135,8 @@ app.use('/api/transport', authenticate, attachSchoolId, checkSubscriptionStatus(
 app.use('/api/student-transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/version', versionRoutes);
+
+// Production error handler (must be last middleware)
+app.use(productionErrorHandler);
 
 module.exports = app;

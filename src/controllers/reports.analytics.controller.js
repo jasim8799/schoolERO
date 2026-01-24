@@ -431,6 +431,7 @@ const getMonthlyAttendanceReport = async (req, res) => {
 };
 
 // 4. FEES REPORTS
+// Note: All date-based filtering uses MongoDB's automatic 'createdAt' field as the canonical timestamp for reports
 const getFeesSummaryReport = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
