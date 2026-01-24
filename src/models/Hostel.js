@@ -5,21 +5,8 @@ const HostelSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  type: {
-    type: String,
-    enum: ['BOYS', 'GIRLS', 'MIXED'],
-    required: true
-  },
-  address: {
-    type: String,
-    required: true
-  },
-  wardenName: {
-    type: String,
-    required: true
-  },
-  wardenContact: {
-    type: String,
+  capacity: {
+    type: Number,
     required: true
   },
   schoolId: {

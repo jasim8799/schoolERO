@@ -2,15 +2,12 @@ import Hostel from '../models/Hostel.js';
 
 export const createHostel = async (req, res) => {
   try {
-    const { name, type, address, wardenName, wardenContact } = req.body;
+    const { name, capacity } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
     const hostel = await Hostel.create({
       name,
-      type,
-      address,
-      wardenName,
-      wardenContact,
+      capacity,
       schoolId,
       createdBy,
     });

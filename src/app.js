@@ -39,6 +39,8 @@ const auditRoutes = require('./routes/audit.routes');
 const homeworkRoutes = require('./routes/homework.routes');
 const versionRoutes = require('./routes/version.routes');
 const tcRoutes = require('./routes/tc.routes');
+const hostelRoutes = require('./routes/hostel.routes');
+const hostelLeaveRoutes = require('./routes/hostelLeave.routes');
 
 const app = express();
 
@@ -120,6 +122,8 @@ app.use('/api/expenses', authenticate, attachSchoolId, checkSubscriptionStatus()
 app.use('/api/salary', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
 app.use('/api/reports', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
 app.use('/api/tc', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('tc'), tcRoutes);
+app.use('/api/hostels', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelRoutes);
+app.use('/api/hostel-leaves', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelLeaveRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/version', versionRoutes);
 

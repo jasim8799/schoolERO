@@ -77,11 +77,6 @@ const attachSchoolId = (req, res, next) => {
     return next();
   }
 
-  // PARENT and STUDENT roles already have schoolId from JWT, skip validation
-  if (req.user.role === 'PARENT' || req.user.role === 'STUDENT') {
-    return next();
-  }
-
   // SUPER_ADMIN does not require school context
   if (req.user.role === 'SUPER_ADMIN') {
     return next();

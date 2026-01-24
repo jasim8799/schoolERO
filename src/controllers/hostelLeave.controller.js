@@ -7,6 +7,12 @@ export const createLeave = async (req, res) => {
     const { studentId, fromDate, toDate, reason } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
+    // Validate student exists in same school
+    const student = await Student.findOne({ _id: studentId, schoolId });
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found in your school' });
+    }
+
     // Check student has active hostel
     const hostel = await StudentHostel.findOne({ studentId, status: 'ACTIVE', schoolId });
     if (!hostel) {
