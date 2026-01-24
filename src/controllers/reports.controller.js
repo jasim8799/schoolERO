@@ -1,3 +1,9 @@
+const { USER_ROLES } = require('../config/constants');
+const AcademicHistory = require('../models/AcademicHistory');
+const TC = require('../models/TC');
+const XLSX = require('xlsx');
+const PDFDocument = require('pdfkit');
+
 const exportProfitLossExcel = (report, res) => {
   const data = [
     { Category: 'Fee Collection', Amount: report.income.feeCollection },
