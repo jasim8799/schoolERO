@@ -1,4 +1,5 @@
 const { HTTP_STATUS } = require('../config/constants');
+const { auditLog } = require('../utils/auditLog_new');
 
 // Simple in-memory rate limiting (for production, use Redis or similar)
 const rateLimitStore = new Map();
@@ -14,9 +15,9 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // Rate limiting middleware
-const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
+const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterName = 'GENERAL') => {
   return (req, res, next) => {
-    const key = `${req.ip}-${req.path}`;
+    const key = `${req.user?._id || req.ip}-${limiterName}`;
     const now = Date.now();
     const windowStart = now - windowMs;
 
@@ -43,6 +44,21 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
     });
 
     if (userRequests.count > maxRequests) {
+      // Audit log the rate limit hit (fire-and-forget)
+      auditLog({
+        action: 'RATE_LIMIT_EXCEEDED',
+        userId: req.user?._id || null,
+        role: req.user?.role || 'GUEST',
+        entityType: 'RateLimit',
+        entityId: null,
+        description: `Rate limit exceeded on ${req.originalUrl} (${limiterName})`,
+        ipAddress: req.ip,
+        schoolId: req.user?.schoolId || null,
+        req
+      }).catch(e => {
+        // Swallow audit log errors - never block request
+      });
+
       return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
         success: false,
         message: 'Too many requests. Please try again later.',
@@ -55,10 +71,10 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
 };
 
 // Specific rate limits for different endpoints
-const authRateLimit = createRateLimit(5, 15 * 60 * 1000); // 5 requests per 15 minutes for auth
-const paymentRateLimit = createRateLimit(10, 60 * 60 * 1000); // 10 requests per hour for payments
-const backupRateLimit = createRateLimit(3, 60 * 60 * 1000); // 3 requests per hour for backup/restore
-const generalRateLimit = createRateLimit(100, 15 * 60 * 1000); // 100 requests per 15 minutes general
+const authRateLimit = createRateLimit(5, 15 * 60 * 1000, 'AUTH'); // 5 requests per 15 minutes for auth
+const paymentRateLimit = createRateLimit(10, 60 * 60 * 1000, 'PAYMENT'); // 10 requests per hour for payments
+const backupRateLimit = createRateLimit(3, 60 * 60 * 1000, 'BACKUP'); // 3 requests per hour for backup/restore
+const generalRateLimit = createRateLimit(100, 15 * 60 * 1000, 'GENERAL'); // 100 requests per 15 minutes general
 
 module.exports = {
   createRateLimit,

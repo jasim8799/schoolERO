@@ -8,6 +8,7 @@ const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
 const { attachActiveSession } = require('./middlewares/session.middleware.js');
 const { productionErrorHandler } = require('./middlewares/security.middleware.js');
+const { authRateLimit, paymentRateLimit, generalRateLimit } = require('./middlewares/rateLimit.middleware.fixed.js');
 const adminRoutes = require('./routes/admin.routes');
 const schoolRoutes = require('./routes/school.routes');
 const sessionRoutes = require('./routes/session.routes');
@@ -66,7 +67,7 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/sessions', sessionRoutes);
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRateLimit, authRoutes);
 
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
@@ -98,6 +99,7 @@ app.use('/api/promotion', authenticate, attachSchoolId, attachActiveSession, che
 app.use('/api/academic-history', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('students'), academicHistoryRoutes);
 app.use(
   '/api/fees',
+  paymentRateLimit,
   authenticate,
   attachSchoolId,
   checkSubscriptionStatus(true),
@@ -135,6 +137,7 @@ app.use('/api/transport', authenticate, attachSchoolId, checkSubscriptionStatus(
 app.use('/api/student-transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
 app.use(
   '/api/dashboard',
+  generalRateLimit,
   authenticate,
   attachSchoolId,
   checkSubscriptionStatus(true), // allow read-only dashboards during grace period
