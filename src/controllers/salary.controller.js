@@ -3,7 +3,7 @@ const SalaryCalculation = require('../models/SalaryCalculation');
 const SalaryPayment = require('../models/SalaryPayment');
 const User = require('../models/User');
 const TeacherAttendance = require('../models/TeacherAttendance');
-const puppeteer = require('puppeteer');
+const PDFDocument = require('pdfkit');
 const { USER_ROLES } = require('../config/constants');
 
 // Setup salary profile
@@ -408,139 +408,83 @@ const getSalarySlipPdf = async (req, res) => {
                        'July', 'August', 'September', 'October', 'November', 'December'];
     const formattedMonth = `${monthNames[parseInt(monthNum) - 1]} ${year}`;
 
-    const html = `
-      <html>
-      <body style="font-family: Arial, sans-serif; padding: 30px; max-width: 800px; margin: 0 auto;">
-        <div style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px;">
-          <h1 style="color: #333; margin: 0;">School ERP</h1>
-          <h2 style="color: #666; margin: 10px 0;">Salary Slip - ${formattedMonth}</h2>
-        </div>
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=salary-slip-${salaryCalculation.staffId.name.replace(/\s+/g, '-')}-${month}.pdf`
+    );
 
-        <div style="margin-bottom: 30px;">
-          <h3 style="color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Employee Details</h3>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 0; font-weight: bold; width: 150px;">Name:</td>
-              <td style="padding: 8px 0;">${salaryCalculation.staffId.name}</td>
-            </tr>
-            <tr style="background-color: #f9f9f9;">
-              <td style="padding: 8px 0; font-weight: bold;">Role:</td>
-              <td style="padding: 8px 0;">${salaryCalculation.staffId.role}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; font-weight: bold;">Email:</td>
-              <td style="padding: 8px 0;">${salaryCalculation.staffId.email || 'N/A'}</td>
-            </tr>
-            <tr style="background-color: #f9f9f9;">
-              <td style="padding: 8px 0; font-weight: bold;">Mobile:</td>
-              <td style="padding: 8px 0;">${salaryCalculation.staffId.mobile || 'N/A'}</td>
-            </tr>
-          </table>
-        </div>
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.pipe(res);
 
-        <div style="margin-bottom: 30px;">
-          <h3 style="color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Salary Details</h3>
-          <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
-            <tr style="background-color: #f0f0f0;">
-              <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Description</th>
-              <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Amount</th>
-            </tr>
-            <tr>
-              <td style="padding: 10px; border: 1px solid #ddd;">Base Salary</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">₹${salaryCalculation.baseSalary.toLocaleString()}</td>
-            </tr>
-            <tr style="background-color: #f9f9f9;">
-              <td style="padding: 10px; border: 1px solid #ddd;">Working Days</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${salaryCalculation.workingDays}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px; border: 1px solid #ddd;">Attendance Days</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${salaryCalculation.attendanceDays}</td>
-            </tr>
-            <tr style="background-color: #f9f9f9;">
-              <td style="padding: 10px; border: 1px solid #ddd;">Leave Days</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${salaryCalculation.leaveDays}</td>
-            </tr>
-            ${salaryProfile?.allowances?.length > 0 ? salaryProfile.allowances.map(allowance => `
-            <tr>
-              <td style="padding: 10px; border: 1px solid #ddd;">${allowance.name}</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">₹${allowance.amount.toLocaleString()}</td>
-            </tr>
-            `).join('') : ''}
-            ${salaryProfile?.deductions?.length > 0 ? salaryProfile.deductions.map(deduction => `
-            <tr style="background-color: #ffe6e6;">
-              <td style="padding: 10px; border: 1px solid #ddd;">${deduction.name} (Deduction)</td>
-              <td style="padding: 10px; text-align: right; border: 1px solid #ddd; color: #d32f2f;">-₹${deduction.amount.toLocaleString()}</td>
-            </tr>
-            `).join('') : ''}
-            <tr style="background-color: #e8f5e8; font-weight: bold;">
-              <td style="padding: 15px 10px; border: 1px solid #ddd; font-size: 16px;">Net Payable</td>
-              <td style="padding: 15px 10px; text-align: right; border: 1px solid #ddd; font-size: 16px; color: #2e7d32;">₹${salaryCalculation.netPayable.toLocaleString()}</td>
-            </tr>
-          </table>
-        </div>
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('School ERP', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(16).font('Helvetica').text(`Salary Slip - ${formattedMonth}`, { align: 'center' });
+    doc.moveDown(2);
 
-        <div style="margin-bottom: 30px;">
-          <h3 style="color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Payment Information</h3>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 0; font-weight: bold; width: 150px;">Status:</td>
-              <td style="padding: 8px 0;">
-                <span style="padding: 4px 8px; border-radius: 4px; background-color: ${salaryCalculation.status === 'Paid' ? '#e8f5e8' : '#fff3e0'}; color: ${salaryCalculation.status === 'Paid' ? '#2e7d32' : '#f57c00'};">
-                  ${salaryCalculation.status}
-                </span>
-              </td>
-            </tr>
-            ${salaryPayment ? `
-            <tr style="background-color: #f9f9f9;">
-              <td style="padding: 8px 0; font-weight: bold;">Payment Mode:</td>
-              <td style="padding: 8px 0;">${salaryPayment.paymentMode}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; font-weight: bold;">Payment Date:</td>
-              <td style="padding: 8px 0;">${new Date(salaryPayment.paymentDate).toLocaleDateString()}</td>
-            </tr>
-            <tr style="background-color: #f9f9f9;">
-              <td style="padding: 8px 0; font-weight: bold;">Paid By:</td>
-              <td style="padding: 8px 0;">${salaryPayment.paidBy.name}</td>
-            </tr>
-            ` : ''}
-          </table>
-        </div>
+    // Employee Details
+    doc.fontSize(14).font('Helvetica-Bold').text('Employee Details:', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica');
+    doc.text(`Name: ${salaryCalculation.staffId.name}`);
+    doc.text(`Role: ${salaryCalculation.staffId.role}`);
+    doc.text(`Email: ${salaryCalculation.staffId.email || 'N/A'}`);
+    doc.text(`Mobile: ${salaryCalculation.staffId.mobile || 'N/A'}`);
+    doc.moveDown(1);
 
-        <div style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 12px;">
-          <p>This is a system-generated salary slip. Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-          <p>School ERP System - Confidential Document</p>
-        </div>
-      </body>
-      </html>
-    `;
+    // Salary Details
+    doc.fontSize(14).font('Helvetica-Bold').text('Salary Details:', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica');
+    doc.text(`Base Salary: ₹${salaryCalculation.baseSalary.toLocaleString()}`);
+    doc.text(`Working Days: ${salaryCalculation.workingDays}`);
+    doc.text(`Attendance Days: ${salaryCalculation.attendanceDays}`);
+    doc.text(`Leave Days: ${salaryCalculation.leaveDays}`);
+    doc.moveDown(0.5);
 
-    const browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '20px',
-        right: '20px',
-        bottom: '20px',
-        left: '20px'
-      }
-    });
-    await browser.close();
+    // Allowances
+    if (salaryProfile?.allowances?.length > 0) {
+      doc.font('Helvetica-Bold').text('Allowances:');
+      doc.font('Helvetica');
+      salaryProfile.allowances.forEach(allowance => {
+        doc.text(`${allowance.name}: ₹${allowance.amount.toLocaleString()}`);
+      });
+      doc.moveDown(0.5);
+    }
 
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=salary-slip-${salaryCalculation.staffId.name.replace(/\s+/g, '-')}-${month}.pdf`,
-      'Content-Length': pdf.length
-    });
+    // Deductions
+    if (salaryProfile?.deductions?.length > 0) {
+      doc.font('Helvetica-Bold').text('Deductions:');
+      doc.font('Helvetica');
+      salaryProfile.deductions.forEach(deduction => {
+        doc.text(`${deduction.name}: ₹${deduction.amount.toLocaleString()}`);
+      });
+      doc.moveDown(0.5);
+    }
 
-    res.send(pdf);
+    // Net Payable
+    doc.font('Helvetica-Bold').text(`Net Payable: ₹${salaryCalculation.netPayable.toLocaleString()}`);
+    doc.moveDown(1);
+
+    // Payment Information
+    doc.fontSize(14).font('Helvetica-Bold').text('Payment Information:', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica');
+    doc.text(`Status: ${salaryCalculation.status}`);
+
+    if (salaryPayment) {
+      doc.text(`Payment Mode: ${salaryPayment.paymentMode}`);
+      doc.text(`Payment Date: ${new Date(salaryPayment.paymentDate).toLocaleDateString()}`);
+      doc.text(`Paid By: ${salaryPayment.paidBy.name}`);
+    }
+
+    // Footer
+    doc.moveDown(3);
+    doc.fontSize(10).text(`Generated on ${new Date().toDateString()}`, { align: 'center' });
+    doc.text('School ERP System - Confidential Document', { align: 'center' });
+
+    doc.end();
   } catch (err) {
     console.error('PDF generation error:', err);
     res.status(500).json({ message: 'Error generating PDF', error: err.message });
