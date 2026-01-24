@@ -49,7 +49,7 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
         action: 'RATE_LIMIT_EXCEEDED',
         userId: req.user?._id ?? null,
         role: req.user?.role ?? 'GUEST',
-        entityType: 'RateLimit',
+        entityType: 'RATE_LIMIT',
         entityId: null,
         description: `Rate limit exceeded on ${req.originalUrl} (${limiterName})`,
         ipAddress: req.ip,

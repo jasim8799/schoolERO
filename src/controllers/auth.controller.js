@@ -116,7 +116,7 @@ const login = async (req, res) => {
       console.log('LOGIN FAILURE: User not found');
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid mobile or password'
       });
     }
 
@@ -146,7 +146,7 @@ const login = async (req, res) => {
       console.log('LOGIN FAILURE: Invalid password');
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid mobile or password'
       });
     }
 

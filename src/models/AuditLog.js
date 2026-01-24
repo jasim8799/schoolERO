@@ -4,12 +4,12 @@ const AuditLogSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false
   },
   role: {
     type: String,
     required: true,
-    enum: ['SUPER_ADMIN', 'PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT']
+    enum: ['SUPER_ADMIN', 'PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT', 'GUEST']
   },
   action: {
     type: String,
@@ -85,7 +85,8 @@ const AuditLogSchema = new mongoose.Schema({
       'BACKUP_FAILED',
       'RESTORE_EXECUTION_FAILED',
       'RESTORE_PREVIEW_FAILED',
-      'BACKUP_DOWNLOAD_FAILED'
+      'BACKUP_DOWNLOAD_FAILED',
+      'RATE_LIMIT_EXCEEDED'
     ]
   },
   entityType: {
@@ -113,7 +114,8 @@ const AuditLogSchema = new mongoose.Schema({
       'SALARY_PAYMENT',
       'EXPENSE',
       'BACKUP',
-      'SYSTEM'
+      'SYSTEM',
+      'RATE_LIMIT'
     ]
   },
   entityId: {
