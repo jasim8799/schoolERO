@@ -206,14 +206,14 @@ const getTCReport = async (req, res) => {
       tcs: tcs.map(tc => ({
         tcId: tc._id,
         tcNumber: tc.tcNumber,
-        studentId: tc.studentId._id,
-        studentName: tc.studentId.userId.name,
-        rollNumber: tc.studentId.rollNumber,
-        session: tc.sessionId.name,
+        studentId: tc.studentId?._id || null,
+        studentName: tc.studentId?.userId?.name || 'N/A',
+        rollNumber: tc.studentId?.rollNumber || 'N/A',
+        session: tc.sessionId?.name || 'N/A',
         issueDate: tc.issueDate,
         reason: tc.reason,
-        issuedBy: tc.issuedBy.name,
-        remarks: tc.remarks
+        issuedBy: tc.issuedBy?.name || 'N/A',
+        remarks: tc.remarks || 'N/A'
       }))
     };
 
