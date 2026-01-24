@@ -13,6 +13,8 @@ const StudentTransport = require('../models/StudentTransport');
 const StudentHostel = require('../models/StudentHostel');
 const Room = require('../models/Room');
 const Vehicle = require('../models/Vehicle');
+const AcademicSession = require('../models/AcademicSession');
+const Teacher = require('../models/Teacher');
 
 // Helper function to check role-based access
 const checkAccess = (role) => {
@@ -29,6 +31,15 @@ const getDashboardSummary = async (req, res) => {
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
     }
 
     // Get today's date range
@@ -50,7 +61,7 @@ const getDashboardSummary = async (req, res) => {
     ] = await Promise.all([
       // Student stats
       Student.aggregate([
-        { $match: { schoolId } },
+        { $match: { schoolId, sessionId: activeSession._id } },
         {
           $group: {
             _id: '$status',
@@ -59,8 +70,8 @@ const getDashboardSummary = async (req, res) => {
         }
       ]),
 
-      // Teacher count
-      User.countDocuments({ schoolId, role: USER_ROLES.TEACHER }),
+      // Teacher count (teachers are school-wide, not session-based)
+      Teacher.countDocuments({ schoolId, status: 'active' }),
 
       // Attendance today
       Promise.all([
@@ -68,6 +79,7 @@ const getDashboardSummary = async (req, res) => {
           {
             $match: {
               schoolId,
+              sessionId: activeSession._id,
               date: { $gte: today, $lt: tomorrow }
             }
           },
@@ -82,6 +94,7 @@ const getDashboardSummary = async (req, res) => {
           {
             $match: {
               schoolId,
+              sessionId: activeSession._id,
               date: { $gte: today, $lt: tomorrow },
               status: 'PRESENT'
             }
@@ -97,6 +110,20 @@ const getDashboardSummary = async (req, res) => {
         FeePayment.aggregate([
           { $match: { schoolId } },
           {
+            $lookup: {
+              from: 'students',
+              localField: 'studentId',
+              foreignField: '_id',
+              as: 'student'
+            }
+          },
+          { $unwind: '$student' },
+          {
+            $match: {
+              'student.sessionId': activeSession._id
+            }
+          },
+          {
             $group: {
               _id: null,
               totalCollected: { $sum: '$amount' }
@@ -104,7 +131,7 @@ const getDashboardSummary = async (req, res) => {
           }
         ]),
         StudentFee.aggregate([
-          { $match: { schoolId, dueAmount: { $gt: 0 } } },
+          { $match: { schoolId, sessionId: activeSession._id, dueAmount: { $gt: 0 } } },
           {
             $group: {
               _id: null,
@@ -209,7 +236,16 @@ const getStudentStrengthReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    let matchConditions = { schoolId };
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
+    let matchConditions = { schoolId, sessionId: activeSession._id };
     if (classId) matchConditions.classId = require('mongoose').Types.ObjectId(classId);
     if (sectionId) matchConditions.sectionId = require('mongoose').Types.ObjectId(sectionId);
     if (status) matchConditions.status = status;
@@ -283,6 +319,15 @@ const getDailyAttendanceReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const queryDate = new Date(date);
     queryDate.setHours(0, 0, 0, 0);
     const nextDay = new Date(queryDate);
@@ -292,6 +337,7 @@ const getDailyAttendanceReport = async (req, res) => {
       {
         $match: {
           schoolId,
+          sessionId: activeSession._id,
           date: { $gte: queryDate, $lt: nextDay }
         }
       },
@@ -329,6 +375,15 @@ const getMonthlyAttendanceReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const [year, mon] = month.split('-');
     const startDate = new Date(year, mon - 1, 1);
     const endDate = new Date(year, mon, 1);
@@ -338,6 +393,7 @@ const getMonthlyAttendanceReport = async (req, res) => {
       {
         $match: {
           schoolId,
+          sessionId: activeSession._id,
           date: { $gte: startDate, $lt: endDate },
           $expr: { $ne: [{ $dayOfWeek: '$date' }, 1] } // Exclude Sundays (1 = Sunday)
         }
@@ -419,9 +475,18 @@ const getFeesSummaryReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const [expected, collected] = await Promise.all([
       StudentFee.aggregate([
-        { $match: { schoolId } },
+        { $match: { schoolId, sessionId: activeSession._id } },
         {
           $group: {
             _id: null,
@@ -431,6 +496,20 @@ const getFeesSummaryReport = async (req, res) => {
       ]),
       FeePayment.aggregate([
         { $match: { schoolId } },
+        {
+          $lookup: {
+            from: 'students',
+            localField: 'studentId',
+            foreignField: '_id',
+            as: 'student'
+          }
+        },
+        { $unwind: '$student' },
+        {
+          $match: {
+            'student.sessionId': activeSession._id
+          }
+        },
         {
           $group: {
             _id: null,
@@ -463,13 +542,22 @@ const getFeesMonthlyReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const [year, mon] = month.split('-');
     const startDate = new Date(year, mon - 1, 1);
     const endDate = new Date(year, mon, 1);
 
     const [expected, collected] = await Promise.all([
       StudentFee.aggregate([
-        { $match: { schoolId } },
+        { $match: { schoolId, sessionId: activeSession._id } },
         {
           $group: {
             _id: null,
@@ -482,6 +570,20 @@ const getFeesMonthlyReport = async (req, res) => {
           $match: {
             schoolId,
             date: { $gte: startDate, $lt: endDate }
+          }
+        },
+        {
+          $lookup: {
+            from: 'students',
+            localField: 'studentId',
+            foreignField: '_id',
+            as: 'student'
+          }
+        },
+        { $unwind: '$student' },
+        {
+          $match: {
+            'student.sessionId': activeSession._id
           }
         },
         {
@@ -516,10 +618,20 @@ const getFeesPendingReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const pendingFees = await StudentFee.aggregate([
       {
         $match: {
           schoolId,
+          sessionId: activeSession._id,
           dueAmount: { $gt: 0 }
         }
       },
@@ -588,8 +700,17 @@ const getExamsSummaryReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const results = await Result.aggregate([
-      { $match: { schoolId } },
+      { $match: { schoolId, sessionId: activeSession._id, status: 'Published' } },
       {
         $group: {
           _id: null,
@@ -633,13 +754,22 @@ const getExamTopperReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Get active session
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({ message: 'No active session found' });
+    }
+
     const exam = await Exam.findById(examId);
     if (!exam) {
       return res.status(404).json({ message: 'Exam not found' });
     }
 
     const toppers = await Result.aggregate([
-      { $match: { examId, schoolId } },
+      { $match: { examId, schoolId, sessionId: activeSession._id, status: 'Published' } },
       {
         $lookup: {
           from: 'students',
