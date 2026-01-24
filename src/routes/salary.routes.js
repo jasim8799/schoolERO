@@ -1,5 +1,5 @@
 const express = require('express');
-const { setupSalaryProfile, getSalaryProfile, calculateSalary, getMonthlySalaries, paySalary, getSalarySlip } = require('../controllers/salary.controller.js');
+const { setupSalaryProfile, getSalaryProfile, calculateSalary, getMonthlySalaries, paySalary, getSalarySlip, getSalarySlipPdf } = require('../controllers/salary.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
@@ -27,5 +27,8 @@ router.post('/pay', requireRole('PRINCIPAL', 'OPERATOR'), paySalary);
 
 // Get salary slip - All authenticated users (staff see only their own)
 router.get('/slip/:month', getSalarySlip);
+
+// Download salary slip as PDF - All authenticated users (staff see only their own)
+router.get('/slip/:month/pdf', getSalarySlipPdf);
 
 module.exports = router;
