@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { USER_ROLES } = require('../config/constants');
 const Student = require('../models/Student');
 const StudentDailyAttendance = require('../models/StudentDailyAttendance');
@@ -26,6 +27,7 @@ const getDashboardSummary = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -50,7 +52,7 @@ const getDashboardSummary = async (req, res) => {
     ] = await Promise.all([
       // Student stats
       Student.aggregate([
-        { $match: { schoolId, sessionId } },
+        { $match: { schoolId: schoolObjectId, sessionId } },
         {
           $group: {
             _id: null,
@@ -63,14 +65,14 @@ const getDashboardSummary = async (req, res) => {
       ]),
 
       // Teacher count
-      Teacher.countDocuments({ schoolId, sessionId, status: 'active' }),
+      Teacher.countDocuments({ schoolId: schoolObjectId, sessionId, status: 'active' }),
 
       // Attendance today
       Promise.all([
         StudentDailyAttendance.aggregate([
           {
             $match: {
-              schoolId,
+              schoolId: schoolObjectId,
               sessionId,
               date: { $gte: today, $lt: tomorrow }
             }
@@ -85,7 +87,7 @@ const getDashboardSummary = async (req, res) => {
         TeacherAttendance.aggregate([
           {
             $match: {
-              schoolId,
+              schoolId: schoolObjectId,
               sessionId,
               date: { $gte: today, $lt: tomorrow },
               status: 'PRESENT'
@@ -100,7 +102,7 @@ const getDashboardSummary = async (req, res) => {
       // Fee stats
       Promise.all([
         FeePayment.aggregate([
-          { $match: { schoolId } },
+          { $match: { schoolId: schoolObjectId } },
           {
             $lookup: {
               from: 'students',
@@ -123,7 +125,7 @@ const getDashboardSummary = async (req, res) => {
           }
         ]),
         StudentFee.aggregate([
-          { $match: { schoolId, sessionId, dueAmount: { $gt: 0 } } },
+          { $match: { schoolId: schoolObjectId, sessionId, dueAmount: { $gt: 0 } } },
           {
             $group: {
               _id: null,
@@ -136,7 +138,7 @@ const getDashboardSummary = async (req, res) => {
       // Salary stats for current month
       Promise.all([
         SalaryPayment.aggregate([
-          { $match: { schoolId, sessionId, month: currentMonth } },
+          { $match: { schoolId: schoolObjectId, sessionId, month: currentMonth } },
           {
             $group: {
               _id: null,
@@ -145,7 +147,7 @@ const getDashboardSummary = async (req, res) => {
           }
         ]),
         SalaryCalculation.aggregate([
-          { $match: { schoolId, sessionId, month: currentMonth, status: 'Calculated' } },
+          { $match: { schoolId: schoolObjectId, sessionId, month: currentMonth, status: 'Calculated' } },
           {
             $group: {
               _id: null,
@@ -214,9 +216,10 @@ const getStudentStrengthReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    let matchConditions = { schoolId, sessionId };
-    if (classId) matchConditions.classId = require('mongoose').Types.ObjectId(classId);
-    if (sectionId) matchConditions.sectionId = require('mongoose').Types.ObjectId(sectionId);
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
+    let matchConditions = { schoolId: schoolObjectId, sessionId };
+    if (classId) matchConditions.classId = mongoose.Types.ObjectId(classId);
+    if (sectionId) matchConditions.sectionId = mongoose.Types.ObjectId(sectionId);
     if (status) matchConditions.status = status.toUpperCase();
 
     const [stats, byClass] = await Promise.all([
@@ -284,6 +287,7 @@ const getDailyAttendanceReport = async (req, res) => {
     const { schoolId, role } = req.user;
     const { date } = req.query;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -297,7 +301,7 @@ const getDailyAttendanceReport = async (req, res) => {
     const attendance = await StudentDailyAttendance.aggregate([
       {
         $match: {
-          schoolId,
+          schoolId: schoolObjectId,
           sessionId,
           date: { $gte: queryDate, $lt: nextDay }
         }
@@ -332,6 +336,7 @@ const getMonthlyAttendanceReport = async (req, res) => {
     const { schoolId, role } = req.user;
     const { month } = req.query;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -345,7 +350,7 @@ const getMonthlyAttendanceReport = async (req, res) => {
     const attendanceData = await StudentDailyAttendance.aggregate([
       {
         $match: {
-          schoolId,
+          schoolId: schoolObjectId,
           sessionId,
           date: { $gte: startDate, $lt: endDate },
           $expr: { $ne: [{ $dayOfWeek: '$date' }, 1] } // Exclude Sundays (1 = Sunday)
@@ -430,6 +435,7 @@ const getFeesSummaryReport = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -437,7 +443,7 @@ const getFeesSummaryReport = async (req, res) => {
 
     const [expected, collected] = await Promise.all([
       StudentFee.aggregate([
-        { $match: { schoolId, sessionId } },
+        { $match: { schoolId: schoolObjectId, sessionId } },
         {
           $group: {
             _id: null,
@@ -446,7 +452,7 @@ const getFeesSummaryReport = async (req, res) => {
         }
       ]),
       FeePayment.aggregate([
-        { $match: { schoolId } },
+        { $match: { schoolId: schoolObjectId } },
         {
           $lookup: {
             from: 'students',
@@ -489,6 +495,7 @@ const getFeesMonthlyReport = async (req, res) => {
     const { schoolId, role } = req.user;
     const { month } = req.query;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -500,7 +507,7 @@ const getFeesMonthlyReport = async (req, res) => {
 
     const [expected, collected] = await Promise.all([
       StudentFee.aggregate([
-        { $match: { schoolId, sessionId } },
+        { $match: { schoolId: schoolObjectId, sessionId } },
         {
           $group: {
             _id: null,
@@ -511,8 +518,8 @@ const getFeesMonthlyReport = async (req, res) => {
       FeePayment.aggregate([
         {
           $match: {
-            schoolId,
-            paymentDate: { $gte: startDate, $lt: endDate }
+            schoolId: schoolObjectId,
+            createdAt: { $gte: startDate, $lt: endDate }
           }
         },
         {
@@ -557,6 +564,7 @@ const getFeesPendingReport = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -565,7 +573,7 @@ const getFeesPendingReport = async (req, res) => {
     const pendingFees = await StudentFee.aggregate([
       {
         $match: {
-          schoolId,
+          schoolId: schoolObjectId,
           sessionId,
           dueAmount: { $gt: 0 }
         }
@@ -631,6 +639,7 @@ const getExamsSummaryReport = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -638,7 +647,7 @@ const getExamsSummaryReport = async (req, res) => {
 
     // Get published exams for the session
     const publishedExams = await Exam.find({
-      schoolId,
+      schoolId: schoolObjectId,
       sessionId,
       isPublished: true
     }).select('_id');
@@ -654,7 +663,7 @@ const getExamsSummaryReport = async (req, res) => {
     }
 
     const results = await Result.aggregate([
-      { $match: { examId: { $in: examIds }, schoolId, sessionId } },
+      { $match: { examId: { $in: examIds }, schoolId: schoolObjectId, sessionId } },
       {
         $group: {
           _id: null,
@@ -694,18 +703,19 @@ const getExamTopperReport = async (req, res) => {
     const { schoolId, role } = req.user;
     const { examId } = req.query;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    const exam = await Exam.findOne({ _id: examId, schoolId: schoolObjectId, sessionId });
     if (!exam) {
       return res.status(404).json({ message: 'Exam not found' });
     }
 
     const toppers = await Result.aggregate([
-      { $match: { examId, schoolId, sessionId } },
+      { $match: { examId, schoolId: schoolObjectId, sessionId } },
       {
         $lookup: {
           from: 'students',
@@ -758,6 +768,7 @@ const getSalaryMonthlyReport = async (req, res) => {
     const { schoolId, role } = req.user;
     const { month } = req.query;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -765,7 +776,7 @@ const getSalaryMonthlyReport = async (req, res) => {
 
     const [paid, pending] = await Promise.all([
       SalaryPayment.aggregate([
-        { $match: { schoolId, sessionId, month } },
+        { $match: { schoolId: schoolObjectId, sessionId, month } },
         {
           $group: {
             _id: null,
@@ -781,7 +792,7 @@ const getSalaryMonthlyReport = async (req, res) => {
         }
       ]),
       SalaryCalculation.aggregate([
-        { $match: { schoolId, sessionId, month, status: 'Calculated' } },
+        { $match: { schoolId: schoolObjectId, sessionId, month, status: 'Calculated' } },
         {
           $group: {
             _id: null,
@@ -810,13 +821,14 @@ const getStaffSalaryReport = async (req, res) => {
     const { schoolId, role } = req.user;
     const { id: staffId } = req.params;
     const sessionId = req.activeSession._id;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
     const payments = await SalaryPayment.find({
-      schoolId,
+      schoolId: schoolObjectId,
       sessionId,
       staffId
     }).sort({ month: -1 });
@@ -841,14 +853,15 @@ const getStaffSalaryReport = async (req, res) => {
 const getTransportReport = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
     const [vehicles, students] = await Promise.all([
-      Vehicle.countDocuments({ schoolId }),
-      StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' })
+      Vehicle.countDocuments({ schoolId: schoolObjectId }),
+      StudentTransport.countDocuments({ schoolId: schoolObjectId, status: 'ACTIVE' })
     ]);
 
     res.json({
@@ -863,6 +876,7 @@ const getTransportReport = async (req, res) => {
 const getHostelReport = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
     if (!checkAccess(role)) {
       return res.status(403).json({ message: 'Access denied' });
@@ -870,7 +884,7 @@ const getHostelReport = async (req, res) => {
 
     const [totalBedsData, availableBedsData] = await Promise.all([
       Room.aggregate([
-        { $match: { schoolId } },
+        { $match: { schoolId: schoolObjectId } },
         {
           $group: {
             _id: null,
@@ -879,7 +893,7 @@ const getHostelReport = async (req, res) => {
         }
       ]),
       Room.aggregate([
-        { $match: { schoolId } },
+        { $match: { schoolId: schoolObjectId } },
         {
           $group: {
             _id: null,
