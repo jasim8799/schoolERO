@@ -133,7 +133,13 @@ app.use('/api/rooms', authenticate, attachSchoolId, checkSubscriptionStatus(), c
 app.use('/api/student-hostel', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), studentHostelRoutes);
 app.use('/api/transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportRoutes);
 app.use('/api/student-transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use(
+  '/api/dashboard',
+  authenticate,
+  attachSchoolId,
+  checkSubscriptionStatus(true), // allow read-only dashboards during grace period
+  dashboardRoutes
+);
 app.use('/api/version', versionRoutes);
 
 // Production error handler (must be last middleware)
