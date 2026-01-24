@@ -47,17 +47,16 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
       // Audit log the rate limit hit (fire-and-forget)
       auditLog({
         action: 'RATE_LIMIT_EXCEEDED',
-        userId: req.user?._id || null,
-        role: req.user?.role || 'GUEST',
+        userId: req.user?._id ?? null,
+        role: req.user?.role ?? 'GUEST',
         entityType: 'RateLimit',
         entityId: null,
         description: `Rate limit exceeded on ${req.originalUrl} (${limiterName})`,
         ipAddress: req.ip,
-        schoolId: req.user?.schoolId || null,
+        schoolId: req.user?.schoolId ?? null,
+        sessionId: req.user?.sessionId ?? null,
         req
-      }).catch(e => {
-        // Swallow audit log errors - never block request
-      });
+      }).catch(() => {});
 
       return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
         success: false,
