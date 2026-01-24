@@ -29,6 +29,11 @@ const TCSchema = new mongoose.Schema({
     ref: 'AcademicSession',
     required: true
   },
+  issuedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',
