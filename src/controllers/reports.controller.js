@@ -100,11 +100,11 @@ const getPromotionReport = async (req, res) => {
         rollNumber: p.studentId.rollNumber,
         session: p.sessionId.name,
         fromClass: p.classId.name,
-        fromSection: p.sectionId.name,
-        attendancePercentage: p.attendancePercentage,
-        overallGrade: p.overallGrade,
-        promoted: p.promoted,
-        remarks: p.remarks
+        fromSection: p.sectionId?.name || 'N/A',
+        attendancePercentage: p.attendanceSummary?.percentage || 0,
+        overallGrade: p.resultSummary?.overallGrade || 'N/A',
+        promoted: p.status === 'Promoted',
+        remarks: p.resultSummary?.remarks || 'N/A'
       }))
     };
 
@@ -155,11 +155,11 @@ const getRetentionReport = async (req, res) => {
         rollNumber: r.studentId.rollNumber,
         session: r.sessionId.name,
         class: r.classId.name,
-        section: r.sectionId.name,
-        attendancePercentage: r.attendancePercentage,
-        overallGrade: r.overallGrade,
-        promoted: r.promoted,
-        remarks: r.remarks
+        section: r.sectionId?.name || 'N/A',
+        attendancePercentage: r.attendanceSummary?.percentage || 0,
+        overallGrade: r.resultSummary?.overallGrade || 'N/A',
+        promoted: r.status === 'Promoted',
+        remarks: r.resultSummary?.remarks || 'N/A'
       }))
     };
 
@@ -264,18 +264,13 @@ const getHistoryReport = async (req, res) => {
         rollNumber: h.studentId.rollNumber,
         session: h.sessionId.name,
         class: h.classId.name,
-        section: h.sectionId.name,
-        attendancePercentage: h.attendancePercentage,
-        totalSubjects: h.subjects.length,
-        subjects: h.subjects.map(s => ({
-          name: s.name,
-          marks: s.marks,
-          grade: s.grade,
-          status: s.status
-        })),
-        overallGrade: h.overallGrade,
-        promoted: h.promoted,
-        remarks: h.remarks
+        section: h.sectionId?.name || 'N/A',
+        attendancePercentage: h.attendanceSummary?.percentage || 0,
+        totalSubjects: h.resultSummary?.subjects?.length || 0,
+        subjects: h.resultSummary?.subjects || [],
+        overallGrade: h.resultSummary?.overallGrade || 'N/A',
+        promoted: h.status === 'Promoted',
+        remarks: h.resultSummary?.remarks || 'N/A'
       }))
     };
 
@@ -402,7 +397,27 @@ const exportHistoryPDF = (report, res) => {
 const exportHistoryExcel = (report, res) => {
   const data = [];
   report.histories.forEach(h => {
-    h.subjects.forEach(s => {
+    const subjects = h.subjects || [];
+    if (subjects.length > 0) {
+      subjects.forEach(s => {
+        data.push({
+          StudentName: h.studentName,
+          RollNumber: h.rollNumber,
+          Session: h.session,
+          Class: h.class,
+          Section: h.section,
+          AttendancePercentage: h.attendancePercentage,
+          Subject: s.name,
+          Marks: s.marks,
+          Grade: s.grade,
+          Status: s.status,
+          OverallGrade: h.overallGrade,
+          Promoted: h.promoted ? 'Yes' : 'No',
+          Remarks: h.remarks
+        });
+      });
+    } else {
+      // If no subjects, add a row with basic student info
       data.push({
         StudentName: h.studentName,
         RollNumber: h.rollNumber,
@@ -410,15 +425,15 @@ const exportHistoryExcel = (report, res) => {
         Class: h.class,
         Section: h.section,
         AttendancePercentage: h.attendancePercentage,
-        Subject: s.name,
-        Marks: s.marks,
-        Grade: s.grade,
-        Status: s.status,
+        Subject: 'N/A',
+        Marks: 'N/A',
+        Grade: 'N/A',
+        Status: 'N/A',
         OverallGrade: h.overallGrade,
         Promoted: h.promoted ? 'Yes' : 'No',
         Remarks: h.remarks
       });
-    });
+    }
   });
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
