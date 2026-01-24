@@ -1,7 +1,7 @@
-import Vehicle from '../models/Vehicle.js';
-import Route from '../models/Route.js';
+const Vehicle = require('../models/Vehicle.js');
+const Route = require('../models/Route.js');
 
-export const createVehicle = async (req, res) => {
+const createVehicle = async (req, res) => {
   try {
     const { vehicleNumber, driverName, driverContact, capacity } = req.body;
     const { schoolId, _id: createdBy } = req.user;
@@ -20,7 +20,7 @@ export const createVehicle = async (req, res) => {
   }
 };
 
-export const getVehicles = async (req, res) => {
+const getVehicles = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const vehicles = await Vehicle.find({ schoolId });
@@ -30,7 +30,7 @@ export const getVehicles = async (req, res) => {
   }
 };
 
-export const createRoute = async (req, res) => {
+const createRoute = async (req, res) => {
   try {
     const { name, stops, vehicleId } = req.body;
     const { schoolId, _id: createdBy } = req.user;
@@ -48,7 +48,7 @@ export const createRoute = async (req, res) => {
   }
 };
 
-export const getRoutes = async (req, res) => {
+const getRoutes = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const routes = await Route.find({ schoolId }).populate('vehicleId');
@@ -56,4 +56,11 @@ export const getRoutes = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
+};
+
+module.exports = {
+  createVehicle,
+  getVehicles,
+  createRoute,
+  getRoutes,
 };

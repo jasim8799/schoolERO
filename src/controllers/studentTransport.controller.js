@@ -1,8 +1,8 @@
-import StudentTransport from '../models/StudentTransport.js';
-import Student from '../models/Student.js';
-import Route from '../models/Route.js';
+const StudentTransport = require('../models/StudentTransport.js');
+const Student = require('../models/Student.js');
+const Route = require('../models/Route.js');
 
-export const assignTransport = async (req, res) => {
+const assignTransport = async (req, res) => {
   try {
     const { studentId, routeId } = req.body;
     const { schoolId } = req.user;
@@ -37,7 +37,7 @@ export const assignTransport = async (req, res) => {
   }
 };
 
-export const getStudentTransport = async (req, res) => {
+const getStudentTransport = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
@@ -47,4 +47,9 @@ export const getStudentTransport = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
+};
+
+module.exports = {
+  assignTransport,
+  getStudentTransport,
 };
