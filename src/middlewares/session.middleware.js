@@ -23,6 +23,7 @@ const attachActiveSession = async (req, res, next) => {
     }
 
     // IMPORTANT
+    req.activeSession = activeSession;
     req.user.sessionId = activeSession._id;
 
     next();

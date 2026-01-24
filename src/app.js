@@ -124,7 +124,7 @@ app.use(
 );
 app.use('/api/expenses', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
 app.use('/api/salary', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
-app.use('/api/reports', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
+app.use('/api/reports', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
 app.use('/api/tc', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('tc'), tcRoutes);
 app.use('/api/hostels', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelRoutes);
 app.use('/api/hostel-leaves', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelLeaveRoutes);
