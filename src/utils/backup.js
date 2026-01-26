@@ -5,6 +5,47 @@ const path = require('path');
 const cron = require('node-cron');
 const { auditLog } = require('./auditLog');
 
+// Model mapping for safe collection resolution
+const MODEL_MAP = {
+  schools: 'School',
+  users: 'User',
+  students: 'Student',
+  parents: 'Parent',
+  teachers: 'Teacher',
+  subjects: 'Subject',
+  classes: 'Class',
+  sections: 'Section',
+  academicsessions: 'AcademicSession',
+  studentdailyattendances: 'StudentDailyAttendance',
+  studentsubjectattendances: 'StudentSubjectAttendance',
+  teacherattendances: 'TeacherAttendance',
+  exams: 'Exam',
+  examforms: 'ExamForm',
+  exampayments: 'ExamPayment',
+  admitcards: 'AdmitCard',
+  results: 'Result',
+  feestructures: 'FeeStructure',
+  studentfees: 'StudentFee',
+  feepayments: 'FeePayment',
+  onlinepayments: 'OnlinePayment',
+  expenses: 'Expense',
+  salaryprofiles: 'SalaryProfile',
+  salarycalculations: 'SalaryCalculation',
+  salarypayments: 'SalaryPayment',
+  vehicles: 'Vehicle',
+  routes: 'Route',
+  studenttransports: 'StudentTransport',
+  hostels: 'Hostel',
+  rooms: 'Room',
+  studenthostels: 'StudentHostel',
+  hostelleaves: 'HostelLeave',
+  homeworks: 'Homework',
+  promotions: 'Promotion',
+  tcs: 'Tc',
+  notices: 'Notice',
+  auditlogs: 'AuditLog'
+};
+
 // Critical collections to backup (school-wise isolated)
 const CRITICAL_COLLECTIONS = [
   'schools',
@@ -40,7 +81,6 @@ const CRITICAL_COLLECTIONS = [
   'studenthostels',
   'hostelleaves',
   'homeworks',
-  'academic histories',
   'promotions',
   'tcs',
   'notices',
@@ -80,18 +120,21 @@ const generateChecksum = (data) => {
 
 // Encrypt data using AES-256-GCM
 const encryptData = (data) => {
-  const key = getEncryptionKey();
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipher(BACKUP_CONFIG.ENCRYPTION_ALGORITHM, key);
+  const key = Buffer.from(getEncryptionKey(), 'utf8'); // 32 bytes
+  const iv = crypto.randomBytes(12); // GCM recommended
+
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   cipher.setAAD(Buffer.from('school-erp-backup'));
 
-  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
-  encrypted += cipher.final('hex');
+  const encrypted = Buffer.concat([
+    cipher.update(JSON.stringify(data), 'utf8'),
+    cipher.final()
+  ]);
 
   const authTag = cipher.getAuthTag();
 
   return {
-    encrypted,
+    encrypted: encrypted.toString('hex'),
     iv: iv.toString('hex'),
     authTag: authTag.toString('hex'),
     checksum: generateChecksum(JSON.stringify(data))
@@ -100,15 +143,23 @@ const encryptData = (data) => {
 
 // Decrypt data using AES-256-GCM
 const decryptData = (encryptedData, iv, authTag) => {
-  const key = getEncryptionKey();
-  const decipher = crypto.createDecipher(BACKUP_CONFIG.ENCRYPTION_ALGORITHM, key);
+  const key = Buffer.from(getEncryptionKey(), 'utf8');
+
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    key,
+    Buffer.from(iv, 'hex')
+  );
+
   decipher.setAAD(Buffer.from('school-erp-backup'));
   decipher.setAuthTag(Buffer.from(authTag, 'hex'));
 
-  let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(encryptedData, 'hex')),
+    decipher.final()
+  ]);
 
-  return JSON.parse(decrypted);
+  return JSON.parse(decrypted.toString('utf8'));
 };
 
 // Backup a single school's data
@@ -121,7 +172,13 @@ const backupSchoolData = async (schoolId) => {
 
   for (const collectionName of CRITICAL_COLLECTIONS) {
     try {
-      const Model = mongoose.model(collectionName.charAt(0).toUpperCase() + collectionName.slice(1));
+      const modelName = MODEL_MAP[collectionName];
+      if (!modelName) {
+        backupData.collections[collectionName] = [];
+        continue;
+      }
+
+      const Model = mongoose.model(modelName);
       const data = await Model.find({ schoolId }).lean();
       backupData.collections[collectionName] = data;
     } catch (error) {
@@ -136,8 +193,8 @@ const backupSchoolData = async (schoolId) => {
 
 // Save encrypted backup to file and database
 const saveBackup = async (schoolId, backupData) => {
-  const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const filename = `backup_${schoolId}_${date}.enc`;
+  const timestamp = Date.now();
+  const filename = `backup_${schoolId}_${timestamp}.enc`;
   const filepath = path.join(BACKUP_CONFIG.BACKUP_DIR, filename);
 
   const encryptedData = encryptData(backupData);
@@ -145,7 +202,7 @@ const saveBackup = async (schoolId, backupData) => {
   const backupFile = {
     version: '1.0',
     schoolId,
-    date,
+    timestamp,
     ...encryptedData
   };
 
@@ -267,11 +324,14 @@ const performFullBackup = async () => {
 
     await auditLog({
       action: 'BACKUP_FAILED',
+      userId: null,
+      role: null,
       entityType: 'SYSTEM',
       entityId: null,
+      description: `Automated backup failed: ${error.message}`,
+      schoolId: null,
       details: { error: error.message },
-      ipAddress: 'SYSTEM',
-      userAgent: 'AUTOMATED_BACKUP'
+      req: null
     });
 
     return { success: false, error: error.message };
@@ -290,14 +350,14 @@ const getBackupStatus = async () => {
       const filePath = path.join(BACKUP_CONFIG.BACKUP_DIR, file);
       const stats = await fs.stat(filePath);
 
-      // Parse filename: backup_SCHOOLID_DATE.enc
+      // Parse filename: backup_SCHOOLID_TIMESTAMP.enc
       const parts = file.replace('backup_', '').replace('.enc', '').split('_');
       const schoolId = parts[0];
-      const date = parts[1];
+      const timestamp = Number(parts[1]);
 
       backups.push({
         schoolId,
-        date,
+        timestamp,
         filename: file,
         size: stats.size,
         createdAt: stats.mtime
