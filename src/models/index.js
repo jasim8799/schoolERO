@@ -33,7 +33,7 @@ require('./Room');
 require('./StudentHostel');
 require('./HostelLeave');
 require('./Homework');
-require('./tc');
+require('./TC');
 require('./SystemAnnouncement');
 require('./AuditLog');
 require('./Backup'); // 🔴 THIS IS CRITICAL
