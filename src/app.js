@@ -72,45 +72,44 @@ app.use('/api/auth', authRateLimit, authRoutes);
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/version', versionRoutes);
 
-// Maintenance mode check is applied per route after authenticate
+// Global middleware for tenant routes: authenticate -> checkMaintenanceMode
+app.use('/api', authenticate, checkMaintenanceMode);
 
 // Audit routes (require authentication and role checking)
 app.use('/api/audit', auditRoutes);
 
 // Apply authentication, school attachment, subscription and module access checks to tenant routes
-app.use('/api/schools', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('schools'), schoolRoutes);
-app.use('/api/users', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('users'), userRoutes);
-app.use('/api/classes', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
-app.use('/api/sections', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
-app.use('/api/subjects', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
-app.use('/api/teachers', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
-app.use('/api/parents', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
-app.use('/api/attendance', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
-app.use('/api/students', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
-app.use('/api/homework', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('homework'), homeworkRoutes);
-app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
-app.use('/api/exams', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examSubjectRoutes);
-app.use('/api/exam-forms', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examFormRoutes);
-app.use('/api/exam-payments', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examPaymentRoutes);
-app.use('/api/admit-cards', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), admitCardRoutes);
-app.use('/api/results', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), resultRoutes);
-app.use('/api/promotion', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), promotionRoutes);
-app.use('/api/academic-history', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('students'), academicHistoryRoutes);
+app.use('/api/schools', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('schools'), schoolRoutes);
+app.use('/api/users', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('users'), userRoutes);
+app.use('/api/classes', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
+app.use('/api/sections', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
+app.use('/api/subjects', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
+app.use('/api/teachers', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
+app.use('/api/parents', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
+app.use('/api/attendance', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
+app.use('/api/students', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
+app.use('/api/homework', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('homework'), homeworkRoutes);
+app.use('/api/exams', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
+app.use('/api/exams', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examSubjectRoutes);
+app.use('/api/exam-forms', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examFormRoutes);
+app.use('/api/exam-payments', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examPaymentRoutes);
+app.use('/api/admit-cards', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), admitCardRoutes);
+app.use('/api/results', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), resultRoutes);
+app.use('/api/promotion', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), promotionRoutes);
+app.use('/api/academic-history', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('students'), academicHistoryRoutes);
 app.use(
   '/api/fees',
   paymentRateLimit,
-  authenticate,
   attachSchoolId,
   checkSubscriptionStatus(true),
   checkModuleAccess('fees'),
-  checkMaintenanceMode,
   feePaymentRoutes
 );
 
 app.use(
   '/api/fees/structure',
-  authenticate,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
@@ -119,31 +118,28 @@ app.use(
 
 app.use(
   '/api/fees/student',
-  authenticate,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
   studentFeeRoutes
 );
-app.use('/api/expenses', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
-app.use('/api/salary', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
-app.use('/api/reports', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
-app.use('/api/tc', authenticate, attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('tc'), tcRoutes);
-app.use('/api/hostels', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelRoutes);
-app.use('/api/hostel-leaves', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelLeaveRoutes);
-app.use('/api/rooms', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), roomRoutes);
-app.use('/api/student-hostel', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), studentHostelRoutes);
-app.use('/api/transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportRoutes);
-app.use('/api/student-transport', authenticate, attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
+app.use('/api/expenses', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
+app.use('/api/salary', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
+app.use('/api/reports', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
+app.use('/api/tc', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('tc'), tcRoutes);
+app.use('/api/hostels', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelRoutes);
+app.use('/api/hostel-leaves', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelLeaveRoutes);
+app.use('/api/rooms', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), roomRoutes);
+app.use('/api/student-hostel', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), studentHostelRoutes);
+app.use('/api/transport', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportRoutes);
+app.use('/api/student-transport', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
 app.use(
   '/api/dashboard',
   generalRateLimit,
-  authenticate,
   attachSchoolId,
   checkSubscriptionStatus(true), // allow read-only dashboards during grace period
   dashboardRoutes
 );
-app.use('/api/version', versionRoutes);
 
 // Production error handler (must be last middleware)
 app.use(productionErrorHandler);
