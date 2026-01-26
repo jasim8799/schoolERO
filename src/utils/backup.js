@@ -341,6 +341,9 @@ const performFullBackup = async () => {
 // Get backup status for Super Admin
 const getBackupStatus = async () => {
   try {
+    // 🔑 Ensure backup directory exists (REQUIRED for Render)
+    await ensureBackupDir();
+
     const files = await fs.readdir(BACKUP_CONFIG.BACKUP_DIR);
     const backupFiles = files.filter(file => file.startsWith('backup_') && file.endsWith('.enc'));
 
