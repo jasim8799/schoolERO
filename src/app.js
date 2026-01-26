@@ -48,6 +48,7 @@ const studentHostelRoutes = require('./routes/studentHostel.routes');
 const transportRoutes = require('./routes/transport.routes');
 const studentTransportRoutes = require('./routes/studentTransport.routes');
 const backupRoutes = require('./routes/backup.routes');
+const inventoryRoutes = require('./routes/inventory.routes');
 
 const app = express();
 
@@ -80,6 +81,9 @@ app.use('/api', authenticate, checkMaintenanceMode);
 
 // Backup routes (authenticated)
 app.use('/api/backup', backupRoutes);
+
+// Inventory routes (authenticated, Principal only)
+app.use('/api/inventory', inventoryRoutes);
 
 // Audit routes (require authentication and role checking)
 app.use('/api/audit', auditRoutes);
