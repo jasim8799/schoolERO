@@ -47,6 +47,8 @@ const roomRoutes = require('./routes/room.routes');
 const studentHostelRoutes = require('./routes/studentHostel.routes');
 const transportRoutes = require('./routes/transport.routes');
 const studentTransportRoutes = require('./routes/studentTransport.routes');
+const backupRoutes = require('./routes/backup.routes');
+const backupDownloadRoutes = require('./routes/backup_download.routes');
 
 const app = express();
 
@@ -76,6 +78,10 @@ app.use('/api/version', versionRoutes);
 
 // Global middleware for tenant routes: authenticate -> checkMaintenanceMode
 app.use('/api', authenticate, checkMaintenanceMode);
+
+// Backup routes (authenticated)
+app.use('/api/backup', backupRoutes);
+app.use('/api/backup', backupDownloadRoutes);
 
 // Audit routes (require authentication and role checking)
 app.use('/api/audit', auditRoutes);
