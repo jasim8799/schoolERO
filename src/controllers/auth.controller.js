@@ -5,7 +5,7 @@ const { hashPassword, comparePassword } = require('../utils/password.js');
 const { generateToken } = require('../utils/jwt.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
-const { auditLog } = require('../utils/auditLog_new.js');
+const { auditLog } = require('../utils/auditLog');
 
 // Register User
 const register = async (req, res) => {

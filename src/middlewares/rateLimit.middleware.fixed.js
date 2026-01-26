@@ -1,5 +1,5 @@
 const { HTTP_STATUS } = require('../config/constants');
-const { auditLog } = require('../utils/auditLog_new');
+const { auditLog } = require('../utils/auditLog');
 
 // Simple in-memory rate limiting (for production, use Redis or similar)
 const rateLimitStore = new Map();
