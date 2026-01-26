@@ -406,11 +406,11 @@ module.exports = {
   performFullBackup,
   getBackupStatus,
   initializeBackupScheduler,
-  triggerManualBackup,
 
   // 🔑 REQUIRED exports
   backupSchoolData,
   encryptData,
+  saveBackup,
 
   CRITICAL_COLLECTIONS,
   BACKUP_CONFIG
