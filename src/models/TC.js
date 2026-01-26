@@ -45,4 +45,4 @@ const TCSchema = new mongoose.Schema({
 
 TCSchema.index({ studentId: 1, schoolId: 1 }, { unique: true });
 
-module.exports = mongoose.model('TC', TCSchema);
+module.exports = mongoose.models.TC || mongoose.model('TC', TCSchema);

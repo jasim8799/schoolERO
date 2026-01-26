@@ -13,6 +13,9 @@ if (!process.env.BACKUP_ENCRYPTION_KEY) {
 // Connect to Database
 connectDB();
 
+// 🔴 THIS LINE IS REQUIRED (YOU ARE MISSING IT)
+require('./src/models'); // 👈 registers ALL mongoose schemas
+
 // Seed Roles
 // seedRoles();
 

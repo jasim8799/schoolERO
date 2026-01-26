@@ -42,7 +42,7 @@ const MODEL_MAP = {
   homeworks: 'Homework',
   promotions: 'Promotion',
   tcs: 'Tc',
-  notices: 'Notice',
+  notices: 'SystemAnnouncement',
   auditlogs: 'AuditLog'
 };
 
