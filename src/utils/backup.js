@@ -404,6 +404,11 @@ module.exports = {
   getBackupStatus,
   initializeBackupScheduler,
   triggerManualBackup,
+
+  // 🔑 REQUIRED exports
+  backupSchoolData,
+  encryptData,
+
   CRITICAL_COLLECTIONS,
   BACKUP_CONFIG
 };
