@@ -127,6 +127,10 @@ const AuditLogSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  details: {
+    type: Object,
+    default: {}
+  },
   ipAddress: {
     type: String,
     required: true

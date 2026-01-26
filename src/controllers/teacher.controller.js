@@ -5,7 +5,7 @@ const Subject = require('../models/Subject.js');
 const School = require('../models/School.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
-const { auditLog } = require('../utils/auditLog_new.js');
+const { auditLog } = require('../utils/auditLog.js');
 
 // Create Teacher
 const createTeacher = async (req, res) => {

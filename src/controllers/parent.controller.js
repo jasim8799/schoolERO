@@ -3,7 +3,7 @@ const User = require('../models/User.js');
 const Student = require('../models/Student.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
-const { auditLog } = require('../utils/auditLog_new.js');
+const { auditLog } = require('../utils/auditLog.js');
 
 // Create Parent
 const createParent = async (req, res) => {

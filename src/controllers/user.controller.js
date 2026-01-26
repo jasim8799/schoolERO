@@ -3,7 +3,7 @@ const School = require('../models/School.js');
 const { hashPassword } = require('../utils/password.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
-const { auditLog } = require('../utils/auditLog_new.js');
+const { auditLog } = require('../utils/auditLog.js');
 
 // Create User
 const createUser = async (req, res) => {

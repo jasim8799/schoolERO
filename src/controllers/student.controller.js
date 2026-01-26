@@ -6,7 +6,7 @@ const Section = require('../models/Section.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
-const { auditLog } = require('../utils/auditLog_new.js');
+const { auditLog } = require('../utils/auditLog.js');
 
 // Create Student
 const createStudent = async (req, res) => {

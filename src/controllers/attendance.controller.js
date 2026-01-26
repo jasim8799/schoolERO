@@ -6,7 +6,7 @@ const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
 const Teacher = require('../models/Teacher.js');
 const AcademicSession = require('../models/AcademicSession.js');
-const { auditLog } = require('../utils/auditLog_new.js');
+const { auditLog } = require('../utils/auditLog.js');
 
 const normalizeDate = (d) => {
   const date = new Date(d);

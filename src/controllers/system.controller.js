@@ -5,7 +5,7 @@ const SystemSettings = require('../models/SystemSettings');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
 const { HTTP_STATUS, USER_ROLES, SCHOOL_STATUS } = require('../config/constants');
 const { logger } = require('../utils/logger');
-const { auditLog } = require('../utils/auditLog_new');
+const { auditLog } = require('../utils/auditLog');
 
 /**
  * Get system-wide metrics for Super Admin dashboard
