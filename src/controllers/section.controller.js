@@ -30,14 +30,7 @@ const createSection = async (req, res) => {
       });
     }
 
-    // Verify session exists and belongs to school
-    const session = await AcademicSession.findOne({ _id: sessionId, schoolId });
-    if (!session) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'Session not found or does not belong to the specified school'
-      });
-    }
+    // Session already verified by attachActiveSession middleware
 
     // Verify class exists and belongs to same school and session
     const classData = await Class.findOne({ _id: classId, schoolId, sessionId });

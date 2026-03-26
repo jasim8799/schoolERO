@@ -8,13 +8,25 @@ const { auditLog } = require('../utils/auditLog.js');
 // Create Class
 const createClass = async (req, res) => {
   try {
-    const { name, schoolId, sessionId, order } = req.body;
+    const { name, schoolId, order } = req.body;
+
+    // Use sessionId from middleware (already verified active session)
+    // req.user.sessionId is set by attachActiveSession middleware
+    // This is a real MongoDB ObjectId — no CastError possible
+    const sessionId = req.user.sessionId;
 
     // Validate required fields
-    if (!name || !schoolId || !sessionId) {
+    if (!name || !schoolId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Class name, schoolId, and sessionId are required'
+        message: 'Class name and schoolId are required'
+      });
+    }
+
+    if (!sessionId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'No active academic session found. Please activate a session first.'
       });
     }
 
@@ -27,14 +39,7 @@ const createClass = async (req, res) => {
       });
     }
 
-    // Verify session exists and belongs to school
-    const session = await AcademicSession.findOne({ _id: sessionId, schoolId });
-    if (!session) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        success: false,
-        message: 'Session not found or does not belong to the specified school'
-      });
-    }
+    // Session already verified by attachActiveSession middleware
 
     // Check if class already exists for this school and session
     const existingClass = await Class.findOne({ name, schoolId, sessionId });
