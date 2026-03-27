@@ -18,8 +18,9 @@ const classSchema = new mongoose.Schema({
   },
   order: {
     type: Number,
-    required: [true, 'Class order is required'],
-    min: 1
+    required: false,
+    default: 0,
+    min: 0
   },
   status: {
     type: String,
