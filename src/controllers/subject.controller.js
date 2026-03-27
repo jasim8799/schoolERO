@@ -48,13 +48,17 @@ const createSubject = async (req, res) => {
       status: 'active'
     });
 
-    // Audit log
-    await auditLog({
-      action: 'SUBJECT_CREATED',
-      userId: req.user.userId,
-      schoolId,
-      details: { subjectName: name, classId, sessionId, subjectId: newSubject._id }
-    });
+    // Audit log — wrapped in try/catch so it NEVER kills the response
+    try {
+      await auditLog({
+        action: 'SUBJECT_CREATED',
+        userId: req.user.userId,
+        schoolId,
+        details: { subjectName: name, classId, sessionId, subjectId: newSubject._id }
+      });
+    } catch (auditError) {
+      logger.error('Audit log failed for SUBJECT_CREATED:', auditError.message);
+    }
 
     logger.success(`Subject created: ${name} for class ${classId}`);
 

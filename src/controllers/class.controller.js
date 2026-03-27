@@ -8,25 +8,30 @@ const { auditLog } = require('../utils/auditLog.js');
 // Create Class
 const createClass = async (req, res) => {
   try {
-    const { name, schoolId, order } = req.body;
+    const { name, order } = req.body;
 
-    // Use sessionId from middleware (already verified active session)
-    // req.user.sessionId is set by attachActiveSession middleware
-    // This is a real MongoDB ObjectId — no CastError possible
+    // Use schoolId and sessionId from middleware (verified, correct types)
+    const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
 
-    // Validate required fields
-    if (!name || !schoolId) {
+    if (!name) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Class name and schoolId are required'
+        message: 'Class name is required'
+      });
+    }
+
+    if (!schoolId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'School context missing from token'
       });
     }
 
     if (!sessionId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'No active academic session found. Please activate a session first.'
+        message: 'No active academic session. Please activate a session first.'
       });
     }
 
@@ -38,8 +43,6 @@ const createClass = async (req, res) => {
         message: 'School not found'
       });
     }
-
-    // Session already verified by attachActiveSession middleware
 
     // Check if class already exists for this school and session
     const existingClass = await Class.findOne({ name, schoolId, sessionId });
@@ -59,13 +62,18 @@ const createClass = async (req, res) => {
       status: 'active'
     });
 
-    // Audit log
-    await auditLog({
-      action: 'CLASS_CREATED',
-      userId: req.user.userId,
-      schoolId,
-      details: { className: name, sessionId, classId: newClass._id }
-    });
+    // Audit log — wrapped in try/catch so it NEVER kills the response
+    try {
+      await auditLog({
+        action: 'CLASS_CREATED',
+        userId: req.user.userId,
+        schoolId,
+        details: { className: name, sessionId, classId: newClass._id }
+      });
+    } catch (auditError) {
+      logger.error('Audit log failed for CLASS_CREATED:', auditError.message);
+      // Continue — don't fail the request because of audit log
+    }
 
     logger.success(`Class created: ${name} for school ${schoolId}`);
 

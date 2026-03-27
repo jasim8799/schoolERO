@@ -64,13 +64,17 @@ const createSection = async (req, res) => {
       status: 'active'
     });
 
-    // Audit log
-    await auditLog({
-      action: 'SECTION_CREATED',
-      userId: req.user.userId,
-      schoolId,
-      details: { sectionName: name, classId, sessionId, sectionId: newSection._id }
-    });
+    // Audit log — wrapped in try/catch so it NEVER kills the response
+    try {
+      await auditLog({
+        action: 'SECTION_CREATED',
+        userId: req.user.userId,
+        schoolId,
+        details: { sectionName: name, classId, sessionId, sectionId: newSection._id }
+      });
+    } catch (auditError) {
+      logger.error('Audit log failed for SECTION_CREATED:', auditError.message);
+    }
 
     logger.success(`Section created: ${name} for class ${classId}`);
 

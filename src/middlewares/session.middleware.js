@@ -9,7 +9,19 @@ const attachActiveSession = async (req, res, next) => {
       return res.status(400).json({ message: 'School context missing' });
     }
 
-    const querySchoolId = schoolId instanceof mongoose.Types.ObjectId ? schoolId : new mongoose.Types.ObjectId(schoolId);
+    // Safely convert to ObjectId — catch BSONError for malformed IDs
+    let querySchoolId;
+    try {
+      querySchoolId = schoolId instanceof mongoose.Types.ObjectId
+        ? schoolId
+        : new mongoose.Types.ObjectId(schoolId);
+    } catch (castError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid school ID format',
+        error: castError.message
+      });
+    }
 
     const activeSession = await AcademicSession.findOne({
       schoolId: querySchoolId,
@@ -18,7 +30,8 @@ const attachActiveSession = async (req, res, next) => {
 
     if (!activeSession) {
       return res.status(400).json({
-        message: 'Active academic session not found'
+        success: false,
+        message: 'No active academic session found. Please go to Academic Sessions and activate a session, then log out and log back in.'
       });
     }
 
@@ -28,7 +41,12 @@ const attachActiveSession = async (req, res, next) => {
 
     next();
   } catch (error) {
-    res.status(500).json({ message: 'Failed to attach academic session' });
+    console.error('Session middleware error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to attach academic session',
+      error: error.message
+    });
   }
 };
 
