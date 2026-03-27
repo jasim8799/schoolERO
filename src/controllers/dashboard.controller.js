@@ -172,12 +172,67 @@ const getStudentDashboard = async (req, res) => {
 
     let studentId;
     if (role === USER_ROLES.STUDENT) {
-      const student = await Student.findOne({ userId, schoolId });
+      // First try by userId (already linked)
+      let student = await Student.findOne({ userId, schoolId });
+
+      // Fallback: try linking by mobile number (first login scenario)
+      if (!student) {
+        const user = await User.findById(userId).select('mobile');
+        if (user?.mobile) {
+          student = await Student.findOne({
+            schoolId,
+            mobile: user.mobile,
+            $or: [{ userId: null }, { userId: { $exists: false } }]
+          });
+          // Auto-link if found
+          if (student) {
+            student.userId = userId;
+            await student.save();
+          }
+        }
+      }
+
+      // If still not found, return default empty dashboard
+      if (!student) {
+        return res.json({
+          attendancePercent: 0,
+          totalFeeDue: 0,
+          examStatus: '0/0 passed',
+          noticesCount: 0,
+          message: 'Student profile not linked yet. Please contact your school administrator.'
+        });
+      }
+
       studentId = student._id;
     } else if (role === USER_ROLES.PARENT) {
-      // Simplified - assume parent has one child
-      const student = await Student.findOne({ parentId: userId, schoolId });
-      studentId = student._id;
+      // Find parent document by userId
+      const Parent = require('../models/Parent');
+      const parent = await Parent.findOne({ userId, schoolId });
+
+      // If no parent profile found, return default empty dashboard
+      if (!parent) {
+        return res.json({
+          attendancePercent: 0,
+          totalFeeDue: 0,
+          examStatus: '0/0 passed',
+          noticesCount: 0,
+          message: 'Parent profile not found. Please contact your school administrator.'
+        });
+      }
+
+      // If parent has no children yet, return empty dashboard
+      if (!parent.children || parent.children.length === 0) {
+        return res.json({
+          attendancePercent: 0,
+          totalFeeDue: 0,
+          examStatus: '0/0 passed',
+          noticesCount: 0,
+          message: 'No children linked to your account yet.'
+        });
+      }
+
+      // Use first child (dashboard shows summary for first child)
+      studentId = parent.children[0];
     }
 
     // Attendance %
