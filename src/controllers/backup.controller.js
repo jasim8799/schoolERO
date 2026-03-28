@@ -48,17 +48,25 @@ const triggerManualBackupController = async (req, res) => {
     // Backup the principal's school data
     const backupData = await backupSchoolData(req.user.schoolId);
 
-    // Save encrypted backup
-    const { filepath } = await saveBackup(req.user.schoolId, backupData);
+    // Save backup file (non-critical — continue even if saving fails)
+    try {
+      await saveBackup(req.user.schoolId, backupData);
+    } catch (saveError) {
+      console.error('Save backup file error (non-critical):', saveError.message);
+    }
 
-    // Download the backup file
-    res.download(filepath, (err) => {
-      if (err) {
-        console.error('Download error:', err);
-        // File might have been sent already, don't send error response
-        return;
+    // Return backup data as JSON so Flutter can download it as a file blob
+    const filename = `backup-${req.user.schoolId}-${Date.now()}.json`;
+
+    res.status(200).json({
+      success: true,
+      message: 'Backup created successfully',
+      data: {
+        filename,
+        schoolId: req.user.schoolId.toString(),
+        createdAt: new Date().toISOString(),
+        backup: backupData
       }
-      // Optionally clean up file after download, but keep for retention
     });
   } catch (error) {
     console.error('Manual backup error:', error);
