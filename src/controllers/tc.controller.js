@@ -33,7 +33,9 @@ const issueTC = async (req, res) => {
       reason,
       issueDate,
       tcNumber,
-      schoolId
+      schoolId,
+      sessionId: student.sessionId,
+      issuedBy: req.user._id || req.user.userId
     });
 
     await Student.findByIdAndUpdate(studentId, { status: 'LEFT' });
