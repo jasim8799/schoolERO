@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const WorkflowInstance = mongoose.model('WorkflowInstance');
 
 // Step definitions for each workflow type
 const WORKFLOW_STEPS = {
@@ -87,6 +86,7 @@ const WORKFLOW_STEPS = {
  * Will reuse an IN_PROGRESS workflow if one already exists.
  */
 async function createWorkflow(schoolId, type, entityId, entityType, createdBy) {
+  const WorkflowInstance = mongoose.model('WorkflowInstance');
   const existing = await WorkflowInstance.findOne({
     schoolId,
     type,
@@ -120,6 +120,7 @@ async function createWorkflow(schoolId, type, entityId, entityType, createdBy) {
  * @param {object} metadata    - Optional metadata for the completed step
  */
 async function advanceWorkflow(workflowId, completedBy, metadata = {}) {
+  const WorkflowInstance = mongoose.model('WorkflowInstance');
   const instance = await WorkflowInstance.findById(workflowId);
   if (!instance) throw new Error('Workflow not found');
   if (instance.status !== 'IN_PROGRESS') {
@@ -156,6 +157,7 @@ async function advanceWorkflow(workflowId, completedBy, metadata = {}) {
  * Cancel a workflow instance.
  */
 async function cancelWorkflow(workflowId, cancelledBy) {
+  const WorkflowInstance = mongoose.model('WorkflowInstance');
   const instance = await WorkflowInstance.findByIdAndUpdate(
     workflowId,
     { status: 'CANCELLED', completedAt: new Date() },
@@ -168,6 +170,7 @@ async function cancelWorkflow(workflowId, cancelledBy) {
  * Get workflow status for a given entity and type.
  */
 async function getWorkflowStatus(schoolId, entityId, type) {
+  const WorkflowInstance = mongoose.model('WorkflowInstance');
   const instance = await WorkflowInstance.findOne({
     schoolId,
     entityId,
@@ -180,6 +183,7 @@ async function getWorkflowStatus(schoolId, entityId, type) {
  * Check if a given step name is the current pending step.
  */
 async function isStepAllowed(workflowId, stepName) {
+  const WorkflowInstance = mongoose.model('WorkflowInstance');
   const instance = await WorkflowInstance.findById(workflowId);
   if (!instance || instance.status !== 'IN_PROGRESS') return false;
   return instance.currentStep === stepName;
