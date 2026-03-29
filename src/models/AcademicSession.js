@@ -22,6 +22,18 @@ const academicSessionSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: false
+  },
+  lifecycleStatus: {
+    type: String,
+    enum: ['SETUP', 'ACTIVE', 'EXAM_PHASE', 'RESULT_PHASE', 'CLOSED'],
+    default: 'SETUP'
+  },
+  closedAt: { type: Date },
+  settings: {
+    attendanceCutoffTime: { type: String, default: '10:00' },
+    lateFeeEnabled: { type: Boolean, default: false },
+    lateFeeAmount: { type: Number, default: 0 },
+    lateFeeAfterDays: { type: Number, default: 5 }
   }
 }, {
   timestamps: true

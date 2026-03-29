@@ -21,7 +21,18 @@ const teacherSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'inactive'],
     default: 'active'
-  }
+  },
+  assignedSubjects: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subject'
+  }],
+  assignedClasses: [{
+    classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
+    sectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Section' }
+  }],
+  designation: { type: String, trim: true },
+  qualification: { type: String, trim: true },
+  joiningDate: { type: Date }
 }, {
   timestamps: true
 });

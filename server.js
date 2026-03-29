@@ -16,6 +16,9 @@ connectDB();
 // 🔴 THIS LINE IS REQUIRED (YOU ARE MISSING IT)
 require('./src/models'); // 👈 registers ALL mongoose schemas
 
+// Start cron-based automation scheduler (after DB and models are loaded)
+require('./src/jobs/scheduler');
+
 // Seed Roles
 // seedRoles();
 

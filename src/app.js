@@ -49,6 +49,12 @@ const transportRoutes = require('./routes/transport.routes');
 const studentTransportRoutes = require('./routes/studentTransport.routes');
 const backupRoutes = require('./routes/backup.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
+const workflowRoutes = require('./routes/workflow.routes');
+const eventRoutes = require('./routes/event.routes');
+const automationRoutes = require('./routes/automation.routes');
+const lifecycleRoutes = require('./routes/lifecycle.routes');
+const feeAssignmentRoutes = require('./routes/feeAssignment.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 const app = express();
 
@@ -148,6 +154,14 @@ app.use(
   checkSubscriptionStatus(true), // allow read-only dashboards during grace period
   dashboardRoutes
 );
+
+// ── Orchestration & automation routes ────────────────────────────────────────
+app.use('/api/workflow', attachSchoolId, workflowRoutes);
+app.use('/api/events', attachSchoolId, eventRoutes);
+app.use('/api/automations', attachSchoolId, automationRoutes);
+app.use('/api/lifecycle', attachSchoolId, lifecycleRoutes);
+app.use('/api/fee-assignments', attachSchoolId, feeAssignmentRoutes);
+app.use('/api/notifications', attachSchoolId, notificationRoutes);
 
 // Production error handler (must be last middleware)
 app.use(productionErrorHandler);

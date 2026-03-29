@@ -66,7 +66,20 @@ const studentSchema = new mongoose.Schema({
   address: {
     type: String,
     trim: true
-  }
+  },
+  admissionStatus: {
+    type: String,
+    enum: ['ENQUIRY', 'REGISTERED', 'DOCUMENT_PENDING', 'APPROVED', 'ACTIVE'],
+    default: 'ACTIVE'
+  },
+  enquiryDate: { type: Date },
+  registrationDate: { type: Date },
+  approvalDate: { type: Date },
+  admissionNumber: { type: String, trim: true },
+  documents: [{
+    name: { type: String },
+    status: { type: String, enum: ['PENDING', 'SUBMITTED', 'VERIFIED'] }
+  }]
 }, {
   timestamps: true
 });

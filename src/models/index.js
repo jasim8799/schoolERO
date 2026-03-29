@@ -37,3 +37,10 @@ require('./TC');
 require('./SystemAnnouncement');
 require('./AuditLog');
 require('./Backup'); // 🔴 THIS IS CRITICAL
+
+// ── New orchestration models ──────────────────────────────────────────────────
+require('./WorkflowInstance');
+require('./EventLog');
+require('./AutomationRule');
+require('./StudentFeeAssignment');
+require('./NotificationQueue');
