@@ -86,7 +86,7 @@ async function checkFeesDue(schoolId, condition = {}, action = {}) {
  * Check for students who were absent yesterday and emit events.
  */
 async function checkAbsentStudents(schoolId, condition = {}, action = {}) {
-  const Attendance = mongoose.model('Attendance');
+  const Attendance = mongoose.model('StudentDailyAttendance');
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   yesterday.setHours(0, 0, 0, 0);
@@ -117,10 +117,10 @@ async function checkAbsentStudents(schoolId, condition = {}, action = {}) {
  * Check classes where attendance was not marked for yesterday.
  */
 async function checkAttendanceNotMarked(schoolId, condition = {}, action = {}) {
-  const Attendance = mongoose.model('Attendance');
+  const Attendance = mongoose.model('StudentDailyAttendance');
   const Class = mongoose.model('Class');
   const NotificationQueue = mongoose.model('NotificationQueue');
-  const School = mongoose.model('School');
+  const User = mongoose.model('User');
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -128,7 +128,7 @@ async function checkAttendanceNotMarked(schoolId, condition = {}, action = {}) {
   const dayEnd = new Date(yesterday);
   dayEnd.setHours(23, 59, 59, 999);
 
-  const classes = await Class.find({ schoolId }).select('_id name teacherId').lean();
+  const classes = await Class.find({ schoolId }).select('_id name').lean();
   const marked = await Attendance.distinct('classId', {
     schoolId,
     date: { $gte: yesterday, $lte: dayEnd }
@@ -136,22 +136,27 @@ async function checkAttendanceNotMarked(schoolId, condition = {}, action = {}) {
   const markedSet = new Set(marked.map(id => String(id)));
 
   const unmarked = classes.filter(c => !markedSet.has(String(c._id)));
-  const notifications = unmarked
-    .filter(c => c.teacherId)
-    .map(c => ({
-      schoolId,
-      recipientId: c.teacherId,
-      recipientRole: 'TEACHER',
-      type: 'GENERAL',
-      title: 'Attendance Not Marked',
-      body: `Attendance for class ${c.name} was not marked yesterday.`,
-      relatedEntityId: c._id,
-      relatedEntityType: 'Class'
-    }));
+  if (!unmarked.length) return 0;
 
-  if (notifications.length) {
-    await NotificationQueue.insertMany(notifications);
-  }
+  // Find an active OPERATOR for this school to notify
+  const operator = await User.findOne({
+    schoolId,
+    role: 'OPERATOR',
+    status: 'active'
+  }).select('_id').lean();
+
+  const notifications = unmarked.map(c => ({
+    schoolId,
+    recipientId: operator?._id || schoolId,
+    recipientRole: 'OPERATOR',
+    type: 'GENERAL',
+    title: 'Attendance Not Marked',
+    body: `Attendance for class ${c.name} was not marked yesterday.`,
+    relatedEntityId: c._id,
+    relatedEntityType: 'Class'
+  }));
+
+  await NotificationQueue.insertMany(notifications);
 
   return unmarked.length;
 }
@@ -185,7 +190,7 @@ async function generateMonthlyFees(schoolId, month) {
       schoolId,
       sessionId: session._id,
       classId: student.classId,
-      feeType: 'MONTHLY'
+      frequency: 'Monthly'
     }).lean();
 
     for (const fs of structures) {

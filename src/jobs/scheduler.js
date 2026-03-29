@@ -12,7 +12,7 @@ const {
  */
 async function getActiveSchoolIds() {
   const School = mongoose.model('School');
-  const schools = await School.find({ isActive: true }).select('_id').lean();
+  const schools = await School.find({ status: 'active' }).select('_id').lean();
   return schools.map(s => s._id);
 }
 

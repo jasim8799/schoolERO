@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const EventLog = mongoose.model('EventLog');
 
 // Registry of event handlers: { eventName: [handlerFn, ...] }
 const _handlers = {};
@@ -25,6 +24,7 @@ function registerHandler(event, handler) {
  * @param {object} [opts.payload={}]
  */
 async function emitEvent({ schoolId, event, entityId, entityType, triggeredBy, payload = {} }) {
+  const EventLog = mongoose.model('EventLog');
   const log = await EventLog.create({
     schoolId,
     event,

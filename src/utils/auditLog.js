@@ -32,11 +32,11 @@ const auditLog = async (options) => {
 
     const auditData = {
       action,
-      userId,
-      role,
-      entityType,
+      userId: userId || null,
+      role: role || 'SYSTEM',
+      entityType: entityType || 'SYSTEM',
       entityId: entityId || null,
-      description,
+      description: description || action,
       schoolId: schoolId || null,
       sessionId: sessionId || null,
       ipAddress: req?.ip || req?.connection?.remoteAddress || 'SYSTEM',

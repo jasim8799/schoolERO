@@ -9,7 +9,7 @@ const AuditLogSchema = new mongoose.Schema({
   role: {
     type: String,
     required: true,
-    enum: ['SUPER_ADMIN', 'PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT', 'GUEST']
+    enum: ['SUPER_ADMIN', 'PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT', 'GUEST', 'SYSTEM']
   },
   action: {
     type: String,
@@ -86,7 +86,48 @@ const AuditLogSchema = new mongoose.Schema({
       'RESTORE_EXECUTION_FAILED',
       'RESTORE_PREVIEW_FAILED',
       'BACKUP_DOWNLOAD_FAILED',
-      'RATE_LIMIT_EXCEEDED'
+      'RATE_LIMIT_EXCEEDED',
+
+      // Attendance
+      'STUDENT_ATTENDANCE_MARKED',
+      'SUBJECT_ATTENDANCE_MARKED',
+      'TEACHER_ATTENDANCE_MARKED',
+
+      // Fees (extended)
+      'FEE_PAYMENT_MANUAL',
+      'FEE_PAYMENT_ONLINE_SUCCESS',
+      'FEE_PAYMENT_ONLINE_FAILED',
+
+      // Salary (extended)
+      'SALARY_CALCULATION',
+      'SALARY_PAYMENT',
+
+      // Inventory
+      'INVENTORY_EXPORTED',
+
+      // School admin actions
+      'SCHOOL_ACTIVATED',
+      'SCHOOL_DEACTIVATED',
+      'SCHOOL_LIMITS_UPDATED',
+      'SCHOOL_PLAN_UPDATED',
+      'SCHOOL_SUBSCRIPTION_RENEWED',
+      'SCHOOL_MODULES_UPDATED',
+      'SCHOOL_FORCE_LOGOUT',
+
+      // User / staff creation failures
+      'OPERATOR_CREATED',
+      'OPERATOR_CREATION_FAILED',
+      'PARENT_CREATION_FAILED',
+      'TEACHER_CREATION_FAILED',
+      'STUDENT_CREATION_FAILED',
+      'PRINCIPAL_ASSIGNED',
+
+      // System / announcements
+      'SYSTEM_ANNOUNCEMENT_CREATED',
+      'MAINTENANCE_MODE_ENABLED',
+      'MAINTENANCE_MODE_DISABLED',
+      'PASSWORD_RESET',
+      'STUDENT_USER_LINKED'
     ]
   },
   entityType: {
@@ -115,7 +156,12 @@ const AuditLogSchema = new mongoose.Schema({
       'EXPENSE',
       'BACKUP',
       'SYSTEM',
-      'RATE_LIMIT'
+      'RATE_LIMIT',
+      'INVENTORY',
+      'ANNOUNCEMENT',
+      'WORKFLOW',
+      'NOTIFICATION',
+      'FEE_ASSIGNMENT'
     ]
   },
   entityId: {
