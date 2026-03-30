@@ -47,6 +47,77 @@ const payExamFee = async (req, res) => {
       schoolId,
       createdBy: userId,
     });
+
+    // ── Billing dual-write ──────────────────────────────────────────────
+    try {
+      const Bill = require('../models/Bill');
+      const Payment = require('../models/Payment');
+
+      const generateBillNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+      const generateReceiptNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `RCP-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+
+      let billNumber;
+      let attempts = 0;
+      do {
+        billNumber = generateBillNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+      const ExamForm = require('../models/ExamForm.js');
+      const examForm = await ExamForm.findById(examFormId)
+        .populate('examId', 'name').lean();
+      const description = examForm?.examId?.name
+        ? `Exam Fee — ${examForm.examId.name}`
+        : 'Exam Fee';
+
+      const bill = await Bill.create({
+        billNumber,
+        studentId,
+        schoolId,
+        sessionId: activeSession._id,
+        billType: 'EXAM',
+        sourceType: 'ExamPayment',
+        sourceId: examPayment._id,
+        description,
+        totalAmount: amount,
+        paidAmount: amount,
+        dueAmount: 0,
+        status: 'PAID',
+        createdBy: userId
+      });
+
+      let receiptNumber;
+      attempts = 0;
+      do {
+        receiptNumber = generateReceiptNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+
+      await Payment.create({
+        receiptNumber,
+        billId: bill._id,
+        studentId,
+        schoolId,
+        sessionId: activeSession._id,
+        amount,
+        paymentMode: 'Online',
+        paymentDate: new Date(),
+        collectedBy: userId,
+        notes: `Exam payment — ${examPayment.receiptNumber}`
+      });
+    } catch (billErr) {
+      console.error('Exam bill dual-write failed:', billErr.message);
+    }
+    // ── End billing dual-write ──────────────────────────────────────
+
     res.status(201).json(examPayment);
   } catch (err) {
     if (err.code === 11000) {
@@ -86,6 +157,77 @@ const manualExamPayment = async (req, res) => {
       schoolId,
       createdBy: userId,
     });
+
+    // ── Billing dual-write ──────────────────────────────────────────────
+    try {
+      const Bill = require('../models/Bill');
+      const Payment = require('../models/Payment');
+
+      const generateBillNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+      const generateReceiptNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `RCP-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+
+      let billNumber;
+      let attempts = 0;
+      do {
+        billNumber = generateBillNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+      const ExamForm = require('../models/ExamForm.js');
+      const examForm = await ExamForm.findById(examFormId)
+        .populate('examId', 'name').lean();
+      const description = examForm?.examId?.name
+        ? `Exam Fee — ${examForm.examId.name}`
+        : 'Exam Fee';
+
+      const bill = await Bill.create({
+        billNumber,
+        studentId,
+        schoolId,
+        sessionId: activeSession._id,
+        billType: 'EXAM',
+        sourceType: 'ExamPayment',
+        sourceId: examPayment._id,
+        description,
+        totalAmount: amount,
+        paidAmount: amount,
+        dueAmount: 0,
+        status: 'PAID',
+        createdBy: userId
+      });
+
+      let receiptNumber;
+      attempts = 0;
+      do {
+        receiptNumber = generateReceiptNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+
+      await Payment.create({
+        receiptNumber,
+        billId: bill._id,
+        studentId,
+        schoolId,
+        sessionId: activeSession._id,
+        amount,
+        paymentMode: 'Cash',
+        paymentDate: new Date(),
+        collectedBy: userId,
+        notes: `Exam payment — ${examPayment.receiptNumber}`
+      });
+    } catch (billErr) {
+      console.error('Exam bill dual-write failed:', billErr.message);
+    }
+    // ── End billing dual-write ──────────────────────────────────────
+
     res.status(201).json(examPayment);
   } catch (err) {
     if (err.code === 11000) {

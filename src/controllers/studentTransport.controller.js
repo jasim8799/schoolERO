@@ -31,6 +31,58 @@ const assignTransport = async (req, res) => {
       vehicleId: route.vehicleId._id,
       schoolId,
     });
+
+    // ── Billing dual-write ──────────────────────────────────────────────
+    try {
+      const Bill = require('../models/Bill');
+      const AcademicSession = require('../models/AcademicSession');
+
+      const activeSession = await AcademicSession.findOne({
+        schoolId, isActive: true
+      });
+
+      if (activeSession) {
+        const generateBillNumber = (sid) => {
+          const ts = Date.now();
+          const r = Math.floor(Math.random() * 1000)
+            .toString().padStart(3, '0');
+          return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+        };
+
+        let billNumber;
+        let attempts = 0;
+        do {
+          billNumber = generateBillNumber(schoolId);
+          attempts++;
+        } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+        const description = route?.name
+          ? `Transport Fee — Route: ${route.name}`
+          : 'Transport Fee';
+
+        const monthlyFee = route?.monthlyFee || 0;
+
+        await Bill.create({
+          billNumber,
+          studentId,
+          schoolId,
+          sessionId: activeSession._id,
+          billType: 'TRANSPORT',
+          sourceType: 'StudentTransport',
+          sourceId: transport._id,
+          description,
+          totalAmount: monthlyFee,
+          paidAmount: 0,
+          dueAmount: monthlyFee,
+          status: 'UNPAID',
+          createdBy: req.user._id
+        });
+      }
+    } catch (billErr) {
+      console.error('Transport bill dual-write failed:', billErr.message);
+    }
+    // ── End billing dual-write ──────────────────────────────────────
+
     res.status(201).json(transport);
   } catch (err) {
     res.status(500).json({ message: err.message });

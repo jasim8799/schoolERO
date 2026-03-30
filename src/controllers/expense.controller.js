@@ -1,5 +1,6 @@
 const Expense = require('../models/Expense');
 const AcademicSession = require('../models/AcademicSession');
+const LedgerEntry = require('../models/LedgerEntry');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -85,6 +86,24 @@ const createExpense = async (req, res) => {
     // Populate references
     await expense.populate('createdBy', 'name');
     await expense.populate('sessionId', 'name');
+
+    // Ledger dual-write — never fail the expense creation
+    try {
+      await LedgerEntry.create({
+        schoolId,
+        sessionId: currentSession._id,
+        entryType: 'CREDIT',
+        category: 'EXPENSE_PAYMENT',
+        amount: expense.amount,
+        description: expense.description || `Expense: ${expense.category}`,
+        referenceId: expense._id,
+        sourceModel: 'Expense',
+        performedBy: createdBy,
+        entryDate: expense.date || new Date()
+      });
+    } catch (ledgerErr) {
+      console.error('[LedgerEntry] expense dual-write failed:', ledgerErr.message);
+    }
 
     res.status(201).json({
       message: 'Expense created successfully',

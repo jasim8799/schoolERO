@@ -1,6 +1,7 @@
 const SalaryProfile = require('../models/SalaryProfile');
 const SalaryCalculation = require('../models/SalaryCalculation');
 const SalaryPayment = require('../models/SalaryPayment');
+const LedgerEntry = require('../models/LedgerEntry');
 const User = require('../models/User');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const PDFDocument = require('pdfkit');
@@ -298,6 +299,28 @@ const paySalary = async (req, res) => {
     // Update salary calculation status to Paid
     salaryCalculation.status = 'Paid';
     await salaryCalculation.save();
+
+    // Ledger dual-write — never fail the salary payment
+    try {
+      const AcademicSession = require('../models/AcademicSession');
+      const activeSession = await AcademicSession.findOne({
+        schoolId, isActive: true
+      });
+      await LedgerEntry.create({
+        schoolId,
+        sessionId: activeSession?._id,
+        entryType: 'CREDIT',
+        category: 'SALARY_PAYMENT',
+        amount: salaryCalculation.netPayable,
+        description: `Salary paid — ${salaryCalculation.staffId.name} — ${salaryCalculation.month}`,
+        referenceId: salaryPayment._id,
+        sourceModel: 'SalaryPayment',
+        performedBy: paidBy,
+        entryDate: new Date()
+      });
+    } catch (ledgerErr) {
+      console.error('[LedgerEntry] salary dual-write failed:', ledgerErr.message);
+    }
 
     // Populate payment details
     await salaryPayment.populate('paidBy', 'name');

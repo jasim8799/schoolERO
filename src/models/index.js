@@ -44,3 +44,6 @@ require('./EventLog');
 require('./AutomationRule');
 require('./StudentFeeAssignment');
 require('./NotificationQueue');
+require('./Bill');
+require('./Payment');
+require('./LedgerEntry');

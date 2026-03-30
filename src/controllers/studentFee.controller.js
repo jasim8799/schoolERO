@@ -45,6 +45,42 @@ const assignFee = async (req, res) => {
       assignedBy,
     });
 
+    // Dual write — create Bill alongside StudentFee
+    try {
+      const Bill = require('../models/Bill');
+      const generateBillNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+      let billNumber;
+      let attempts = 0;
+      do {
+        billNumber = generateBillNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+      await Bill.create({
+        billNumber,
+        studentId,
+        schoolId,
+        sessionId,
+        billType: feeStructure.feeType || 'TUITION',
+        sourceType: 'StudentFee',
+        sourceId: studentFee._id,
+        description: feeStructure.name,
+        totalAmount,
+        paidAmount: 0,
+        dueAmount: totalAmount,
+        status: 'UNPAID',
+        dueDate: feeStructure.dueDate || null,
+        createdBy: assignedBy
+      });
+    } catch (billErr) {
+      // Bill creation failure should NOT fail the fee assignment
+      console.error('Bill dual-write failed:', billErr.message);
+    }
+
     res.status(201).json({
       success: true,
       data: studentFee,

@@ -55,6 +55,7 @@ const automationRoutes = require('./routes/automation.routes');
 const lifecycleRoutes = require('./routes/lifecycle.routes');
 const feeAssignmentRoutes = require('./routes/feeAssignment.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const billRoutes = require('./routes/bill.routes');
 
 const app = express();
 
@@ -162,6 +163,7 @@ app.use('/api/automations', attachSchoolId, automationRoutes);
 app.use('/api/lifecycle', attachSchoolId, lifecycleRoutes);
 app.use('/api/fee-assignments', attachSchoolId, feeAssignmentRoutes);
 app.use('/api/notifications', attachSchoolId, notificationRoutes);
+app.use('/api/bills', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), billRoutes);
 
 // Production error handler (must be last middleware)
 app.use(productionErrorHandler);
