@@ -14,6 +14,6 @@ router.use(checkSchoolStatus);
 router.use(requireRole('PRINCIPAL', 'OPERATOR'));
 
 router.post('/assign', assignFee);
-router.get('/student/:id', getStudentFees);
+router.get('/:id', getStudentFees);
 
 module.exports = router;

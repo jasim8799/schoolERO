@@ -45,10 +45,14 @@ const assignFee = async (req, res) => {
       assignedBy,
     });
 
-    res.status(201).json(studentFee);
+    res.status(201).json({
+      success: true,
+      data: studentFee,
+      message: 'Fee assigned successfully',
+    });
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(409).json({ message: 'Fee already assigned to this student for this fee structure and session.' });
+      return res.status(409).json({ message: 'This fee is already assigned to the student' });
     }
     res.status(500).json({ message: err.message });
   }
