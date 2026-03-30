@@ -139,6 +139,45 @@ const createStudent = async (req, res) => {
 
     logger.success(`Student created: ${name} (${rollNumber})`);
 
+    // Auto-create admission bill (best-effort, never fails creation)
+    try {
+      const Bill = require('../models/Bill');
+      const activeSession = await AcademicSession.findOne({
+        schoolId, isActive: true
+      });
+      if (activeSession) {
+        const generateBillNumber = (sid) => {
+          const ts = Date.now();
+          const r = Math.floor(Math.random() * 1000)
+            .toString().padStart(3, '0');
+          return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+        };
+        let billNumber;
+        let attempts = 0;
+        do {
+          billNumber = generateBillNumber(schoolId);
+          attempts++;
+        } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+        await Bill.create({
+          billNumber,
+          studentId: newStudent._id,
+          schoolId,
+          sessionId: activeSession._id,
+          billType: 'ADMISSION',
+          sourceType: 'Manual',
+          description: `Admission Fee — ${newStudent.name}`,
+          totalAmount: 0,
+          paidAmount: 0,
+          dueAmount: 0,
+          status: 'PAID',
+          createdBy: req.user?._id || newStudent._id
+        });
+      }
+    } catch (billErr) {
+      console.error('Admission bill auto-create failed:', billErr.message);
+    }
+
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'Student created successfully',

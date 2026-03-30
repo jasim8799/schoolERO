@@ -18,6 +18,20 @@ const HostelSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  monthlyFee: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  gender: {
+    type: String,
+    enum: ['BOYS', 'GIRLS', 'MIXED'],
+    default: 'MIXED'
+  },
+  address: {
+    type: String,
+    default: ''
   }
 }, {
   timestamps: true

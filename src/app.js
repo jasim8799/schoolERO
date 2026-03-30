@@ -56,6 +56,7 @@ const lifecycleRoutes = require('./routes/lifecycle.routes');
 const feeAssignmentRoutes = require('./routes/feeAssignment.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const billRoutes = require('./routes/bill.routes');
+const feeCollectionRoutes = require('./routes/feeCollection.routes');
 
 const app = express();
 
@@ -164,6 +165,17 @@ app.use('/api/lifecycle', attachSchoolId, lifecycleRoutes);
 app.use('/api/fee-assignments', attachSchoolId, feeAssignmentRoutes);
 app.use('/api/notifications', attachSchoolId, notificationRoutes);
 app.use('/api/bills', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), billRoutes);
+app.use(
+  '/api/fee-collection',
+  attachSchoolId,
+  checkSubscriptionStatus(),
+  checkModuleAccess('fees'),
+  feeCollectionRoutes
+);
+
+// Start cron jobs
+const { startRecurringBillsCron } = require('./cron/recurringBills');
+startRecurringBillsCron();
 
 // Production error handler (must be last middleware)
 app.use(productionErrorHandler);
