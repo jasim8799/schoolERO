@@ -4,6 +4,7 @@ const SalaryPayment = require('../models/SalaryPayment');
 const LedgerEntry = require('../models/LedgerEntry');
 const User = require('../models/User');
 const TeacherAttendance = require('../models/TeacherAttendance');
+const StaffAdvance = require('../models/StaffAdvance');
 const PDFDocument = require('pdfkit');
 const { USER_ROLES } = require('../config/constants');
 const { auditLog } = require('../utils/auditLog');
@@ -36,7 +37,7 @@ const setupSalaryProfile = async (req, res) => {
     }
 
     // Check if user is a staff member (not student or parent)
-    const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL];
+    const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, 'PEON'];
     if (!staffRoles.includes(user.role)) {
       return res.status(400).json({ message: 'Salary profile can only be created for staff members' });
     }
@@ -541,6 +542,123 @@ const getSalarySlipPdf = async (req, res) => {
   }
 };
 
+// Get all staff members (all roles except STUDENT, PARENT, SUPER_ADMIN)
+const getAllStaffList = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, 'PEON'];
+    const users = await User.find({ schoolId, role: { $in: staffRoles }, isActive: true })
+      .select('name email mobile role')
+      .sort({ role: 1, name: 1 });
+    res.json({ data: users });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get salary slip for any staff - admin only
+const getStaffSlipAdmin = async (req, res) => {
+  try {
+    const { staffId, month } = req.params;
+    const { schoolId } = req.user;
+
+    const monthRegex = /^\d{4}-\d{2}$/;
+    if (!monthRegex.test(month)) {
+      return res.status(400).json({ message: 'Invalid month format. Use YYYY-MM' });
+    }
+
+    const salaryCalculation = await SalaryCalculation.findOne({ staffId, month, schoolId })
+      .populate('staffId', 'name email mobile role');
+    if (!salaryCalculation) {
+      return res.status(404).json({ message: 'Salary slip not found for this staff and month' });
+    }
+
+    const salaryPayment = await SalaryPayment.findOne({ salaryCalculationId: salaryCalculation._id })
+      .populate('paidBy', 'name');
+
+    const salaryProfile = await SalaryProfile.findOne({ userId: staffId, schoolId });
+
+    const slip = {
+      month,
+      staff: {
+        id: salaryCalculation.staffId._id,
+        name: salaryCalculation.staffId.name,
+        email: salaryCalculation.staffId.email,
+        mobile: salaryCalculation.staffId.mobile,
+        role: salaryCalculation.staffId.role,
+      },
+      salaryDetails: {
+        baseSalary: salaryCalculation.baseSalary,
+        workingDays: salaryCalculation.workingDays,
+        attendanceDays: salaryCalculation.attendanceDays,
+        leaveDays: salaryCalculation.leaveDays,
+        allowances: salaryProfile ? salaryProfile.allowances : [],
+        deductions: salaryProfile ? salaryProfile.deductions : [],
+        grossSalary: salaryCalculation.grossSalary,
+        totalDeductions: salaryCalculation.deductions,
+        netPayable: salaryCalculation.netPayable,
+      },
+      payment: salaryPayment ? {
+        amountPaid: salaryPayment.amountPaid,
+        paymentMode: salaryPayment.paymentMode,
+        paymentDate: salaryPayment.paymentDate,
+        paidBy: salaryPayment.paidBy?.name,
+      } : null,
+      status: salaryCalculation.status,
+    };
+
+    res.json({ slip });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Create advance
+const createAdvance = async (req, res) => {
+  try {
+    const { staffId, amount, date, reason } = req.body;
+    const { schoolId, _id: givenBy } = req.user;
+
+    if (!staffId || !amount) {
+      return res.status(400).json({ message: 'staffId and amount are required' });
+    }
+    if (amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be positive' });
+    }
+
+    const staff = await User.findOne({ _id: staffId, schoolId });
+    if (!staff) return res.status(404).json({ message: 'Staff not found' });
+
+    const advance = await StaffAdvance.create({
+      staffId,
+      schoolId,
+      amount,
+      date: date ? new Date(date) : new Date(),
+      reason,
+      givenBy,
+    });
+
+    await advance.populate('staffId', 'name role');
+    res.status(201).json({ message: 'Advance created', data: advance });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get all advances
+const getAdvances = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const advances = await StaffAdvance.find({ schoolId })
+      .populate('staffId', 'name role')
+      .populate('givenBy', 'name')
+      .sort({ createdAt: -1 });
+    res.json({ data: advances });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   setupSalaryProfile,
   getSalaryProfile,
@@ -548,5 +666,9 @@ module.exports = {
   getMonthlySalaries,
   paySalary,
   getSalarySlip,
-  getSalarySlipPdf
+  getSalarySlipPdf,
+  getAllStaffList,
+  getStaffSlipAdmin,
+  createAdvance,
+  getAdvances,
 };
