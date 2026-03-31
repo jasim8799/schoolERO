@@ -58,6 +58,7 @@ const feeAssignmentRoutes = require('./routes/feeAssignment.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const billRoutes = require('./routes/bill.routes');
 const feeCollectionRoutes = require('./routes/feeCollection.routes');
+const videoRoutes = require('./routes/video.routes');
 
 const app = express();
 
@@ -174,6 +175,7 @@ app.use(
   checkModuleAccess('fees'),
   feeCollectionRoutes
 );
+app.use('/api/videos', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('videos'), videoRoutes);
 
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');
