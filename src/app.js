@@ -47,6 +47,7 @@ const roomRoutes = require('./routes/room.routes');
 const studentHostelRoutes = require('./routes/studentHostel.routes');
 const transportRoutes = require('./routes/transport.routes');
 const studentTransportRoutes = require('./routes/studentTransport.routes');
+const transportFeeRoutes = require('./routes/transportFee.routes');
 const backupRoutes = require('./routes/backup.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
 const workflowRoutes = require('./routes/workflow.routes');
@@ -149,6 +150,7 @@ app.use('/api/rooms', attachSchoolId, checkSubscriptionStatus(), checkModuleAcce
 app.use('/api/student-hostel', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), studentHostelRoutes);
 app.use('/api/transport', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportRoutes);
 app.use('/api/student-transport', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
+app.use('/api/transport-fees', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportFeeRoutes);
 app.use(
   '/api/dashboard',
   generalRateLimit,

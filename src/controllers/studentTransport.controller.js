@@ -1,6 +1,7 @@
 const StudentTransport = require('../models/StudentTransport.js');
 const Student = require('../models/Student.js');
 const Route = require('../models/Route.js');
+const TransportFee = require('../models/TransportFee.js');
 
 const assignTransport = async (req, res) => {
   try {
@@ -82,6 +83,24 @@ const assignTransport = async (req, res) => {
       console.error('Transport bill dual-write failed:', billErr.message);
     }
     // ── End billing dual-write ──────────────────────────────────────
+
+    // ── Transport fee record ────────────────────────────────────────
+    try {
+      const now = new Date();
+      await TransportFee.create({
+        studentId,
+        routeId,
+        vehicleId: route.vehicleId._id,
+        schoolId,
+        amount: route.monthlyFee || 0,
+        status: 'PENDING',
+        month: now.getMonth() + 1,
+        year: now.getFullYear(),
+      });
+    } catch (feeErr) {
+      console.error('Transport fee record creation failed:', feeErr.message);
+    }
+    // ── End transport fee record ────────────────────────────────────
 
     res.status(201).json(transport);
   } catch (err) {
