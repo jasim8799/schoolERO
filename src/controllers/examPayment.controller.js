@@ -237,6 +237,27 @@ const manualExamPayment = async (req, res) => {
   }
 };
 
+const getAllExamPayments = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+
+    const AcademicSession = require('../models/AcademicSession.js');
+    const activeSession = await AcademicSession.findOne({ schoolId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    }
+
+    const payments = await ExamPayment.find({ schoolId, sessionId: activeSession._id })
+      .populate({ path: 'examFormId', populate: { path: 'examId', select: 'name' } })
+      .populate({ path: 'studentId', select: 'name userId', populate: { path: 'userId', select: 'name' } })
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: payments });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const getMyExamPayments = async (req, res) => {
   try {
     const { schoolId, _id: userId, role } = req.user;
@@ -286,4 +307,4 @@ const getMyExamPayments = async (req, res) => {
   }
 };
 
-module.exports = { payExamFee, manualExamPayment, getMyExamPayments };
+module.exports = { payExamFee, manualExamPayment, getMyExamPayments, getAllExamPayments };
