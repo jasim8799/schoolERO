@@ -146,4 +146,57 @@ const getAdmitCardPDF = async (req, res) => {
   }
 };
 
-module.exports = { generateAdmitCard, getMyAdmitCard, getAdmitCardPDF };
+// GET /api/admit-cards/exam/:examId  (PRINCIPAL / OPERATOR)
+const getAdmitCardsByExam = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const cards = await AdmitCard.find({ examId, schoolId, sessionId })
+      .populate('studentId', 'name rollNumber')
+      .populate('examId', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: cards });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/admit-cards/student/me/:examId  (STUDENT / PARENT)
+const getMyAdmitCardByExamId = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { schoolId, sessionId, _id: userId, role } = req.user;
+
+    let studentIds = [];
+
+    if (role === 'STUDENT') {
+      const Student = require('../models/Student.js');
+      const student = await Student.findOne({ userId, schoolId, sessionId });
+      if (!student) {
+        return res.status(404).json({ success: false, message: 'Student profile not found.' });
+      }
+      studentIds = [student._id];
+    } else if (role === 'PARENT') {
+      const Parent = require('../models/Parent.js');
+      const parent = await Parent.findOne({ userId, schoolId });
+      if (!parent || !parent.children || parent.children.length === 0) {
+        return res.status(404).json({ success: false, message: 'Parent profile not found or no children associated.' });
+      }
+      studentIds = parent.children;
+    } else {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const card = await AdmitCard.findOne({ studentId: { $in: studentIds }, examId, schoolId, sessionId })
+      .populate('studentId', 'name rollNumber')
+      .populate('examId', 'name');
+
+    res.json({ success: true, data: card || null });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { generateAdmitCard, getMyAdmitCard, getAdmitCardPDF, getAdmitCardsByExam, getMyAdmitCardByExamId };
