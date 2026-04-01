@@ -66,8 +66,11 @@ const getActiveExamForms = async (req, res) => {
       query.classId = classId;
     }
 
-    const examForms = await ExamForm.find(query).sort({ endDate: 1 });
-    res.json(examForms);
+    const examForms = await ExamForm.find(query)
+      .populate('examId', 'name startDate endDate')
+      .populate('classId', 'name')
+      .sort({ endDate: 1 });
+    res.json({ success: true, data: examForms });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
