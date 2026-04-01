@@ -17,6 +17,9 @@ const ResultSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Subject'
       },
+      subjectName: {
+        type: String  // used for simple mark entry without ExamSubject reference
+      },
       marksObtained: {
         type: Number
       },

@@ -24,6 +24,9 @@ const ExamSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  resultDate: {
+    type: Date  // date from which results become visible to students/parents
+  },
   status: {
     type: String,
     enum: ['Draft', 'Published', 'Closed'],

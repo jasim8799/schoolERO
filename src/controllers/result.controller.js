@@ -102,11 +102,15 @@ const createOrUpdateResult = async (req, res) => {
     const percentage = totalMaxMarks > 0
       ? Number(((totalObtainedMarks / totalMaxMarks) * 100).toFixed(2))
       : 0;
-    let grade = 'F';
-    if (percentage >= 90) grade = 'A';
-    else if (percentage >= 80) grade = 'B';
-    else if (percentage >= 70) grade = 'C';
-    else if (percentage >= 60) grade = 'D';
+    // Grade logic: A+ >= 90, A >= 80, B+ >= 70, B >= 60, C >= 50, D >= 40, F < 40 or any subject fail
+    let grade;
+    if (!allSubjectsPass || percentage < 40) grade = 'F';
+    else if (percentage >= 90) grade = 'A+';
+    else if (percentage >= 80) grade = 'A';
+    else if (percentage >= 70) grade = 'B+';
+    else if (percentage >= 60) grade = 'B';
+    else if (percentage >= 50) grade = 'C';
+    else grade = 'D';
 
     const overallStatus = allSubjectsPass ? 'PASS' : 'FAIL';
     const promotionStatus = overallStatus === 'PASS' ? 'ELIGIBLE' : 'NOT_ELIGIBLE';
@@ -225,7 +229,7 @@ const getChildrenResults = async (req, res) => {
     });
 
     if (!parent || !parent.children.length) {
-      return res.json([]);
+      return res.json({ success: true, data: [] });
     }
 
     const filter = {
@@ -239,35 +243,46 @@ const getChildrenResults = async (req, res) => {
 
     const results = await Result.find(filter)
       .populate('studentId', 'name rollNumber')
-      .populate('examId', 'name')
+      .populate('examId', 'name resultDate')
       .populate('marks.subjectId', 'name');
 
-    res.json(results);
+    res.json({ success: true, data: results });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 const getMyResults = async (req, res) => {
   try {
     const { schoolId, sessionId, _id: userId } = req.user;
+    const { examId } = req.query;
 
-    // Fetch studentId for STUDENT role
     const student = await Student.findOne({ userId, schoolId });
     if (!student) {
-      return res.status(404).json({ message: 'Student profile not found.' });
+      return res.status(404).json({ success: false, message: 'Student profile not found.' });
     }
 
     const studentId = student._id;
 
-    const results = await Result.find({ studentId, schoolId, sessionId, status: 'Published' })
-      .populate('examId', 'name')
+    // Check resultDate gate when a specific exam is requested
+    if (examId) {
+      const exam = await Exam.findById(examId);
+      if (exam && exam.resultDate && new Date() < new Date(exam.resultDate)) {
+        return res.json({ success: true, data: [], resultDate: exam.resultDate });
+      }
+    }
+
+    const filter = { studentId, schoolId, sessionId, status: 'Published' };
+    if (examId) filter.examId = examId;
+
+    const results = await Result.find(filter)
+      .populate('examId', 'name resultDate')
       .populate('studentId', 'name rollNumber')
-      .populate('marks.subjectId', 'name')
       .sort({ createdAt: -1 });
-    res.json(results);
+
+    res.json({ success: true, data: results });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -373,6 +388,130 @@ const getResultPDF = async (req, res) => {
   }
 };
 
+// ── Simple marks entry ─────────────────────────────────────────────────────────
+// Accepts marks as a plain object {subjectName: marksObtained} — no ExamSubject required
+const submitSimpleMarks = async (req, res) => {
+  try {
+    const { studentId, examId, marks } = req.body;
+    const { schoolId, sessionId, _id: userId } = req.user;
+
+    if (!studentId || !examId) {
+      return res.status(400).json({ success: false, message: 'studentId and examId are required' });
+    }
+    if (!marks || typeof marks !== 'object' || Array.isArray(marks)) {
+      return res.status(400).json({ success: false, message: 'marks must be an object mapping subject names to obtained marks' });
+    }
+
+    const exam = await Exam.findOne({ _id: examId, schoolId });
+    if (!exam) return res.status(404).json({ success: false, message: 'Exam not found' });
+
+    const entries = Object.entries(marks);
+    if (entries.length === 0) {
+      return res.status(400).json({ success: false, message: 'No marks provided' });
+    }
+
+    const maxPerSubject = 100;
+    const passMarkPerSubject = 33; // standard 33% pass mark
+    let totalObtained = 0;
+    let anyFail = false;
+
+    const processedMarks = entries.map(([subjectName, rawMarks]) => {
+      const obtained = Math.max(0, Math.min(maxPerSubject, Number(rawMarks) || 0));
+      const isPass = obtained >= passMarkPerSubject;
+      if (!isPass) anyFail = true;
+      totalObtained += obtained;
+      return { subjectName, marksObtained: obtained, isPass };
+    });
+
+    const totalMaxMarks = entries.length * maxPerSubject;
+    const percentage = Number(((totalObtained / totalMaxMarks) * 100).toFixed(2));
+
+    // Grade logic per spec
+    let grade;
+    if (anyFail || percentage < 40) grade = 'F';
+    else if (percentage >= 90) grade = 'A+';
+    else if (percentage >= 80) grade = 'A';
+    else if (percentage >= 70) grade = 'B+';
+    else if (percentage >= 60) grade = 'B';
+    else if (percentage >= 50) grade = 'C';
+    else grade = 'D';
+
+    const overallStatus = (anyFail || percentage < 40) ? 'FAIL' : 'PASS';
+    const promotionStatus = overallStatus === 'PASS' ? 'ELIGIBLE' : 'NOT_ELIGIBLE';
+
+    const result = await Result.findOneAndUpdate(
+      { studentId, examId, schoolId, sessionId },
+      {
+        marks: processedMarks,
+        totalMarks: totalObtained,
+        percentage,
+        grade,
+        status: 'Draft',
+        overallStatus,
+        promotionStatus,
+        createdBy: userId
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── Get all results with optional filters ─────────────────────────────────────
+const getAllResults = async (req, res) => {
+  try {
+    const { schoolId, sessionId } = req.user;
+    const { examId, status } = req.query;
+
+    if (!examId) {
+      return res.status(400).json({ success: false, message: 'examId query param is required' });
+    }
+
+    const filter = { examId, schoolId, sessionId };
+    if (status) filter.status = status;
+
+    const results = await Result.find(filter)
+      .populate('studentId', 'name rollNumber')
+      .populate('examId', 'name resultDate')
+      .sort({ percentage: -1 });
+
+    res.json({ success: true, data: results });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── Bulk publish all draft results for an exam ────────────────────────────────
+const publishAllResults = async (req, res) => {
+  try {
+    const { examId } = req.body;
+    const { schoolId, sessionId } = req.user;
+
+    if (!examId) {
+      return res.status(400).json({ success: false, message: 'examId is required' });
+    }
+
+    const updated = await Result.updateMany(
+      { examId, schoolId, sessionId, status: 'Draft' },
+      { $set: { status: 'Published' } }
+    );
+
+    // Recalculate ranks after bulk publish
+    await calculateExamRanks(examId, schoolId, sessionId);
+
+    res.json({
+      success: true,
+      message: `${updated.modifiedCount} result(s) published successfully`,
+      data: { modifiedCount: updated.modifiedCount }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // Helper function to calculate ranks for all results in an exam
 const calculateExamRanks = async (examId, schoolId, sessionId) => {
   try {
@@ -407,7 +546,10 @@ const calculateExamRanks = async (examId, schoolId, sessionId) => {
 
 module.exports = {
   createOrUpdateResult,
+  submitSimpleMarks,
   publishResult,
+  publishAllResults,
+  getAllResults,
   getMyResult,
   getResultsByExam,
   getChildrenResults,

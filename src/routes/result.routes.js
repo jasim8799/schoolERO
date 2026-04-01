@@ -1,5 +1,5 @@
 const express = require('express');
-const { createOrUpdateResult, publishResult, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
+const { createOrUpdateResult, submitSimpleMarks, publishResult, publishAllResults, getAllResults, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
@@ -7,6 +7,36 @@ const { attachActiveSession } = require('../middlewares/session.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
+
+// GET /api/results?examId=...&status=... — list results (PRINCIPAL, OPERATOR)
+router.get(
+  '/',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  getAllResults
+);
+
+// POST /api/results/simple — simple mark entry by teacher (no ExamSubject config required)
+router.post(
+  '/simple',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.TEACHER),
+  submitSimpleMarks
+);
+
+// PATCH /api/results/publish-all — bulk publish all draft results for an exam
+router.patch(
+  '/publish-all',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL),
+  publishAllResults
+);
 
 router.post(
   '/',
