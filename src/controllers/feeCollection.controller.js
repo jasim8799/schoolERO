@@ -13,7 +13,7 @@ const generateReceiptNumber = (schoolId) => {
 };
 
 // GET /api/fee-collection/search?q=searchTerm
-// Search students by name, mobile, or roll number
+// Search students by name, mobile, roll number, or admission number
 exports.searchStudents = async (req, res) => {
   try {
     const { q } = req.query;
@@ -26,7 +26,7 @@ exports.searchStudents = async (req, res) => {
     const search = q.trim();
     const User = require('../models/User');
 
-    // Find users matching name or mobile
+    // 1. Find users matching name or mobile
     const matchingUsers = await User.find({
       schoolId,
       role: 'STUDENT',
@@ -34,16 +34,17 @@ exports.searchStudents = async (req, res) => {
         { name: { $regex: search, $options: 'i' } },
         { mobile: { $regex: search, $options: 'i' } }
       ]
-    }).select('_id name mobile').lean();
+    }).select('_id').lean();
 
     const userIds = matchingUsers.map(u => u._id);
 
-    // Find students by userId OR rollNumber
+    // 2. Find students by userId OR rollNumber OR admissionNumber
     const students = await Student.find({
       schoolId,
       $or: [
         { userId: { $in: userIds } },
-        { rollNumber: { $regex: search, $options: 'i' } }
+        { rollNumber: { $regex: search, $options: 'i' } },
+        { admissionNumber: { $regex: search, $options: 'i' } }
       ]
     })
       .populate('userId', 'name mobile')
@@ -51,7 +52,14 @@ exports.searchStudents = async (req, res) => {
       .populate('sectionId', 'name')
       .lean();
 
-    res.json({ success: true, data: students });
+    // 3. Filter out entries where userId didn't populate AND no direct match
+    const filtered = students.filter(s =>
+      s.userId != null ||
+      (s.rollNumber && s.rollNumber.toLowerCase().includes(search.toLowerCase())) ||
+      (s.admissionNumber && s.admissionNumber.toLowerCase().includes(search.toLowerCase()))
+    );
+
+    res.json({ success: true, data: filtered });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
