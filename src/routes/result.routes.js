@@ -18,13 +18,13 @@ router.get(
   getAllResults
 );
 
-// POST /api/results/simple — simple mark entry by teacher (no ExamSubject config required)
+// POST /api/results/simple — simple mark entry (TEACHER, PRINCIPAL, OPERATOR)
 router.post(
   '/simple',
   authenticate,
   attachActiveSession,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.TEACHER),
+  requireRole(USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   submitSimpleMarks
 );
 
