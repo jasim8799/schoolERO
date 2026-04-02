@@ -1,4 +1,5 @@
 const Exam = require('../models/Exam.js');
+const ExamSubject = require('../models/ExamSubject.js');
 
 const createExam = async (req, res) => {
   try {
@@ -87,4 +88,33 @@ const publishExam = async (req, res) => {
   }
 };
 
-module.exports = { createExam, getExamsByClass, updateExam, publishExam };
+const getExamById = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    if (!exam) {
+      return res.status(404).json({ success: false, message: 'Exam not found' });
+    }
+
+    const examSubjects = await ExamSubject.find({ examId, schoolId, sessionId })
+      .populate('subjectId', 'name');
+
+    const subjects = examSubjects
+      .map(es => ({ name: es.subjectId?.name ?? '' }))
+      .filter(s => s.name);
+
+    res.json({
+      success: true,
+      data: {
+        ...exam.toObject(),
+        subjects,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { createExam, getExamsByClass, getExamById, updateExam, publishExam };
