@@ -171,6 +171,7 @@ app.use('/api/notifications', attachSchoolId, notificationRoutes);
 app.use('/api/bills', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), billRoutes);
 app.use(
   '/api/fee-collection',
+  paymentRateLimit,
   attachSchoolId,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
@@ -182,6 +183,11 @@ app.use('/api/admissions', attachSchoolId, attachActiveSession, checkSubscriptio
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');
 startRecurringBillsCron();
+
+// Catch-all: return JSON 404 for any unmatched route (must be before error handler)
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: `Cannot ${req.method} ${req.originalUrl}` });
+});
 
 // Production error handler (must be last middleware)
 app.use(productionErrorHandler);

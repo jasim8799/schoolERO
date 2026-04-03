@@ -4,12 +4,10 @@ const {
   getStudentDues,
   collectPayment
 } = require('../controllers/feeCollection.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { checkSchoolStatus } = require('../middlewares/school.middleware');
 
 const router = express.Router();
-router.use(authenticate);
 router.use(checkSchoolStatus);
 router.use(requireRole('PRINCIPAL', 'OPERATOR'));
 
