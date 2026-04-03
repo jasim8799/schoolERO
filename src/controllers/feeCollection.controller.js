@@ -212,6 +212,7 @@ exports.collectPayment = async (req, res) => {
       success: true,
       message: `${receipts.length} payment(s) recorded successfully`,
       receipts,
+      billIds: receipts.map(r => r.billId.toString()),
       totalCollected: receipts.reduce((s, r) => s + r.amount, 0)
     });
   } catch (err) {

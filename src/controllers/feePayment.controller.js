@@ -721,6 +721,7 @@ const generateAndPay = async (req, res) => {
       success: true,
       message: `${receipts.length} advance payment(s) recorded successfully`,
       receipts,
+      billIds: receipts.map(r => r.billId.toString()),
       totalPaid: receipts.reduce((s, r) => s + r.amount, 0),
     });
   } catch (err) {

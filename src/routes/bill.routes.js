@@ -7,7 +7,8 @@ const {
   getBillSummary,
   getLedger,
   getProfitLoss,
-  getBillReceipt
+  getBillReceipt,
+  getBillHtmlReceipt,
 } = require('../controllers/bill.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
@@ -66,10 +67,17 @@ router.post(
   payBill
 );
 
-// Bill receipt PDF
+// Bill receipt PDF (by receipt number)
 router.get(
   '/receipt/:receiptNumber',
   getBillReceipt
+);
+
+// Bill receipt HTML page (by bill _id) — print-ready, auto-opens in browser
+router.get(
+  '/:id/receipt',
+  requireRole('PRINCIPAL', 'OPERATOR', 'PARENT', 'STUDENT'),
+  getBillHtmlReceipt
 );
 
 module.exports = router;
