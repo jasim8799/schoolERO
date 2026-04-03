@@ -28,39 +28,47 @@ exports.searchStudents = async (req, res) => {
 
     // 1. Find users matching name or mobile
     const matchingUsers = await User.find({
-      schoolId,
-      role: 'STUDENT',
-      $or: [
-        { name: { $regex: search, $options: 'i' } },
-        { mobile: { $regex: search, $options: 'i' } }
+      $and: [
+        { $or: [{ schoolId: schoolId }, { school: schoolId }] },
+        { role: { $in: ['STUDENT', 'student', 'Student'] } },
+        { $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { mobile: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ]}
       ]
     }).select('_id').lean();
 
     const userIds = matchingUsers.map(u => u._id);
 
-    // 2. Find students by userId OR rollNumber OR admissionNumber
+    // 2. Search students directly
     const students = await Student.find({
       schoolId,
       $or: [
-        { userId: { $in: userIds } },
+        ...(userIds.length > 0 ? [{ userId: { $in: userIds } }] : []),
         { rollNumber: { $regex: search, $options: 'i' } },
-        { admissionNumber: { $regex: search, $options: 'i' } }
+        { admissionNumber: { $regex: search, $options: 'i' } },
+        { name: { $regex: search, $options: 'i' } }
       ]
     })
-      .populate('userId', 'name mobile')
+      .populate('userId', 'name mobile email')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .lean();
 
-    // 3. Filter out entries where userId didn't populate AND no direct match
-    const filtered = students.filter(s =>
-      s.userId != null ||
-      (s.rollNumber && s.rollNumber.toLowerCase().includes(search.toLowerCase())) ||
-      (s.admissionNumber && s.admissionNumber.toLowerCase().includes(search.toLowerCase()))
-    );
+    // 3. Deduplicate by _id
+    const seen = new Set();
+    const filtered = students.filter(s => {
+      if (seen.has(s._id.toString())) return false;
+      seen.add(s._id.toString());
+      return true;
+    });
+
+    console.log(`[FEE SEARCH] query="${search}" found ${filtered.length} students`);
 
     res.json({ success: true, data: filtered });
   } catch (err) {
+    console.error('[FEE SEARCH ERROR]', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 };
