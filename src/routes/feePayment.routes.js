@@ -5,7 +5,8 @@ const {
   initiateOnlinePayment,
   verifyOnlinePayment,
   getMyPayments,
-  getReceipt
+  getReceipt,
+  generateAndPay,
 } = require('../controllers/feePayment.controller.js');
 const { assignFee } = require('../controllers/studentFee.controller.js');
 
@@ -16,6 +17,9 @@ const router = express.Router();
 
 // Assign a fee structure to an individual student
 router.post('/assign', requireRole('PRINCIPAL', 'OPERATOR'), assignFee);
+
+// Advance payment: generate bills for a future month and pay immediately
+router.post('/generate-and-pay', requireRole('PRINCIPAL', 'OPERATOR'), generateAndPay);
 
 // Manual payments (Principal / Operator logic handled in controller)
 router.post('/pay/manual', payManual);

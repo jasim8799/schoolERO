@@ -8,6 +8,10 @@ const School = require('../models/School');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const FeeStructure = require('../models/FeeStructure');
+const Bill = require('../models/Bill');
+const Payment = require('../models/Payment');
+const LedgerEntry = require('../models/LedgerEntry');
+const AcademicSession = require('../models/AcademicSession');
 const { auditLog } = require('../utils/auditLog');
 
 // Generate unique receipt number
@@ -475,6 +479,256 @@ const getReceipt = async (req, res) => {
   }
 };
 
+// ── Advance Payment ───────────────────────────────────────────────────────────
+// POST /api/fees/generate-and-pay
+// For each requested fee type, find-or-create a Bill for that student+month, then pay it.
+// Body: { studentId, month, feeTypes, amounts, paymentMode, referenceNumber?, discount?,
+//         discountType?, extraFees? }
+const generateAndPay = async (req, res) => {
+  try {
+    const {
+      studentId,
+      month,
+      feeTypes,
+      amounts,
+      paymentMode,
+      referenceNumber,
+      discount,
+      discountType,
+      extraFees,
+    } = req.body;
+
+    const { schoolId, _id: collectedBy } = req.user;
+
+    // ── Validate required fields ──────────────────────────────────────────────
+    if (!studentId)
+      return res.status(400).json({ success: false, message: 'studentId is required' });
+    if (!month)
+      return res.status(400).json({ success: false, message: 'month is required' });
+    if (!Array.isArray(feeTypes) || feeTypes.length === 0)
+      return res.status(400).json({ success: false, message: 'feeTypes array is required' });
+    if (!amounts || typeof amounts !== 'object')
+      return res.status(400).json({ success: false, message: 'amounts map is required' });
+    if (!paymentMode)
+      return res.status(400).json({ success: false, message: 'paymentMode is required' });
+
+    const VALID_MONTHS = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    if (!VALID_MONTHS.includes(month))
+      return res.status(400).json({ success: false, message: 'Invalid month' });
+
+    const VALID_BILL_TYPES = [
+      'TUITION', 'HOSTEL', 'TRANSPORT', 'EXAM',
+      'ADMISSION', 'LIBRARY', 'SPORTS', 'MISCELLANEOUS',
+    ];
+    for (const ft of feeTypes) {
+      if (!VALID_BILL_TYPES.includes(ft))
+        return res.status(400).json({ success: false, message: `Invalid feeType: ${ft}` });
+      const amt = parseFloat(amounts[ft]);
+      if (!amt || amt <= 0)
+        return res.status(400).json({ success: false, message: `Missing or invalid amount for ${ft}` });
+    }
+
+    // ── Fetch session + verify student belong to school ───────────────────────
+    const [session, student] = await Promise.all([
+      AcademicSession.findOne({ schoolId, isActive: true }),
+      Student.findOne({ _id: studentId, schoolId }),
+    ]);
+    if (!session)
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    if (!student)
+      return res.status(404).json({ success: false, message: 'Student not found' });
+
+    const billTypeToCategory = {
+      TUITION: 'FEE_COLLECTION',
+      HOSTEL: 'HOSTEL_COLLECTION',
+      TRANSPORT: 'TRANSPORT_COLLECTION',
+      EXAM: 'EXAM_COLLECTION',
+      ADMISSION: 'FEE_COLLECTION',
+      LIBRARY: 'FEE_COLLECTION',
+      SPORTS: 'FEE_COLLECTION',
+      MISCELLANEOUS: 'FEE_COLLECTION',
+    };
+
+    // ── Helper: generate a unique bill number with retry ──────────────────────
+    const newBillNumber = async () => {
+      let billNumber;
+      let attempts = 0;
+      do {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        billNumber = `BILL-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+        attempts++;
+        if (attempts > 10) break;
+      } while (await Bill.findOne({ billNumber }));
+      return billNumber;
+    };
+
+    const monthIndex = VALID_MONTHS.indexOf(month);
+    // Due date: 10th of the requested month (current calendar year)
+    const dueDate = new Date(new Date().getFullYear(), monthIndex, 10);
+
+    // ── Step 1: Find-or-create bills ──────────────────────────────────────────
+    // billQueue entries: { bill, payAmount }
+    const billQueue = [];
+
+    for (const feeType of feeTypes) {
+      const requestedAmount = parseFloat(amounts[feeType]);
+      const description = `${month} ${feeType} Fee`;
+
+      let bill = await Bill.findOne({ studentId, schoolId, billType: feeType, description });
+
+      if (!bill) {
+        bill = await Bill.create({
+          billNumber: await newBillNumber(),
+          studentId,
+          schoolId,
+          sessionId: session._id,
+          billType: feeType,
+          sourceType: 'Manual',
+          description,
+          totalAmount: requestedAmount,
+          paidAmount: 0,
+          dueAmount: requestedAmount,
+          dueDate,
+          createdBy: collectedBy,
+        });
+      }
+
+      if (bill.status === 'PAID') continue;
+
+      const payAmount = Math.min(requestedAmount, bill.dueAmount);
+      if (payAmount <= 0) continue;
+
+      billQueue.push({ bill, payAmount });
+    }
+
+    // ── Step 2: Handle extraFees — create MISCELLANEOUS bills ─────────────────
+    if (Array.isArray(extraFees) && extraFees.length > 0) {
+      for (const extra of extraFees) {
+        const extraAmount = parseFloat(extra.amount);
+        if (!extra.name || !extraAmount || extraAmount <= 0) continue;
+
+        const description = `${month} ${extra.name} (Extra)`;
+        let bill = await Bill.findOne({
+          studentId, schoolId, billType: 'MISCELLANEOUS', description,
+        });
+
+        if (!bill) {
+          bill = await Bill.create({
+            billNumber: await newBillNumber(),
+            studentId,
+            schoolId,
+            sessionId: session._id,
+            billType: 'MISCELLANEOUS',
+            sourceType: 'Manual',
+            description,
+            totalAmount: extraAmount,
+            paidAmount: 0,
+            dueAmount: extraAmount,
+            dueDate,
+            createdBy: collectedBy,
+          });
+        }
+
+        if (bill.status === 'PAID') continue;
+        const payAmount = Math.min(extraAmount, bill.dueAmount);
+        if (payAmount > 0) billQueue.push({ bill, payAmount });
+      }
+    }
+
+    if (billQueue.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'All selected fees are already fully paid',
+      });
+    }
+
+    // ── Step 3: Pay each queued bill ──────────────────────────────────────────
+    const noteParts = ['Advance payment'];
+    if (referenceNumber) noteParts.push(`Ref: ${referenceNumber}`);
+    if (discount && parseFloat(discount) > 0) {
+      noteParts.push(
+        `Discount: ${discountType === 'Percent' ? `${discount}%` : `₹${discount}`}`
+      );
+    }
+    const notesBase = noteParts.join(' | ');
+
+    const receipts = [];
+
+    for (const { bill, payAmount } of billQueue) {
+      // Generate unique receipt number
+      let receiptNumber;
+      let attempts = 0;
+      do {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+        attempts++;
+        if (attempts > 10) break;
+      } while (await Payment.findOne({ receiptNumber }));
+
+      const payment = await Payment.create({
+        receiptNumber,
+        billId: bill._id,
+        studentId: bill.studentId,
+        schoolId,
+        sessionId: session._id,
+        amount: payAmount,
+        paymentMode,
+        paymentDate: new Date(),
+        collectedBy,
+        notes: notesBase,
+      });
+
+      // pre-save hook recalculates dueAmount + status
+      bill.paidAmount += payAmount;
+      await bill.save();
+
+      // Ledger entry — never fail the parent payment
+      try {
+        await LedgerEntry.create({
+          schoolId,
+          sessionId: session._id,
+          entryType: 'DEBIT',
+          category: billTypeToCategory[bill.billType] || 'FEE_COLLECTION',
+          amount: payAmount,
+          sourceModel: 'Payment',
+          referenceId: payment._id,
+          description: `Advance fee collected — ${bill.description}`,
+          entryDate: new Date(),
+          performedBy: collectedBy,
+        });
+      } catch (ledgerErr) {
+        console.error('[ADVANCE PAY] Ledger error:', ledgerErr.message);
+      }
+
+      receipts.push({
+        receiptNumber,
+        billId: bill._id,
+        billNumber: bill.billNumber,
+        billType: bill.billType,
+        description: bill.description,
+        month,
+        amount: payAmount,
+        paymentId: payment._id,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `${receipts.length} advance payment(s) recorded successfully`,
+      receipts,
+      totalPaid: receipts.reduce((s, r) => s + r.amount, 0),
+    });
+  } catch (err) {
+    console.error('[ADVANCE PAY ERROR]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   payManual,
   getPaymentsByStudent,
@@ -482,4 +736,5 @@ module.exports = {
   verifyOnlinePayment,
   getMyPayments,
   getReceipt,
+  generateAndPay,
 };
