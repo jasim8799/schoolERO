@@ -100,115 +100,137 @@ const getSalaryProfile = async (req, res) => {
   }
 };
 
-// Calculate salary for a staff member
+// ── Shared helper: calculate and persist salary for one staff member ──────────
+const _calcForStaff = async ({ staffId, month, schoolId }) => {
+  const [year, monthNum] = month.split('-');
+  const workingDays = new Date(year, monthNum, 0).getDate();
+
+  const startDate = new Date(`${month}-01`);
+  const endDate   = new Date(startDate);
+  endDate.setMonth(endDate.getMonth() + 1);
+
+  const attendanceDays = await TeacherAttendance.countDocuments({
+    teacherId: staffId, schoolId,
+    date: { $gte: startDate, $lt: endDate },
+    status: 'PRESENT',
+  });
+
+  const salaryProfile = await SalaryProfile.findOne({ userId: staffId, schoolId });
+  if (!salaryProfile) return null; // no profile — skip
+
+  const perDay          = salaryProfile.baseSalary / workingDays;
+  const earned          = perDay * attendanceDays;
+  const allowancesTotal = salaryProfile.allowances.reduce((s, a) => s + a.amount, 0);
+  const grossSalary     = earned + allowancesTotal;
+  const deductionsTotal = salaryProfile.deductions.reduce((s, d) => s + d.amount, 0);
+  const netPayable      = Math.max(0, grossSalary - deductionsTotal);
+
+  const salaryCalculation = await SalaryCalculation.create({
+    staffId, month, schoolId,
+    baseSalary: salaryProfile.baseSalary,
+    attendanceDays,
+    workingDays,
+    leaveDays: 0,
+    grossSalary,
+    deductions: deductionsTotal,
+    netPayable,
+  });
+
+  return salaryCalculation;
+};
+
+// Calculate salary — single staff (staffId provided) or bulk (staffId omitted)
 const calculateSalary = async (req, res) => {
   try {
     const { staffId, month } = req.body;
     const { schoolId } = req.user;
 
-    // Validate required fields
-    if (!staffId || !month) {
-      return res.status(400).json({ message: 'staffId and month are required' });
+    if (!month) {
+      return res.status(400).json({ message: 'month is required (format: YYYY-MM)' });
     }
 
-    // Validate month format
     const monthRegex = /^\d{4}-\d{2}$/;
     if (!monthRegex.test(month)) {
       return res.status(400).json({ message: 'Invalid month format. Use YYYY-MM' });
     }
 
-    // Check if staff exists and is a staff member
-    const staff = await User.findById(staffId);
-    if (!staff) {
-      return res.status(404).json({ message: 'Staff not found' });
+    // ── SINGLE mode ──────────────────────────────────────────────────────────
+    if (staffId) {
+      const staff = await User.findById(staffId);
+      if (!staff) return res.status(404).json({ message: 'Staff not found' });
+
+      if (staff.schoolId.toString() !== schoolId.toString()) {
+        return res.status(403).json({ message: 'Staff does not belong to this school' });
+      }
+
+      const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, 'PEON'];
+      if (!staffRoles.includes(staff.role)) {
+        return res.status(400).json({ message: 'User is not a staff member' });
+      }
+
+      const existing = await SalaryCalculation.findOne({ staffId, month, schoolId });
+      if (existing) {
+        return res.status(409).json({ message: 'Salary calculation already exists for this staff and month' });
+      }
+
+      const salaryCalculation = await _calcForStaff({ staffId, month, schoolId });
+      if (!salaryCalculation) {
+        return res.status(404).json({ message: 'Salary profile not found for this staff member' });
+      }
+
+      await salaryCalculation.populate('staffId', 'name email mobile role');
+
+      await auditLog({
+        action: 'SALARY_CALCULATION',
+        userId: req.user._id, role: req.user.role,
+        entityType: 'SalaryCalculation', entityId: salaryCalculation._id,
+        description: `Salary calculated for ${staff.name} for month ${month}`,
+        schoolId: req.user.schoolId, sessionId: req.user.sessionId, req,
+      });
+
+      return res.status(201).json({ message: 'Salary calculated successfully', salaryCalculation });
     }
 
-    if (staff.schoolId.toString() !== schoolId.toString()) {
-      return res.status(403).json({ message: 'Staff does not belong to this school' });
-    }
-
-    const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL];
-    if (!staffRoles.includes(staff.role)) {
-      return res.status(400).json({ message: 'User is not a staff member' });
-    }
-
-    // Check if salary profile exists
-    const salaryProfile = await SalaryProfile.findOne({ userId: staffId, schoolId });
-    if (!salaryProfile) {
-      return res.status(404).json({ message: 'Salary profile not found for this staff member' });
-    }
-
-    // Check if calculation already exists
-    const existingCalculation = await SalaryCalculation.findOne({ staffId, month, schoolId });
-    if (existingCalculation) {
-      return res.status(409).json({ message: 'Salary calculation already exists for this staff and month' });
-    }
-
-    // Calculate working days (days in month)
-    const [year, monthNum] = month.split('-');
-    const workingDays = new Date(year, monthNum, 0).getDate();
-
-    // Get attendance days (count of PRESENT records)
-    const startDate = new Date(`${month}-01`);
-    const endDate = new Date(startDate);
-    endDate.setMonth(endDate.getMonth() + 1);
-
-    const attendanceCount = await TeacherAttendance.countDocuments({
-      teacherId: staffId,
+    // ── BULK mode ────────────────────────────────────────────────────────────
+    const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, 'PEON'];
+    const staffList  = await User.find({
       schoolId,
-      date: {
-        $gte: startDate,
-        $lt: endDate
-      },
-      status: 'PRESENT'
-    });
+      role:   { $in: staffRoles },
+      status: USER_STATUS.ACTIVE,
+    }).select('_id name');
 
-    const attendanceDays = attendanceCount;
-    const leaveDays = 0; // No leave model, so 0
+    let created = 0;
+    let skipped = 0;
+    const errors = [];
 
-    // Calculate salary
-    const perDay = salaryProfile.baseSalary / workingDays;
-    const earned = perDay * attendanceDays;
+    for (const member of staffList) {
+      try {
+        const existing = await SalaryCalculation.findOne({ staffId: member._id, month, schoolId });
+        if (existing) { skipped++; continue; }
 
-    const allowancesTotal = salaryProfile.allowances.reduce((sum, allowance) => sum + allowance.amount, 0);
-    const grossSalary = earned + allowancesTotal;
+        const calc = await _calcForStaff({ staffId: member._id, month, schoolId });
+        if (!calc) { skipped++; continue; } // no salary profile
+        created++;
+      } catch (e) {
+        errors.push({ staff: member.name, error: e.message });
+      }
+    }
 
-    const deductionsTotal = salaryProfile.deductions.reduce((sum, deduction) => sum + deduction.amount, 0);
-    const netPayable = Math.max(0, grossSalary - deductionsTotal);
-
-    // Create salary calculation
-    const salaryCalculation = await SalaryCalculation.create({
-      staffId,
-      month,
-      baseSalary: salaryProfile.baseSalary,
-      attendanceDays,
-      workingDays,
-      leaveDays,
-      grossSalary,
-      deductions: deductionsTotal,
-      netPayable,
-      schoolId
-    });
-
-    // Populate staff details
-    await salaryCalculation.populate('staffId', 'name email mobile role');
-
-    // Audit log
     await auditLog({
-      action: 'SALARY_CALCULATION',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'SalaryCalculation',
-      entityId: salaryCalculation._id,
-      description: `Salary calculated for ${staff.name} for month ${month}`,
-      schoolId: req.user.schoolId,
-      sessionId: req.user.sessionId,
-      req
+      action: 'SALARY_BULK_CALCULATION',
+      userId: req.user._id, role: req.user.role,
+      entityType: 'SalaryCalculation', entityId: null,
+      description: `Bulk salary calculated for month ${month}: ${created} created, ${skipped} skipped`,
+      schoolId: req.user.schoolId, sessionId: req.user.sessionId, req,
     });
 
-    res.status(201).json({
-      message: 'Salary calculated successfully',
-      salaryCalculation
+    return res.status(201).json({
+      message: `Salary generated for all staff`,
+      month,
+      total:   staffList.length,
+      created,
+      skipped,
+      ...(errors.length ? { errors } : {}),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
