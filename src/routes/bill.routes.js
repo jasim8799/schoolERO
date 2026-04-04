@@ -14,6 +14,14 @@ const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
 
+// Token-from-query middleware (for iframe receipt requests that cannot send headers)
+const injectTokenFromQuery = (req, res, next) => {
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  next();
+};
+
 const router = express.Router();
 router.use(authenticate);
 router.use(checkSchoolStatus);
@@ -76,6 +84,7 @@ router.get(
 // Bill receipt HTML page (by bill _id) — print-ready, auto-opens in browser
 router.get(
   '/:id/receipt',
+  injectTokenFromQuery,
   requireRole('PRINCIPAL', 'OPERATOR', 'PARENT', 'STUDENT'),
   getBillHtmlReceipt
 );
