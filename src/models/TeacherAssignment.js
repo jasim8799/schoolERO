@@ -51,6 +51,10 @@ const teacherAssignmentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
     required: [true, 'Session ID is required']
+  },
+  isPublished: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

@@ -117,4 +117,37 @@ const deleteAssignment = async (req, res) => {
   }
 };
 
-module.exports = { createAssignment, getByTeacher, getByClass, deleteAssignment };
+// ── GET /api/teacher-assignments/all — all assignments for the school ─────────
+const getAllBySchool = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId;
+    const assignments = await TeacherAssignment.find({ schoolId })
+      .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('subjectId', 'name')
+      .sort({ day: 1, periodNumber: 1 });
+    return res.status(HTTP_STATUS.OK).json({ success: true, data: assignments });
+  } catch (err) {
+    logger.error('getAllBySchool error:', err);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: err.message });
+  }
+};
+
+// ── POST /api/teacher-assignments/publish — publish timetable for the school ──
+const publishTimetable = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId;
+    const result = await TeacherAssignment.updateMany({ schoolId }, { $set: { isPublished: true } });
+    logger.info(`Timetable published for school ${schoolId}: ${result.modifiedCount} slots updated`);
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: `Timetable published successfully. ${result.modifiedCount} slots updated.`
+    });
+  } catch (err) {
+    logger.error('publishTimetable error:', err);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { createAssignment, getByTeacher, getByClass, getAllBySchool, publishTimetable, deleteAssignment };
