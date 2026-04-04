@@ -6,7 +6,7 @@ const User = require('../models/User');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const StaffAdvance = require('../models/StaffAdvance');
 const PDFDocument = require('pdfkit');
-const { USER_ROLES } = require('../config/constants');
+const { USER_ROLES, USER_STATUS } = require('../config/constants');
 const { auditLog } = require('../utils/auditLog');
 
 // Setup salary profile
@@ -547,7 +547,7 @@ const getAllStaffList = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, 'PEON'];
-    const users = await User.find({ schoolId, role: { $in: staffRoles }, isActive: true })
+    const users = await User.find({ schoolId, role: { $in: staffRoles }, status: USER_STATUS.ACTIVE })
       .select('name email mobile role')
       .sort({ role: 1, name: 1 });
     res.json({ data: users });
