@@ -279,9 +279,10 @@ const paySalary = async (req, res) => {
       return res.status(400).json({ message: 'salaryCalculationId and paymentMode are required' });
     }
 
-    // Validate paymentMode
-    if (!['Cash', 'Bank'].includes(paymentMode)) {
-      return res.status(400).json({ message: 'Invalid paymentMode. Must be Cash or Bank' });
+    // Normalize and validate paymentMode
+    const normalizedMode = (paymentMode || '').toLowerCase();
+    if (!['cash', 'bank'].includes(normalizedMode)) {
+      return res.status(400).json({ message: 'Invalid paymentMode. Must be cash or bank' });
     }
 
     // Find salary calculation
@@ -314,7 +315,7 @@ const paySalary = async (req, res) => {
       staffId: salaryCalculation.staffId._id,
       month: salaryCalculation.month,
       amountPaid: salaryCalculation.netPayable,
-      paymentMode,
+      paymentMode: normalizedMode,
       paidBy,
       schoolId
     });

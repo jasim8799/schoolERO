@@ -22,7 +22,7 @@ const SalaryPaymentSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Bank'],
+    enum: ['cash', 'bank'],
     required: true
   },
   paymentDate: {
