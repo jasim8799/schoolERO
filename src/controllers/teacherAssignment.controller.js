@@ -49,6 +49,7 @@ const createAssignment = async (req, res) => {
     if (err.code === 11000) {
       return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
+        code: 'PERIOD_CONFLICT',
         message: 'A period conflict exists — either this class/section/day/period is already occupied, or the teacher is already booked at that time.'
       });
     }
