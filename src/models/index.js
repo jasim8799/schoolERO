@@ -47,3 +47,4 @@ require('./NotificationQueue');
 require('./Bill');
 require('./Payment');
 require('./LedgerEntry');
+require('./TeacherAssignment');

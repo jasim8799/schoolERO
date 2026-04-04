@@ -60,6 +60,7 @@ const billRoutes = require('./routes/bill.routes');
 const feeCollectionRoutes = require('./routes/feeCollection.routes');
 const videoRoutes     = require('./routes/video.routes');
 const admissionRoutes = require('./routes/admission.routes');
+const teacherAssignmentRoutes = require('./routes/teacherAssignment.routes');
 
 const app = express();
 
@@ -106,6 +107,7 @@ app.use('/api/classes', attachSchoolId, attachActiveSession, checkSubscriptionSt
 app.use('/api/sections', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
 app.use('/api/subjects', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
 app.use('/api/teachers', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
+app.use('/api/teacher-assignments', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherAssignmentRoutes);
 app.use('/api/parents', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
 app.use('/api/attendance', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
 app.use('/api/students', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), studentRoutes);
