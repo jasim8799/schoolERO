@@ -714,7 +714,36 @@ module.exports = {
   getStudentSelfAttendance,
   markStaffAttendance,
   getStaffAttendance,
+  getAttendanceSummary,
 };
+
+/**
+ * GET /api/attendance/summary?date=YYYY-MM-DD
+ * Returns total students, presentCount, absentCount, lateCount for a school on a date.
+ */
+async function getAttendanceSummary(req, res) {
+  try {
+    const { date } = req.query;
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    const queryDate = date ? normalizeDate(date) : normalizeDate(new Date());
+
+    const [totalStudents, presentCount, absentCount, lateCount] = await Promise.all([
+      Student.countDocuments({ schoolId: normalizedSchoolId, isActive: { $ne: false } }),
+      StudentDailyAttendance.countDocuments({ schoolId: normalizedSchoolId, date: queryDate, status: 'PRESENT' }),
+      StudentDailyAttendance.countDocuments({ schoolId: normalizedSchoolId, date: queryDate, status: 'ABSENT' }),
+      StudentDailyAttendance.countDocuments({ schoolId: normalizedSchoolId, date: queryDate, status: 'LATE' }),
+    ]);
+
+    res.json({
+      success: true,
+      data: { totalStudents, presentCount, absentCount, lateCount },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Staff Attendance  (covers TEACHER / OPERATOR / PRINCIPAL / SUPER_ADMIN)

@@ -11,12 +11,21 @@ const {
   getParentAttendance,
   getAttendanceForParent,
   getStudentSelfAttendance,
+  getAttendanceSummary,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
+
+// Attendance Summary (dashboard stats)
+router.get(
+  '/summary',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getAttendanceSummary
+);
 
 // Student Daily Attendance
 router.post(
