@@ -12,6 +12,7 @@ require('./AcademicSession');
 require('./StudentDailyAttendance');
 require('./StudentSubjectAttendance');
 require('./TeacherAttendance');
+require('./StaffAttendance');
 require('./Exam');
 require('./ExamForm');
 require('./ExamPayment');

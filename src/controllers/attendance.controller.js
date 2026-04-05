@@ -1,6 +1,7 @@
 const StudentDailyAttendance = require('../models/StudentDailyAttendance.js');
 const StudentSubjectAttendance = require('../models/StudentSubjectAttendance.js');
 const TeacherAttendance = require('../models/TeacherAttendance.js');
+const StaffAttendance = require('../models/StaffAttendance.js');
 const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
@@ -711,4 +712,180 @@ module.exports = {
   getParentAttendance,
   getAttendanceForParent,
   getStudentSelfAttendance,
+  markStaffAttendance,
+  getStaffAttendance,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staff Attendance  (covers TEACHER / OPERATOR / PRINCIPAL / SUPER_ADMIN)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STAFF_ROLES = ['TEACHER', 'OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
+const ADMIN_ROLES  = ['OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
+const VALID_STATUSES = ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'LEAVE', 'SICK_LEAVE'];
+const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * POST /api/attendance/staff
+ * Body: { date, status, checkIn?, checkOut?, staffId? }
+ *
+ * - Any staff member can mark their own attendance for today.
+ * - OPERATOR / PRINCIPAL / SUPER_ADMIN can mark (or overwrite) any staff
+ *   member's attendance for any date by supplying staffId.
+ */
+async function markStaffAttendance(req, res) {
+  try {
+    const { date, status, checkIn, checkOut, staffId: targetStaffId } = req.body;
+    const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    // Block non-staff roles
+    if (!STAFF_ROLES.includes(role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Validate required fields
+    if (!date || !status) {
+      return res.status(400).json({ success: false, message: 'date and status are required' });
+    }
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed: ${VALID_STATUSES.join(', ')}`
+      });
+    }
+    if (checkIn  && !TIME_REGEX.test(checkIn))
+      return res.status(400).json({ success: false, message: 'Invalid checkIn format. Use HH:mm.' });
+    if (checkOut && !TIME_REGEX.test(checkOut))
+      return res.status(400).json({ success: false, message: 'Invalid checkOut format. Use HH:mm.' });
+
+    // Resolve which staff member is being marked
+    let staffId = userId;
+    let staffRole = role;
+
+    if (targetStaffId && targetStaffId !== userId.toString()) {
+      // Only admins can mark others
+      if (!ADMIN_ROLES.includes(role)) {
+        return res.status(403).json({ success: false, message: 'You can only mark your own attendance' });
+      }
+      // Look up the target user to get their role
+      const User = require('../models/User');
+      const targetUser = await User.findOne({ _id: targetStaffId, schoolId: normalizedSchoolId }).select('role');
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: 'Staff member not found in this school' });
+      }
+      if (!STAFF_ROLES.includes(targetUser.role)) {
+        return res.status(400).json({ success: false, message: 'Target user is not a staff member' });
+      }
+      staffId   = targetStaffId;
+      staffRole = targetUser.role;
+    } else {
+      // Self-mark: teachers can only mark today
+      if (role === 'TEACHER') {
+        const today = new Date().toISOString().split('T')[0];
+        if (date !== today) {
+          return res.status(400).json({ success: false, message: 'Teachers can only mark attendance for today' });
+        }
+      }
+    }
+
+    // Active session
+    const activeSession = await AcademicSession.findOne({ schoolId: normalizedSchoolId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    }
+
+    const attendanceDate = normalizeDate(date);
+
+    // Prevent duplicate self-mark for teachers (admins may overwrite)
+    if (role === 'TEACHER' && staffId.toString() === userId.toString()) {
+      const existing = await StaffAttendance.findOne({ staffId, date: attendanceDate, schoolId: normalizedSchoolId });
+      if (existing) {
+        return res.status(400).json({ success: false, message: 'Attendance already marked for today. Contact admin to update.' });
+      }
+    }
+
+    const record = await StaffAttendance.findOneAndUpdate(
+      { staffId, date: attendanceDate, schoolId: normalizedSchoolId },
+      {
+        $set: {
+          role: staffRole,
+          status,
+          checkIn:   checkIn  ?? null,
+          checkOut:  checkOut ?? null,
+          markedBy:  userId,
+          sessionId: activeSession._id,
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    await auditLog({
+      action: 'TEACHER_ATTENDANCE_MARKED',   // reuse existing audit action
+      userId: req.user.userId,
+      schoolId,
+      details: { staffId, staffRole, date, status, markedByRole: role },
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Staff attendance marked successfully',
+      data: record,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+/**
+ * GET /api/attendance/staff
+ * Query: date?, startDate?, endDate?, staffId?, role?
+ *
+ * - Staff members see only their own records.
+ * - OPERATOR / PRINCIPAL / SUPER_ADMIN see all (filterable by role / staffId).
+ */
+async function getStaffAttendance(req, res) {
+  try {
+    const { date, startDate, endDate, staffId, role: filterRole } = req.query;
+    const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!STAFF_ROLES.includes(role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const activeSession = await AcademicSession.findOne({ schoolId: normalizedSchoolId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    }
+
+    const filter = { schoolId: normalizedSchoolId, sessionId: activeSession._id };
+
+    // Non-admin staff only see their own records
+    if (!ADMIN_ROLES.includes(role)) {
+      filter.staffId = userId;
+    } else {
+      if (staffId)     filter.staffId = staffId;
+      if (filterRole)  filter.role    = filterRole;
+    }
+
+    if (date) {
+      filter.date = normalizeDate(date);
+    } else if (startDate && endDate) {
+      const start = normalizeDate(startDate);
+      const end   = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
+    }
+
+    const records = await StaffAttendance.find(filter)
+      .populate('staffId',   'name email')
+      .populate('markedBy',  'name')
+      .sort({ date: -1 });
+
+    return res.status(200).json({ success: true, data: records });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}

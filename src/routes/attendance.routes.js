@@ -6,6 +6,8 @@ const {
   getSubjectAttendance,
   markTeacherAttendance,
   getTeacherAttendance,
+  markStaffAttendance,
+  getStaffAttendance,
   getParentAttendance,
   getAttendanceForParent,
   getStudentSelfAttendance,
@@ -48,7 +50,7 @@ router.get(
   getSubjectAttendance
 );
 
-// Teacher Attendance
+// Teacher Attendance (legacy – kept for backward-compat)
 router.post(
   '/teachers',
   authenticate,
@@ -61,6 +63,21 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   getTeacherAttendance
+);
+
+// Staff Attendance (unified: teacher + operator + admin)
+router.post(
+  '/staff',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  markStaffAttendance
+);
+
+router.get(
+  '/staff',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getStaffAttendance
 );
 
 router.get(
