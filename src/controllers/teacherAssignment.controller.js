@@ -1,5 +1,6 @@
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const Teacher = require('../models/Teacher.js');
+const Student = require('../models/Student.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 
@@ -150,4 +151,58 @@ const publishTimetable = async (req, res) => {
   }
 };
 
-module.exports = { createAssignment, getByTeacher, getByClass, getAllBySchool, publishTimetable, deleteAssignment };
+// ── GET /api/teacher-assignments/my — teacher sees own published timetable ────
+const getMyTimetable = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user._id;
+    const schoolId = req.user.schoolId;
+
+    const teacher = await Teacher.findOne({ userId, schoolId });
+    if (!teacher) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Teacher profile not found' });
+    }
+
+    const assignments = await TeacherAssignment.find({ teacherId: teacher._id, schoolId, isPublished: true })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('subjectId', 'name')
+      .sort({ day: 1, periodNumber: 1 });
+
+    return res.status(HTTP_STATUS.OK).json({ success: true, data: assignments });
+  } catch (err) {
+    logger.error('getMyTimetable error:', err);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: err.message });
+  }
+};
+
+// ── GET /api/teacher-assignments/student/me — student sees published class timetable
+const getStudentClassTimetable = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user._id;
+    const schoolId = req.user.schoolId;
+
+    const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE' });
+    if (!student) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student profile not found' });
+    }
+
+    const assignments = await TeacherAssignment.find({
+      classId: student.classId,
+      sectionId: student.sectionId,
+      schoolId,
+      isPublished: true
+    })
+      .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('subjectId', 'name')
+      .sort({ day: 1, periodNumber: 1 });
+
+    return res.status(HTTP_STATUS.OK).json({ success: true, data: assignments });
+  } catch (err) {
+    logger.error('getStudentClassTimetable error:', err);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { createAssignment, getByTeacher, getByClass, getAllBySchool, publishTimetable, deleteAssignment, getMyTimetable, getStudentClassTimetable };
