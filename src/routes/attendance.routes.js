@@ -12,6 +12,7 @@ const {
   getAttendanceForParent,
   getStudentSelfAttendance,
   getAttendanceSummary,
+  getStaffMembers,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
@@ -87,6 +88,14 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   getStaffAttendance
+);
+
+// Staff roster (all staff regardless of attendance status)
+router.get(
+  '/staff/members',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getStaffMembers
 );
 
 router.get(

@@ -3,6 +3,7 @@ const StudentSubjectAttendance = require('../models/StudentSubjectAttendance.js'
 const TeacherAttendance = require('../models/TeacherAttendance.js');
 const StaffAttendance = require('../models/StaffAttendance.js');
 const Student = require('../models/Student.js');
+const User = require('../models/User.js');
 const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
 const Teacher = require('../models/Teacher.js');
@@ -715,7 +716,31 @@ module.exports = {
   markStaffAttendance,
   getStaffAttendance,
   getAttendanceSummary,
+  getStaffMembers,
 };
+
+const STAFF_MEMBER_ROLES = ['TEACHER', 'OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
+
+/**
+ * GET /api/attendance/staff/members
+ * Returns all staff users in the school (regardless of attendance status).
+ * Used by the frontend to build a full roster and merge with attendance records.
+ */
+async function getStaffMembers(req, res) {
+  try {
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    const members = await User.find(
+      { schoolId: normalizedSchoolId, role: { $in: STAFF_MEMBER_ROLES } },
+      { _id: 1, name: 1, email: 1, role: 1 }
+    ).lean();
+
+    res.json({ success: true, data: members });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
 
 /**
  * GET /api/attendance/summary?date=YYYY-MM-DD
