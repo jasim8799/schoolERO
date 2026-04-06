@@ -1,5 +1,8 @@
 const Admission = require('../models/Admission');
 const Student   = require('../models/Student');
+const User      = require('../models/User');
+const Parent    = require('../models/Parent');
+const { hashPassword } = require('../utils/password');
 
 // POST /api/admissions
 exports.createAdmission = async (req, res) => {
@@ -11,6 +14,10 @@ exports.createAdmission = async (req, res) => {
       aadhaarNumber,
       fees = {},
       payLater = false,
+      // Parent info from admission form
+      parentName,
+      parentMobile,
+      parentEmail,
     } = req.body;
 
     if (!studentId) {
@@ -29,7 +36,94 @@ exports.createAdmission = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Admission record already exists for this student' });
     }
 
-    // Server-side fee computation
+    // ── Step 1: Find or create parent User ────────────────────────────────
+    if (parentMobile || parentEmail) {
+      let parentUser = null;
+
+      if (parentMobile) {
+        parentUser = await User.findOne({ mobile: parentMobile, schoolId });
+      }
+      if (!parentUser && parentEmail) {
+        parentUser = await User.findOne({ email: parentEmail.toLowerCase(), schoolId });
+      }
+
+      if (!parentUser) {
+        const hashedPwd = await hashPassword('123456');
+        const userPayload = {
+          name: parentName || 'Parent',
+          role: 'PARENT',
+          schoolId,
+          password: hashedPwd,
+          status: 'active',
+        };
+        if (parentMobile) userPayload.mobile = parentMobile;
+        if (parentEmail)  userPayload.email  = parentEmail.toLowerCase();
+        parentUser = await User.create(userPayload);
+        console.log(`✅ Created parent user: ${parentUser.name} (${parentUser._id})`);
+      } else if (parentUser.role !== 'PARENT') {
+        await User.findByIdAndUpdate(parentUser._id, { role: 'PARENT' });
+        parentUser.role = 'PARENT';
+      }
+
+      // ── Step 2: Find or create Parent profile ──────────────────────────
+      let parentProfile = await Parent.findOne({ userId: parentUser._id, schoolId });
+      if (!parentProfile) {
+        parentProfile = await Parent.create({
+          userId: parentUser._id,
+          schoolId,
+          children: [],
+          status: 'active',
+        });
+        console.log(`✅ Created parent profile: ${parentProfile._id}`);
+      }
+
+      // ── Step 3: Link student to parent if not already linked ────────────
+      let studentDirty = false;
+      if (!student.parentId) {
+        student.parentId = parentProfile._id;
+        student.parentUserId = parentUser._id;
+        studentDirty = true;
+      }
+      if (!student.parentUserId) {
+        student.parentUserId = parentUser._id;
+        studentDirty = true;
+      }
+
+      // ── Step 4: Add student to parent's children array ──────────────────
+      if (!parentProfile.children.some(id => id.toString() === studentId.toString())) {
+        parentProfile.children.push(studentId);
+        await parentProfile.save();
+        console.log(`✅ Linked student ${studentId} to parent ${parentProfile._id}`);
+      }
+
+      if (studentDirty) await student.save();
+    }
+
+    // ── Step 5: Ensure student has a linked User account ──────────────────
+    if (!student.userId) {
+      const mobile = student.mobile;
+      const name   = student.name;
+      let studentUser = null;
+
+      if (mobile) {
+        studentUser = await User.findOne({ mobile, role: 'STUDENT', schoolId });
+      }
+      if (!studentUser && name) {
+        studentUser = await User.findOne({ name, role: 'STUDENT', schoolId });
+      }
+      if (!studentUser) {
+        const hashedPwd = await hashPassword('123456');
+        const userPayload = { name, role: 'STUDENT', schoolId, password: hashedPwd, status: 'active' };
+        if (mobile) userPayload.mobile = mobile;
+        studentUser = await User.create(userPayload);
+        console.log(`✅ Created student user: ${studentUser.name} (${studentUser._id})`);
+      }
+      student.userId = studentUser._id;
+      await student.save();
+      console.log(`✅ Linked student ${student.name} -> user ${studentUser._id}`);
+    }
+
+    // ── Step 6: Create the Admission record ───────────────────────────────
     const admissionFee = Number(fees.admissionFee) || 0;
     const discount     = Number(fees.discount)     || 0;
     const finalFee     = Math.max(admissionFee - discount, 0);
