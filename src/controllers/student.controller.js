@@ -109,7 +109,8 @@ const createStudent = async (req, res) => {
       studentUser = await User.findOne({ email: email.toLowerCase(), role: 'STUDENT', schoolId });
     }
     if (!studentUser) {
-      const hashedPwd = await hashPassword('123456');
+      const rawPwd = req.body.studentPassword || '123456';
+      const hashedPwd = await hashPassword(rawPwd);
       const userPayload = { name, role: 'STUDENT', schoolId, password: hashedPwd };
       if (mobile) userPayload.mobile = mobile;
       if (email) userPayload.email = email.toLowerCase();
