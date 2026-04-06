@@ -163,7 +163,7 @@ const getMyChildren = async (req, res) => {
     const parent = await Parent.findOne({ userId, schoolId: normalizedSchoolId })
       .populate({
         path: 'children',
-        select: 'name rollNumber classId sectionId',
+        select: 'name rollNumber classId sectionId documents',
         populate: [
           { path: 'classId', select: 'name' },
           { path: 'sectionId', select: 'name' }
