@@ -455,7 +455,7 @@ const getMyStudentProfile = async (req, res) => {
     })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
-      .populate('schoolId', 'name code')
+      .populate('schoolId', 'name code address contact')
       .populate('sessionId', 'name startDate endDate');
 
     if (!student) {
