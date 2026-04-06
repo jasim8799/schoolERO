@@ -154,19 +154,24 @@ const login = async (req, res) => {
 
     // Auto-link STUDENT user to Student document if not already linked
     if (user.role === USER_ROLES.STUDENT) {
-      const existingLinkedStudent = await Student.findOne({ userId: user._id });
+      let student = await Student.findOne({ userId: user._id });
 
-      if (!existingLinkedStudent) {
-        const student = await Student.findOne({
-          schoolId: user.schoolId,
-          mobile: user.mobile,
-          $or: [{ userId: null }, { userId: { $exists: false } }]
-        }).sort({ createdAt: -1 });
+      if (!student) {
+        // Try multiple ways to find the matching student record
+        const query = { schoolId: user.schoolId._id || user.schoolId };
+        const orClauses = [];
+        if (user.mobile) orClauses.push({ mobile: user.mobile });
+        if (user.name)   orClauses.push({ name: user.name });
+        if (orClauses.length > 0) query.$or = orClauses;
+
+        student = await Student.findOne(query).sort({ createdAt: -1 });
 
         if (student) {
           student.userId = user._id;
           await student.save();
-          console.log(`Auto-linked STUDENT ${user.name} -> ${student._id}`);
+          console.log(`✅ Auto-linked STUDENT ${user.name} -> ${student._id}`);
+        } else {
+          console.log(`❌ No matching student found for ${user.name} (${user._id})`);
         }
       }
     }

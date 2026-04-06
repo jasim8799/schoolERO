@@ -469,9 +469,36 @@ const moveStudentToActiveSession = async (req, res) => {
 // Get logged-in student's own profile
 const getMyStudentProfile = async (req, res) => {
   try {
-    const student = await Student.findOne({
-      userId: req.user.userId
-    })
+    let student = await Student.findOne({ userId: req.user.userId });
+
+    // Failsafe: attempt auto-link if not found
+    if (!student) {
+      const user = await User.findById(req.user.userId);
+      if (user) {
+        const query = { schoolId: user.schoolId };
+        const orClauses = [];
+        if (user.mobile) orClauses.push({ mobile: user.mobile });
+        if (user.name)   orClauses.push({ name: user.name });
+        if (orClauses.length > 0) query.$or = orClauses;
+
+        student = await Student.findOne(query);
+        if (student) {
+          student.userId = user._id;
+          await student.save();
+          console.log(`🔁 Auto-linked during profile fetch: ${user.name} -> ${student._id}`);
+        }
+      }
+    }
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile not linked to this account. Please contact admin.'
+      });
+    }
+
+    // Re-fetch with full population now that we have the record
+    student = await Student.findById(student._id)
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('schoolId', 'name code address contact')
