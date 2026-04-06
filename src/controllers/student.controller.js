@@ -7,6 +7,7 @@ const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
+const { hashPassword } = require('../utils/password.js');
 
 // Create Student
 const createStudent = async (req, res) => {
@@ -19,7 +20,9 @@ const createStudent = async (req, res) => {
       parentId,
       dateOfBirth,
       gender,
-      address
+      address,
+      mobile,
+      email
     } = req.body;
 
     const schoolId = req.user.schoolId._id || req.user.schoolId;
@@ -98,6 +101,21 @@ const createStudent = async (req, res) => {
       });
     }
 
+    // Auto-find or create a STUDENT user account
+    let studentUser = null;
+    if (mobile) {
+      studentUser = await User.findOne({ mobile, role: 'STUDENT', schoolId });
+    } else if (email) {
+      studentUser = await User.findOne({ email: email.toLowerCase(), role: 'STUDENT', schoolId });
+    }
+    if (!studentUser) {
+      const hashedPwd = await hashPassword('123456');
+      const userPayload = { name, role: 'STUDENT', schoolId, password: hashedPwd };
+      if (mobile) userPayload.mobile = mobile;
+      if (email) userPayload.email = email.toLowerCase();
+      studentUser = await User.create(userPayload);
+    }
+
     // Create student
     const newStudent = await Student.create({
       name,
@@ -106,13 +124,14 @@ const createStudent = async (req, res) => {
       sectionId,
       parentId,
       parentUserId: parent.userId._id,
+      userId: studentUser._id,
       schoolId,
       sessionId,
       status: 'ACTIVE',
       dateOfBirth,
       gender,
       address,
-      mobile: parent.userId?.mobile || null
+      mobile: mobile || parent.userId?.mobile || null
     });
 
     // Add student to parent's children array
@@ -461,7 +480,7 @@ const getMyStudentProfile = async (req, res) => {
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: 'Student profile not found'
+        message: 'Student profile not linked to this account. Please contact admin.'
       });
     }
 
