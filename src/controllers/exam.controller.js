@@ -38,7 +38,7 @@ const getExamsByClass = async (req, res) => {
     }
 
     const exams = await Exam.find(query).sort({ startDate: 1 });
-    res.json(exams);
+    res.json({ success: true, data: exams });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -72,7 +72,8 @@ const publishExam = async (req, res) => {
     const { examId } = req.params;
     const { schoolId, sessionId } = req.user;
 
-    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId })
+      .populate('classId', 'name _id');
     if (!exam) {
       return res.status(404).json({ message: 'Exam not found' });
     }
@@ -102,7 +103,13 @@ const getExamById = async (req, res) => {
       .populate('subjectId', 'name');
 
     const subjects = examSubjects
-      .map(es => ({ name: es.subjectId?.name ?? '' }))
+      .map(es => ({
+        name: es.subjectId?.name ?? '',
+        subjectId: es.subjectId?._id,
+        maxMarks: es.maxMarks,
+        passMarks: es.passMarks,
+        examDate: es.examDate,
+      }))
       .filter(s => s.name);
 
     res.json({

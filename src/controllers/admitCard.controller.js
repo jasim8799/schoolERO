@@ -53,7 +53,9 @@ const getMyAdmitCard = async (req, res) => {
     if (role === 'STUDENT') {
       // Fetch Student document to get studentId
       const Student = require('../models/Student.js');
-      const student = await Student.findOne({ userId, schoolId, sessionId });
+      const studentQuery = { userId, schoolId };
+      if (sessionId) studentQuery.sessionId = sessionId;
+      const student = await Student.findOne(studentQuery);
       if (!student) {
         return res.status(404).json({ message: 'Student profile not found.' });
       }
@@ -71,14 +73,16 @@ const getMyAdmitCard = async (req, res) => {
     }
 
     let admitCard;
+    const filter = { studentId: { $in: studentIds }, schoolId };
+    if (sessionId) filter.sessionId = sessionId;
     if (examId) {
       // If examId is provided, find specific admit card for the student(s)
-      admitCard = await AdmitCard.findOne({ studentId: { $in: studentIds }, examId, schoolId, sessionId })
+      admitCard = await AdmitCard.findOne({ ...filter, examId })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name');
     } else {
       // If no examId, fetch the latest admit card for the student(s)
-      admitCard = await AdmitCard.findOne({ studentId: { $in: studentIds }, schoolId, sessionId })
+      admitCard = await AdmitCard.findOne(filter)
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name')
         .sort({ createdAt: -1 }); // Get the most recent one
@@ -152,7 +156,10 @@ const getAdmitCardsByExam = async (req, res) => {
     const { examId } = req.params;
     const { schoolId, sessionId } = req.user;
 
-    const cards = await AdmitCard.find({ examId, schoolId, sessionId })
+    const filter = { examId, schoolId };
+    if (sessionId) filter.sessionId = sessionId;
+
+    const cards = await AdmitCard.find(filter)
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .sort({ createdAt: -1 });
@@ -173,7 +180,9 @@ const getMyAdmitCardByExamId = async (req, res) => {
 
     if (role === 'STUDENT') {
       const Student = require('../models/Student.js');
-      const student = await Student.findOne({ userId, schoolId, sessionId });
+      const studentQuery = { userId, schoolId };
+      if (sessionId) studentQuery.sessionId = sessionId;
+      const student = await Student.findOne(studentQuery);
       if (!student) {
         return res.status(404).json({ success: false, message: 'Student profile not found.' });
       }
@@ -189,7 +198,10 @@ const getMyAdmitCardByExamId = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
 
-    const card = await AdmitCard.findOne({ studentId: { $in: studentIds }, examId, schoolId, sessionId })
+    const filter = { studentId: { $in: studentIds }, examId, schoolId };
+    if (sessionId) filter.sessionId = sessionId;
+
+    const card = await AdmitCard.findOne(filter)
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name');
 

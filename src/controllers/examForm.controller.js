@@ -4,8 +4,10 @@ const ExamForm = require('../models/ExamForm.js');
 const closeExpiredExamForms = async (schoolId, sessionId) => {
   try {
     const now = new Date();
+    const filter = { schoolId, status: 'ACTIVE', endDate: { $lt: now } };
+    if (sessionId) filter.sessionId = sessionId;
     await ExamForm.updateMany(
-      { schoolId, sessionId, status: 'ACTIVE', endDate: { $lt: now } },
+      filter,
       { status: 'CLOSED' }
     );
   } catch (err) {
@@ -61,7 +63,8 @@ const getActiveExamForms = async (req, res) => {
     await closeExpiredExamForms(schoolId, sessionId);
 
     // Build query dynamically
-    const query = { schoolId, sessionId, status: 'ACTIVE' };
+    const query = { schoolId, status: 'ACTIVE' };
+    if (sessionId) query.sessionId = sessionId;
     if (classId) {
       query.classId = classId;
     }
