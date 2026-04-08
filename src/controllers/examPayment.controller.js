@@ -2,24 +2,48 @@ const ExamPayment = require('../models/ExamPayment.js');
 
 const payExamFee = async (req, res) => {
   try {
-    const { studentId, examFormId, amount } = req.body;
+    let { studentId, examFormId, amount } = req.body;
     const { schoolId, _id: userId, role } = req.user;
 
-    // Validate user is a parent
-    if (role !== 'PARENT') {
-      return res.status(403).json({ message: 'Only parents can pay exam fees' });
+    if (!examFormId || amount == null) {
+      return res.status(400).json({ message: 'examFormId and amount are required' });
     }
 
-    // Get parent details
-    const Parent = require('../models/Parent.js');
-    const parent = await Parent.findOne({ userId, schoolId });
-    if (!parent) {
-      return res.status(400).json({ message: 'Parent profile not found' });
+    if (!['PARENT', 'STUDENT'].includes(role)) {
+      return res.status(403).json({ message: 'Only parents or students can pay exam fees online' });
     }
 
-    // Validate studentId is in parent's children
-    if (!parent.children.includes(studentId)) {
-      return res.status(403).json({ message: 'Access denied. Student not associated with this parent.' });
+    let studentIds = [];
+    if (role === 'PARENT') {
+      const Parent = require('../models/Parent.js');
+      const parent = await Parent.findOne({ userId, schoolId });
+      if (!parent) return res.status(400).json({ message: 'Parent profile not found' });
+      if (!parent.children.some((id) => id.toString() === studentId.toString())) {
+        return res.status(403).json({ message: 'Access denied. Student not associated with this parent.' });
+      }
+      studentIds = parent.children;
+    }
+
+    if (role === 'STUDENT') {
+      const Student = require('../models/Student.js');
+      const ownStudent = await Student.findOne({ userId, schoolId }).select('_id');
+      if (!ownStudent) {
+        return res.status(400).json({ message: 'Student profile not found' });
+      }
+      if (!studentId) {
+        studentId = ownStudent._id;
+      }
+      if (studentId && ownStudent._id.toString() !== studentId.toString()) {
+        return res.status(403).json({ message: 'Access denied. You can only pay for your own exam fee.' });
+      }
+    }
+
+    if (!studentId) {
+      return res.status(400).json({ message: 'studentId is required' });
+    }
+
+    if (role === 'PARENT' && studentIds.length === 0) {
+      return res.status(400).json({ message: 'No students associated with this parent' });
     }
 
     // Get active session
@@ -262,16 +286,23 @@ const getMyExamPayments = async (req, res) => {
   try {
     const { schoolId, _id: userId, role } = req.user;
 
-    // Validate user is a parent
-    if (role !== 'PARENT') {
-      return res.status(403).json({ message: 'Only parents can access this endpoint' });
-    }
-
-    // Get parent details
-    const Parent = require('../models/Parent.js');
-    const parent = await Parent.findOne({ userId, schoolId });
-    if (!parent) {
-      return res.status(400).json({ message: 'Parent profile not found' });
+    let studentFilter = null;
+    if (role === 'PARENT') {
+      const Parent = require('../models/Parent.js');
+      const parent = await Parent.findOne({ userId, schoolId });
+      if (!parent) {
+        return res.status(400).json({ message: 'Parent profile not found' });
+      }
+      studentFilter = { $in: parent.children };
+    } else if (role === 'STUDENT') {
+      const Student = require('../models/Student.js');
+      const student = await Student.findOne({ userId, schoolId }).select('_id');
+      if (!student) {
+        return res.status(400).json({ message: 'Student profile not found' });
+      }
+      studentFilter = student._id;
+    } else {
+      return res.status(403).json({ message: 'Only parents or students can access this endpoint' });
     }
 
     // Get active session
@@ -289,7 +320,7 @@ const getMyExamPayments = async (req, res) => {
     }
 
     const payments = await ExamPayment.find({
-      studentId: { $in: parent.children },
+      studentId: studentFilter,
       schoolId,
       sessionId: activeSession._id
     })

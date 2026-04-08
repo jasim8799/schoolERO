@@ -39,6 +39,70 @@ const payFee = async (req, res) => {
       return res.status(404).json({ message: 'Fee record not found or already paid' });
     }
 
+    try {
+      const Bill = require('../models/Bill');
+      const Payment = require('../models/Payment');
+      const AcademicSession = require('../models/AcademicSession');
+
+      const activeSession = await AcademicSession.findOne({ schoolId, isActive: true });
+
+      const generateBillNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+
+      let billNumber;
+      let attempts = 0;
+      do {
+        billNumber = generateBillNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+      const bill = await Bill.create({
+        billNumber,
+        studentId: fee.studentId,
+        schoolId,
+        sessionId: activeSession?._id,
+        billType: 'TRANSPORT',
+        sourceType: 'StudentTransport',
+        sourceId: fee._id,
+        description: `Transport Fee — Month ${fee.month}/${fee.year}`,
+        totalAmount: fee.amount,
+        paidAmount: fee.amount,
+        dueAmount: 0,
+        status: 'PAID',
+        createdBy: paidBy
+      });
+
+      const generateReceiptNumber = (sid) => {
+        const ts = Date.now();
+        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        return `RCP-${sid.toString().slice(-4)}-${ts}-${r}`;
+      };
+
+      let receiptNumber;
+      attempts = 0;
+      do {
+        receiptNumber = generateReceiptNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+
+      await Payment.create({
+        receiptNumber,
+        billId: bill._id,
+        studentId: fee.studentId,
+        schoolId,
+        sessionId: activeSession?._id,
+        amount: fee.amount,
+        paymentMode: paymentMethod === 'ONLINE' ? 'Online' : paymentMethod === 'CHEQUE' ? 'Cheque' : 'Cash',
+        paymentDate: new Date(),
+        collectedBy: paidBy
+      });
+    } catch (billErr) {
+      console.error('Transport fee bill dual-write failed:', billErr.message);
+    }
+
     res.json({ message: 'Payment recorded successfully', data: fee });
   } catch (err) {
     res.status(500).json({ message: err.message });

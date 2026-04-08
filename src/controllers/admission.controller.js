@@ -2,6 +2,7 @@ const Admission = require('../models/Admission');
 const Student   = require('../models/Student');
 const User      = require('../models/User');
 const Parent    = require('../models/Parent');
+const AcademicSession = require('../models/AcademicSession');
 const { hashPassword } = require('../utils/password');
 
 // POST /api/admissions
@@ -144,6 +145,67 @@ exports.createAdmission = async (req, res) => {
       payLater,
       paymentStatus: payLater ? 'PENDING' : 'PAID',
     });
+
+    if (finalFee > 0 && !payLater) {
+      try {
+        const Bill = require('../models/Bill');
+        const Payment = require('../models/Payment');
+        const activeSession = req.activeSession || await AcademicSession.findOne({ schoolId, isActive: true });
+
+        const generateBillNumber = (sid) => {
+          const ts = Date.now();
+          const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+          return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+        };
+
+        let billNumber;
+        let attempts = 0;
+        do {
+          billNumber = generateBillNumber(schoolId);
+          attempts++;
+        } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+        const bill = await Bill.create({
+          billNumber,
+          studentId,
+          schoolId,
+          sessionId: activeSession?._id,
+          billType: 'ADMISSION',
+          sourceType: 'Manual',
+          sourceId: admission._id,
+          description: `Admission Fee — ${student.name}`,
+          totalAmount: finalFee,
+          paidAmount: finalFee,
+          dueAmount: 0,
+          status: 'PAID',
+          createdBy: req.user._id
+        });
+
+        let receiptNumber;
+        attempts = 0;
+        do {
+          const ts = Date.now();
+          const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+          receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+          attempts++;
+        } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+
+        await Payment.create({
+          receiptNumber,
+          billId: bill._id,
+          studentId,
+          schoolId,
+          sessionId: activeSession?._id,
+          amount: finalFee,
+          paymentMode: 'Cash',
+          paymentDate: new Date(),
+          collectedBy: req.user._id,
+          notes: `Admission fee payment for ${student.name}`
+        });
+      } catch (billErr) {
+        console.error('Admission fee bill dual-write failed:', billErr.message);
+      }
+    }
 
     // Back-fill admissionNumber on the Student doc if provided
     if (admissionNumber && !student.admissionNumber) {

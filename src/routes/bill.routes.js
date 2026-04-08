@@ -57,7 +57,7 @@ router.get(
 // Student bills — for student/parent view and fee assignment
 router.get(
   '/student/:studentId',
-  requireRole('PRINCIPAL', 'OPERATOR', 'STUDENT', 'PARENT'),
+  requireRole('PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT'),
   getStudentBills
 );
 

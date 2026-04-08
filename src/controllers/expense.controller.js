@@ -155,7 +155,8 @@ const getExpenses = async (req, res) => {
     }, {});
 
     res.json({
-      expenses,
+      success: true,
+      data: expenses,
       summary: {
         totalExpenses: expenses.length,
         totalAmount,

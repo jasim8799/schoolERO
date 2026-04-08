@@ -439,7 +439,8 @@ const getSalarySlip = async (req, res) => {
     };
 
     res.json({
-      slip
+      slip,
+      data: slip
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

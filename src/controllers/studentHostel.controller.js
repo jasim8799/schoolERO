@@ -109,7 +109,24 @@ const getStudentHostel = async (req, res) => {
   }
 };
 
+const getAllStudentHostels = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+
+    const assignments = await StudentHostel.find({ schoolId, status: 'ACTIVE' })
+      .populate('studentId', 'name rollNumber')
+      .populate('hostelId', 'name monthlyFee')
+      .populate('roomId', 'roomNumber')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: assignments });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   assignHostel,
-  getStudentHostel
+  getStudentHostel,
+  getAllStudentHostels
 };
