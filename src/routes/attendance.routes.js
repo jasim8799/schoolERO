@@ -13,6 +13,7 @@ const {
   getStudentSelfAttendance,
   getAttendanceSummary,
   getStaffMembers,
+  checkDuplicateAttendance,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
@@ -26,6 +27,13 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   getAttendanceSummary
+);
+
+router.get(
+  '/check',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  checkDuplicateAttendance
 );
 
 // Student Daily Attendance

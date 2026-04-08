@@ -6,7 +6,6 @@ const Student = require('../models/Student.js');
 const User = require('../models/User.js');
 const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
-const Teacher = require('../models/Teacher.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { auditLog } = require('../utils/auditLog.js');
 
@@ -66,13 +65,6 @@ const markStudentDailyAttendance = async (req, res) => {
         return res.status(400).json({
           success: false,
           message: 'Student does not belong to the specified section'
-        });
-      }
-
-      if (student.sessionId.toString() !== activeSession._id.toString()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Student does not belong to the active academic session'
         });
       }
     }
@@ -248,9 +240,6 @@ const markSubjectAttendance = async (req, res) => {
       if (student.classId.toString() !== record.classId.toString()) {
         return res.status(400).json({ success: false, message: 'Student does not belong to the specified class' });
       }
-      if (student.sessionId.toString() !== activeSession._id.toString()) {
-        return res.status(400).json({ success: false, message: 'Student does not belong to the active academic session' });
-      }
     }
 
     const bulkOps = records.map((record) => {
@@ -406,13 +395,14 @@ const markTeacherAttendance = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid checkOut time format. Use HH:mm.' });
     }
 
-    // Verify teacher exists and belongs to school
-    const teacher = await Teacher.findOne({ userId: teacherId, schoolId: normalizedSchoolId });
-    if (!teacher) {
+    // Verify target teacher user exists and belongs to school
+    const teacherUser = await User.findOne({
+      _id: teacherId,
+      schoolId: normalizedSchoolId,
+      role: 'TEACHER'
+    });
+    if (!teacherUser) {
       return res.status(404).json({ success: false, message: 'Teacher not found or does not belong to this school' });
-    }
-    if (teacher.status !== 'active') {
-      return res.status(400).json({ success: false, message: 'Teacher is not active' });
     }
 
     // Check if attendance already exists
@@ -554,31 +544,24 @@ const getParentAttendance = async (req, res) => {
     }
 
     if (!parent.children || parent.children.length === 0) {
-      return res.status(404).json({ success: false, message: 'No children found' });
+      return res.status(200).json({ success: true, data: [] });
     }
 
     const filter = {
-      studentId: { $in: parent.children },
+      _id: { $in: parent.children },
       schoolId: normalizedSchoolId,
       sessionId: activeSession._id,
     };
 
-    if (startDate && endDate) {
-      const start = normalizeDate(startDate);
-      const end = new Date(normalizeDate(endDate));
-      end.setHours(23, 59, 59, 999);
-      filter.date = { $gte: start, $lte: end };
-    }
-
-    const attendance = await StudentDailyAttendance.find(filter)
-      .populate('studentId', 'name rollNumber')
+    const children = await Student.find(filter)
+      .select('_id name rollNumber classId sectionId')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
-      .sort({ date: -1 });
+      .sort({ name: 1 });
 
     res.status(200).json({
       success: true,
-      data: attendance,
+      data: children,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -626,6 +609,11 @@ const getAttendanceForParent = async (req, res) => {
       sessionId: activeSession._id
     }).sort({ date: -1 });
 
+    const records = attendance.map(att => ({
+      date: att.date,
+      status: att.status
+    }));
+
     res.status(200).json({
       success: true,
       student: {
@@ -634,10 +622,8 @@ const getAttendanceForParent = async (req, res) => {
         class: student.classId.name,
         section: student.sectionId.name
       },
-      attendance: attendance.map(att => ({
-        date: att.date,
-        status: att.status
-      }))
+      data: records,
+      attendance: records,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -685,6 +671,11 @@ const getStudentSelfAttendance = async (req, res) => {
 
     const attendance = await StudentDailyAttendance.find(filter).sort({ date: -1 });
 
+    const records = attendance.map(att => ({
+      date: att.date,
+      status: att.status
+    }));
+
     res.status(200).json({
       success: true,
       student: {
@@ -693,13 +684,52 @@ const getStudentSelfAttendance = async (req, res) => {
         class: student.classId.name,
         section: student.sectionId.name
       },
-      attendance: attendance.map(att => ({
-        date: att.date,
-        status: att.status
-      }))
+      data: records,
+      attendance: records,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const checkDuplicateAttendance = async (req, res) => {
+  try {
+    const { classId, sectionId, date } = req.query;
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!classId || !date) {
+      return res.status(400).json({ success: false, message: 'classId and date are required' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found for this school' });
+    }
+
+    const filter = {
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+      classId,
+      date: normalizeDate(date),
+    };
+
+    if (sectionId) {
+      filter.sectionId = sectionId;
+    }
+
+    const exists = await StudentDailyAttendance.exists(filter);
+
+    return res.status(200).json({
+      success: true,
+      exists: !!exists,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -717,6 +747,7 @@ module.exports = {
   getStaffAttendance,
   getAttendanceSummary,
   getStaffMembers,
+  checkDuplicateAttendance,
 };
 
 const STAFF_MEMBER_ROLES = ['TEACHER', 'OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
