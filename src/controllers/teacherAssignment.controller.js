@@ -8,7 +8,7 @@ const { logger } = require('../utils/logger.js');
 const createAssignment = async (req, res) => {
   try {
     const { teacherId, classId, sectionId, subjectId, day, periodNumber, startTime, endTime } = req.body;
-    const schoolId = req.user.schoolId;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
     const sessionId = req.user.sessionId;
 
     if (!teacherId || !classId || !sectionId || !subjectId || !day || !periodNumber || !startTime || !endTime) {
@@ -22,6 +22,44 @@ const createAssignment = async (req, res) => {
     const teacher = await Teacher.findOne({ _id: teacherId, schoolId });
     if (!teacher) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Teacher not found in this school' });
+    }
+
+    // 1) Existing teacher-subject assignment in class/section (allowed across different periods)
+    await TeacherAssignment.findOne({
+      teacherId,
+      classId,
+      sectionId,
+      subjectId,
+      schoolId,
+    });
+
+    // 2) Teacher period conflict for same day + period
+    const teacherConflict = await TeacherAssignment.findOne({
+      teacherId,
+      day,
+      periodNumber,
+      schoolId,
+    });
+    if (teacherConflict) {
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        message: `Teacher already has a class in Period ${periodNumber} on ${day}`,
+      });
+    }
+
+    // 3) Class-section period conflict for same day + period
+    const classConflict = await TeacherAssignment.findOne({
+      classId,
+      sectionId,
+      day,
+      periodNumber,
+      schoolId,
+    });
+    if (classConflict) {
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        message: `This class-section already has a subject in Period ${periodNumber} on ${day}`,
+      });
     }
 
     const assignment = await TeacherAssignment.create({

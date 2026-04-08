@@ -1,7 +1,7 @@
 const express = require('express');
-const { createStudent, getAllStudents, getStudentById, updateStudentStatus, linkUserToStudent, moveStudentToActiveSession, getMyStudentProfile } = require('../controllers/student.controller.js');
+const { createStudent, getAllStudents, getStudentById, updateStudent, deleteStudent, updateStudentStatus, linkUserToStudent, moveStudentToActiveSession, getMyStudentProfile } = require('../controllers/student.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
-const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
@@ -25,8 +25,26 @@ router.get(
 // GET /api/students/:id - Get student by ID
 router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getStudentById);
 
+// PUT /api/students/:id — update student (PRINCIPAL, OPERATOR only)
+router.put(
+  '/:id',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  updateStudent
+);
+
+// DELETE /api/students/:id — soft-delete (PRINCIPAL only)
+router.delete(
+  '/:id',
+  requireRole(USER_ROLES.PRINCIPAL),
+  deleteStudent
+);
+
 // PATCH /api/students/:id/status - Update student status (NO DELETE)
-router.patch('/:id/status', requireMinRole(USER_ROLES.OPERATOR), updateStudentStatus);
+router.patch(
+  '/:id/status',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  updateStudentStatus
+);
 
 // POST /api/students/:id/link-user - Link user to student (PRINCIPAL, OPERATOR)
 router.post('/:id/link-user', requireMinRole(USER_ROLES.OPERATOR), linkUserToStudent);

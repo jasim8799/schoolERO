@@ -157,20 +157,73 @@ exports.createAdmission = async (req, res) => {
   }
 };
 
+// GET /api/admissions — list all admissions for a school
+exports.getAllAdmissions = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const { studentId } = req.query;
+    const filter = { schoolId };
+    if (studentId) filter.studentId = studentId;
+
+    const admissions = await Admission.find(filter)
+      .populate('studentId', 'name rollNumber admissionNumber')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, data: admissions });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // GET /api/admissions/student/:studentId
 exports.getAdmissionByStudent = async (req, res) => {
   try {
-    const schoolId  = req.user.schoolId._id || req.user.schoolId;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
     const { studentId } = req.params;
 
-    const admission = await Admission.findOne({ studentId, schoolId }).populate('studentId', 'name rollNumber');
-    if (!admission) {
-      return res.status(404).json({ success: false, message: 'No admission record found' });
-    }
+    const admissions = await Admission.find({ studentId, schoolId })
+      .populate('studentId', 'name rollNumber admissionNumber')
+      .sort({ createdAt: -1 });
 
-    return res.status(200).json({ success: true, data: admission });
+    return res.status(200).json({ success: true, data: admissions });
   } catch (err) {
     console.error('getAdmissionByStudent error:', err);
     return res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+};
+
+// PATCH /api/admissions/:id — update admission (Principal/Operator only)
+exports.updateAdmission = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const admission = await Admission.findOneAndUpdate(
+      { _id: req.params.id, schoolId },
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
+    if (!admission) {
+      return res.status(404).json({ success: false, message: 'Admission not found' });
+    }
+    return res.status(200).json({ success: true, data: admission });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /api/admissions/:id — cancel admission (Principal only)
+exports.deleteAdmission = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const admission = await Admission.findOneAndUpdate(
+      { _id: req.params.id, schoolId },
+      { status: 'CANCELLED' },
+      { new: true }
+    );
+    if (!admission) {
+      return res.status(404).json({ success: false, message: 'Admission not found' });
+    }
+    return res.status(200).json({ success: true, message: 'Admission cancelled' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

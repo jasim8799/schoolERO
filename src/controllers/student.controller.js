@@ -296,44 +296,106 @@ const getStudentById = async (req, res) => {
   }
 };
 
+// Update Student
+const updateStudent = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const { name, rollNumber, address, gender, classId, sectionId, mobile } = req.body;
+
+    const updates = {
+      ...(name != null ? { name } : {}),
+      ...(rollNumber != null ? { rollNumber } : {}),
+      ...(address != null ? { address } : {}),
+      ...(gender != null ? { gender } : {}),
+      ...(classId != null ? { classId } : {}),
+      ...(sectionId != null ? { sectionId } : {}),
+      ...(mobile != null ? { mobile } : {}),
+    };
+
+    const student = await Student.findOneAndUpdate(
+      { _id: req.params.id, schoolId },
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).populate('classId sectionId parentId userId');
+
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Sync name on User too
+    if (name && student.userId) {
+      await User.findByIdAndUpdate(student.userId, { name });
+    }
+
+    return res.status(200).json({ success: true, data: student });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Roll number already in use in this class',
+      });
+    }
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // Update Student Status (NO DELETE - only status change)
 const updateStudentStatus = async (req, res) => {
   try {
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status || !['ACTIVE', 'PROMOTED', 'LEFT'].includes(status)) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+    if (!status || !['ACTIVE', 'INACTIVE'].includes(status)) {
+      return res.status(400).json({
         success: false,
-        message: 'Valid status (ACTIVE, PROMOTED, LEFT) is required'
+        message: 'Status must be ACTIVE or INACTIVE',
       });
     }
 
-    const student = await Student.findById(id);
+    const student = await Student.findOneAndUpdate(
+      { _id: id, schoolId },
+      { status },
+      { new: true }
+    );
     if (!student) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
+      return res.status(404).json({
         success: false,
-        message: 'Student not found'
+        message: 'Student not found',
       });
     }
 
-    student.status = status;
-    await student.save();
-
-    logger.success(`Student status updated: ${student.name} -> ${status}`);
-
-    res.status(HTTP_STATUS.OK).json({
+    return res.status(200).json({
       success: true,
-      message: 'Student status updated successfully',
-      data: student
+      data: student,
     });
-  } catch (error) {
-    logger.error('Update student status error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error updating student status',
-      error: error.message
-    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Delete Student (soft-delete by status)
+const deleteStudent = async (req, res) => {
+  try {
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const student = await Student.findOneAndUpdate(
+      { _id: req.params.id, schoolId },
+      { status: 'INACTIVE' },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Deactivate linked user
+    if (student.userId) {
+      await User.findByIdAndUpdate(student.userId, { status: 'inactive' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Student deactivated' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -528,6 +590,8 @@ module.exports = {
   createStudent,
   getAllStudents,
   getStudentById,
+  updateStudent,
+  deleteStudent,
   updateStudentStatus,
   linkUserToStudent,
   moveStudentToActiveSession,

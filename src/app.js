@@ -7,7 +7,7 @@ const { checkSubscriptionStatus } = require('./middlewares/subscription.middlewa
 const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
 const { attachActiveSession } = require('./middlewares/session.middleware.js');
-const { productionErrorHandler } = require('./middlewares/security.middleware.js');
+const errorHandler = require('./middlewares/error.middleware');
 const { authRateLimit, paymentRateLimit, generalRateLimit } = require('./middlewares/rateLimit.middleware.fixed.js');
 const adminRoutes = require('./routes/admin.routes');
 const schoolRoutes = require('./routes/school.routes');
@@ -191,7 +191,7 @@ app.use((req, res) => {
   res.status(404).json({ success: false, message: `Cannot ${req.method} ${req.originalUrl}` });
 });
 
-// Production error handler (must be last middleware)
-app.use(productionErrorHandler);
+// Global error handler (must be last middleware)
+app.use(errorHandler);
 
 module.exports = app;
