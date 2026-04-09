@@ -37,11 +37,11 @@ const getBackupStatusController = async (req, res) => {
 
 const triggerManualBackupController = async (req, res) => {
   try {
-    // Only Principal can trigger manual backup
-    if (req.user.role !== USER_ROLES.PRINCIPAL) {
+    // Principal and Super Admin can trigger manual backup
+    if (req.user.role !== USER_ROLES.PRINCIPAL && req.user.role !== USER_ROLES.SUPER_ADMIN) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        message: 'Access denied. Principal only.'
+        message: 'Access denied. Principal or Super Admin only.'
       });
     }
 

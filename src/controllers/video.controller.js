@@ -39,7 +39,7 @@ const createVideo = async (req, res) => {
       visibility: visibility || 'class',
       createdBy: req.user._id || req.user.userId,
       schoolId: req.schoolId,
-      sessionId: req.activeSession?._id,
+      sessionId: req.activeSession?._id || req.user.sessionId || null,
     });
 
     await video.save();

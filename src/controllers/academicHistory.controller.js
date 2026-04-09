@@ -34,7 +34,7 @@ const getStudentAcademicHistory = async (req, res) => {
     }
 
     const history = await AcademicHistory.find({ studentId, schoolId }).sort({ sessionId: 1 });
-    res.json(history);
+    res.json({ success: true, data: history });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

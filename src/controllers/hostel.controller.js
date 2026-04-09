@@ -2,12 +2,15 @@ const Hostel = require('../models/Hostel.js');
 
 const createHostel = async (req, res) => {
   try {
-    const { name, capacity } = req.body;
+    const { name, capacity, monthlyFee, gender, address } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
     const hostel = await Hostel.create({
       name,
       capacity,
+      monthlyFee: monthlyFee || 0,
+      gender: gender || 'MIXED',
+      address: address || '',
       schoolId,
       createdBy,
     });
@@ -24,7 +27,7 @@ const getHostels = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const hostels = await Hostel.find({ schoolId });
-    res.json(hostels);
+    res.json({ success: true, data: hostels });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

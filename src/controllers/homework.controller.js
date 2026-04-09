@@ -11,7 +11,7 @@ const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const createHomework = async (req, res) => {
   try {
     const { title, description, classId, sectionId, subjectId, dueDate, attachments } = req.body;
-    const { role, schoolId, sessionId, userId: createdBy } = req.user;
+    const { role, schoolId, sessionId, _id: createdBy } = req.user;
 
     // Check role permissions
     if (![USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR].includes(role)) {

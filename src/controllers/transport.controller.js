@@ -24,7 +24,7 @@ const getVehicles = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const vehicles = await Vehicle.find({ schoolId });
-    res.json(vehicles);
+    res.json({ success: true, data: vehicles });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -52,7 +52,7 @@ const getRoutes = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const routes = await Route.find({ schoolId }).populate('vehicleId');
-    res.json(routes);
+    res.json({ success: true, data: routes });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
