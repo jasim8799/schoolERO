@@ -11,7 +11,7 @@ const createUser = async (req, res) => {
     const {
       name, email, mobile, password, role, status,
       // Personal
-      gender, dateOfBirth, bloodGroup, address, city, state, pincode, whatsappNumber,
+      gender, dateOfBirth, bloodGroup, address, occupation, city, state, pincode, whatsappNumber,
       // Professional
       employeeId, designation, department, dateOfJoining, qualification,
       experienceYears, previousSchool, subjects,
@@ -81,6 +81,7 @@ const createUser = async (req, res) => {
       dateOfBirth,
       bloodGroup,
       address,
+      occupation,
       city,
       state,
       pincode,
@@ -210,7 +211,7 @@ const updateUser = async (req, res) => {
     const { id } = req.params;
     const {
       name, email, mobile, status, role, password,
-      gender, dateOfBirth, bloodGroup, address, city, state, pincode, whatsappNumber,
+      gender, dateOfBirth, bloodGroup, address, occupation, city, state, pincode, whatsappNumber,
       employeeId, designation, department, dateOfJoining, qualification,
       experienceYears, previousSchool, subjects,
       monthlySalary, accountNumber, bankName, ifscCode, upiId,
@@ -252,6 +253,7 @@ const updateUser = async (req, res) => {
       dateOfBirth,
       bloodGroup,
       address,
+      occupation,
       city,
       state,
       pincode,

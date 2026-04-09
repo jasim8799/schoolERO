@@ -96,9 +96,16 @@ const getAllParents = async (req, res) => {
     if (schoolId) filter.schoolId = schoolId;
 
     const parents = await Parent.find(filter)
-      .populate('userId', 'name email')
+      .populate(
+        'userId',
+        'name email mobile whatsappNumber address occupation emergencyContactName emergencyContactPhone status'
+      )
       .populate('schoolId', 'name code')
-      .populate('children', 'name rollNumber')
+      .populate({
+        path: 'children',
+        select: 'name rollNumber classId',
+        populate: { path: 'classId', select: 'name' }
+      })
       .sort({ createdAt: -1 });
 
     res.status(HTTP_STATUS.OK).json({
@@ -191,6 +198,113 @@ const getMyChildren = async (req, res) => {
   }
 };
 
+// Update Parent + link/unlink students
+const updateParent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.user.schoolId?._id || req.user.schoolId;
+    const {
+      name,
+      mobile,
+      email,
+      whatsappNumber,
+      address,
+      occupation,
+      emergencyContactName,
+      emergencyContactPhone,
+      addStudentIds,
+      removeStudentIds,
+    } = req.body;
+
+    const parent = await Parent.findOne({ _id: id, schoolId });
+    if (!parent) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Parent not found'
+      });
+    }
+
+    const userUpdates = {};
+    if (name !== undefined) userUpdates.name = name;
+    if (mobile !== undefined) userUpdates.mobile = mobile;
+    if (email !== undefined) {
+      userUpdates.email = email ? email.toLowerCase().trim() : null;
+    }
+    if (whatsappNumber !== undefined) userUpdates.whatsappNumber = whatsappNumber;
+    if (address !== undefined) userUpdates.address = address;
+    if (occupation !== undefined) userUpdates.occupation = occupation;
+    if (emergencyContactName !== undefined) {
+      userUpdates.emergencyContactName = emergencyContactName;
+    }
+    if (emergencyContactPhone !== undefined) {
+      userUpdates.emergencyContactPhone = emergencyContactPhone;
+    }
+
+    if (Object.keys(userUpdates).length > 0) {
+      await User.findByIdAndUpdate(parent.userId, { $set: userUpdates });
+    }
+
+    if (Array.isArray(addStudentIds) && addStudentIds.length > 0) {
+      for (const studentId of addStudentIds) {
+        const student = await Student.findOne({ _id: studentId, schoolId });
+        if (!student) continue;
+
+        if (!parent.children.some(c => c.toString() === studentId.toString())) {
+          parent.children.push(studentId);
+        }
+
+        await Student.findByIdAndUpdate(studentId, {
+          parentId: parent._id,
+          parentUserId: parent.userId,
+        });
+      }
+    }
+
+    if (Array.isArray(removeStudentIds) && removeStudentIds.length > 0) {
+      const removeSet = new Set(removeStudentIds.map(idToRemove => idToRemove.toString()));
+      parent.children = parent.children.filter(
+        childId => !removeSet.has(childId.toString())
+      );
+
+      await Student.updateMany(
+        { _id: { $in: removeStudentIds }, schoolId },
+        { $unset: { parentId: '', parentUserId: '' } }
+      );
+    }
+
+    await parent.save();
+
+    const updatedParent = await Parent.findById(id)
+      .populate(
+        'userId',
+        'name email mobile whatsappNumber address occupation emergencyContactName emergencyContactPhone status'
+      )
+      .populate({
+        path: 'children',
+        select: 'name rollNumber classId',
+        populate: { path: 'classId', select: 'name' }
+      });
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Parent updated',
+      data: updatedParent
+    });
+  } catch (error) {
+    logger.error('updateParent error:', error.message);
+    if (error.code === 11000) {
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        message: 'Mobile or email already in use'
+      });
+    }
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // TEMPORARY ADMIN-ONLY MIGRATION: Backfill parentUserId for existing students
 const migrateParentUserId = async (req, res) => {
   try {
@@ -240,5 +354,6 @@ module.exports = {
   getAllParents,
   getParentById,
   getMyChildren,
+  updateParent,
   migrateParentUserId
 };

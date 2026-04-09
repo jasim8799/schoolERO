@@ -1,5 +1,5 @@
 const express = require('express');
-const { createParent, getAllParents, getParentById, getMyChildren } = require('../controllers/parent.controller.js');
+const { createParent, getAllParents, getParentById, getMyChildren, updateParent } = require('../controllers/parent.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
@@ -17,6 +17,9 @@ router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllParents);
 
 // GET /api/parents/:id - Get parent by ID
 router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getParentById);
+
+// PATCH /api/parents/:id - Update parent + link/unlink students
+router.patch('/:id', requireMinRole(USER_ROLES.OPERATOR), updateParent);
 
 // GET /api/parents/me/children - Get current parent's children (PARENT only)
 router.get('/me/children', getMyChildren);

@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  occupation: {
+    type: String,
+    trim: true,
+    default: null
+  },
   city: {
     type: String,
     trim: true,
