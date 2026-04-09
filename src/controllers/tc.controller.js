@@ -50,7 +50,7 @@ const issueTC = async (req, res) => {
       schoolId
     });
 
-    res.status(201).json(tc);
+    res.status(201).json({ success: true, data: tc });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -79,7 +79,7 @@ const getStudentTC = async (req, res) => {
       return res.status(404).json({ message: 'TC not found' });
     }
 
-    res.json(tc);
+    res.json({ success: true, data: tc });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

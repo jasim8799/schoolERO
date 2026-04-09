@@ -83,7 +83,7 @@ const previewPromotion = async (req, res) => {
       };
     }));
 
-    res.json(result);
+    res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -130,7 +130,7 @@ const executePromotion = async (req, res) => {
       });
     }
 
-    res.json({ message: 'Promotion executed' });
+    res.json({ success: true, message: 'Promotion executed' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

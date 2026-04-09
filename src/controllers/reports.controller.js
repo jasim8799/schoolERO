@@ -81,8 +81,7 @@ const getPromotionReport = async (req, res) => {
     if (sessionId) filter.sessionId = sessionId;
 
     const promotions = await AcademicHistory.find(filter)
-      .populate('studentId', 'userId rollNumber')
-      .populate('studentId.userId', 'name')
+      .populate({ path: 'studentId', populate: { path: 'userId', select: 'name' }, select: 'userId rollNumber' })
       .populate('sessionId', 'name')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
@@ -136,8 +135,7 @@ const getRetentionReport = async (req, res) => {
     if (sessionId) filter.sessionId = sessionId;
 
     const retentions = await AcademicHistory.find(filter)
-      .populate('studentId', 'userId rollNumber')
-      .populate('studentId.userId', 'name')
+      .populate({ path: 'studentId', populate: { path: 'userId', select: 'name' }, select: 'userId rollNumber' })
       .populate('sessionId', 'name')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
@@ -191,8 +189,7 @@ const getTCReport = async (req, res) => {
     if (sessionId) filter.sessionId = sessionId;
 
     const tcs = await TC.find(filter)
-      .populate('studentId', 'name userId rollNumber')
-      .populate('studentId.userId', 'name')
+      .populate({ path: 'studentId', populate: { path: 'userId', select: 'name' }, select: 'name userId rollNumber' })
       .populate('sessionId', 'name')
       .populate('issuedBy', 'name')
       .sort({ issueDate: -1 });
@@ -245,8 +242,7 @@ const getHistoryReport = async (req, res) => {
     if (sessionId) filter.sessionId = sessionId;
 
     const histories = await AcademicHistory.find(filter)
-      .populate('studentId', 'userId rollNumber')
-      .populate('studentId.userId', 'name')
+      .populate({ path: 'studentId', populate: { path: 'userId', select: 'name' }, select: 'userId rollNumber' })
       .populate('sessionId', 'name')
       .populate('classId', 'name')
       .populate('sectionId', 'name')

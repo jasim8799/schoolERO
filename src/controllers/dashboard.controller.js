@@ -64,14 +64,17 @@ const getPrincipalDashboard = async (req, res) => {
     const transportStudents = await StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' });
 
     res.json({
-      totalStudents,
-      totalTeachers,
-      todayAttendancePercent,
-      totalFeeDue,
-      todayCollection,
-      pendingExamPayments,
-      hostelOccupancy,
-      transportStudents
+      success: true,
+      data: {
+        totalStudents,
+        totalTeachers,
+        todayAttendancePercent,
+        totalFeeDue,
+        todayCollection,
+        pendingExamPayments,
+        hostelOccupancy,
+        transportStudents
+      }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -122,11 +125,14 @@ const getOperatorDashboard = async (req, res) => {
     const pendingExamForms = await ExamForm.countDocuments({ schoolId, status: 'PENDING' });
 
     res.json({
-      pendingFeeDues,
-      todayPaymentsCount,
-      todayPaymentsAmount,
-      attendanceNotMarked,
-      pendingExamForms
+      success: true,
+      data: {
+        pendingFeeDues,
+        todayPaymentsCount,
+        todayPaymentsAmount,
+        attendanceNotMarked,
+        pendingExamForms
+      }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -156,9 +162,12 @@ const getTeacherDashboard = async (req, res) => {
     const homeworkCount = await Homework.countDocuments({ schoolId, createdBy: teacherId });
 
     res.json({
-      assignedClassesCount: assignedClasses.length,
-      todayAttendanceStatus: todayAttendance ? todayAttendance.status : 'NOT_MARKED',
-      homeworkCount
+      success: true,
+      data: {
+        assignedClassesCount: assignedClasses.length,
+        todayAttendanceStatus: todayAttendance ? todayAttendance.status : 'NOT_MARKED',
+        homeworkCount
+      }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -174,6 +183,11 @@ const getStudentDashboard = async (req, res) => {
     if (role === USER_ROLES.STUDENT) {
       // First try by userId (already linked)
       let student = await Student.findOne({ userId, schoolId });
+
+      // Fallback: student created with userId as the same ObjectId value.
+      if (!student) {
+        student = await Student.findOne({ _id: userId, schoolId }).catch(() => null);
+      }
 
       // Fallback: try linking by mobile number (first login scenario)
       if (!student) {
@@ -195,11 +209,14 @@ const getStudentDashboard = async (req, res) => {
       // If still not found, return default empty dashboard
       if (!student) {
         return res.json({
-          attendancePercent: 0,
-          totalFeeDue: 0,
-          examStatus: '0/0 passed',
-          noticesCount: 0,
-          message: 'Student profile not linked yet. Please contact your school administrator.'
+          success: true,
+          data: {
+            attendancePercent: 0,
+            totalFeeDue: 0,
+            examStatus: '0/0 passed',
+            noticesCount: 0,
+            message: 'Student profile not linked yet. Please contact your school administrator.'
+          }
         });
       }
 
@@ -212,22 +229,28 @@ const getStudentDashboard = async (req, res) => {
       // If no parent profile found, return default empty dashboard
       if (!parent) {
         return res.json({
-          attendancePercent: 0,
-          totalFeeDue: 0,
-          examStatus: '0/0 passed',
-          noticesCount: 0,
-          message: 'Parent profile not found. Please contact your school administrator.'
+          success: true,
+          data: {
+            attendancePercent: 0,
+            totalFeeDue: 0,
+            examStatus: '0/0 passed',
+            noticesCount: 0,
+            message: 'Parent profile not found. Please contact your school administrator.'
+          }
         });
       }
 
       // If parent has no children yet, return empty dashboard
       if (!parent.children || parent.children.length === 0) {
         return res.json({
-          attendancePercent: 0,
-          totalFeeDue: 0,
-          examStatus: '0/0 passed',
-          noticesCount: 0,
-          message: 'No children linked to your account yet.'
+          success: true,
+          data: {
+            attendancePercent: 0,
+            totalFeeDue: 0,
+            examStatus: '0/0 passed',
+            noticesCount: 0,
+            message: 'No children linked to your account yet.'
+          }
         });
       }
 
@@ -253,10 +276,13 @@ const getStudentDashboard = async (req, res) => {
     const noticesCount = await SystemAnnouncement.countDocuments({ schoolId, targetRoles: role });
 
     res.json({
-      attendancePercent,
-      totalFeeDue: totalDue,
-      examStatus: `${passedExams}/${totalExams} passed`,
-      noticesCount
+      success: true,
+      data: {
+        attendancePercent,
+        totalFeeDue: totalDue,
+        examStatus: `${passedExams}/${totalExams} passed`,
+        noticesCount
+      }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

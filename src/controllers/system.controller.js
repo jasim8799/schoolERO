@@ -383,25 +383,22 @@ const getSystemAnnouncements = async (req, res) => {
     const { limit = 10, page = 1 } = req.query;
     const userRole = req.user.role;
 
-    // Build query
     const query = {
       isActive: true,
       $or: [
-        { targetRoles: { $size: 0 } }, // No specific roles (all users)
-        { targetRoles: userRole } // Specific role match
+        { targetRoles: { $size: 0 } },
+        { targetRoles: userRole }
+      ],
+      $and: [
+        {
+          $or: [
+            { expiresAt: { $exists: false } },
+            { expiresAt: null },
+            { expiresAt: { $gt: new Date() } }
+          ]
+        }
       ]
     };
-
-    // Add expiry filter
-    const now = new Date();
-    query.$or = query.$or.map(condition => ({
-      ...condition,
-      $or: [
-        { expiresAt: { $exists: false } },
-        { expiresAt: null },
-        { expiresAt: { $gt: now } }
-      ]
-    }));
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
