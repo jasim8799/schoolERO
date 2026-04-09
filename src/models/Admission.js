@@ -4,6 +4,7 @@ const documentSchema = new mongoose.Schema(
   {
     fileName:  { type: String, default: null },
     uploadedAt: { type: Date, default: null },
+    dataUrl: { type: String, default: null },
   },
   { _id: false }
 );

@@ -5,6 +5,8 @@ const { authenticate }  = require('../middlewares/auth.middleware');
 const { requireRole }   = require('../middlewares/role.middleware');
 const { USER_ROLES }    = require('../config/constants');
 const admissionCtrl     = require('../controllers/admission.controller');
+const { uploadDocuments } = require('../controllers/upload.controller');
+const fileUpload = require('express-fileupload');
 
 // List all admissions for school
 router.get(
@@ -35,6 +37,15 @@ router.patch(
   authenticate,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   admissionCtrl.updateAdmission
+);
+
+// Upload admission documents
+router.post(
+  '/:id/documents',
+  authenticate,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  fileUpload({ limits: { fileSize: 5 * 1024 * 1024 } }),
+  uploadDocuments
 );
 
 // Cancel admission

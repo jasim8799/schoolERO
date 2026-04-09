@@ -258,9 +258,24 @@ exports.getAdmissionByStudent = async (req, res) => {
 exports.updateAdmission = async (req, res) => {
   try {
     const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const updateData = {};
+
+    for (const [key, value] of Object.entries(req.body || {})) {
+      if (key === 'documents' && value && typeof value === 'object') {
+        for (const [docType, docData] of Object.entries(value)) {
+          if (!docData || typeof docData !== 'object') continue;
+          for (const [field, fieldValue] of Object.entries(docData)) {
+            updateData[`documents.${docType}.${field}`] = fieldValue;
+          }
+        }
+      } else {
+        updateData[key] = value;
+      }
+    }
+
     const admission = await Admission.findOneAndUpdate(
       { _id: req.params.id, schoolId },
-      { $set: req.body },
+      { $set: updateData },
       { new: true, runValidators: true }
     );
     if (!admission) {
