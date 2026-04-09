@@ -249,10 +249,21 @@ exports.getAdmissionByStudent = async (req, res) => {
 
     const admissions = await Admission.find({ studentId, schoolId })
       .populate('studentId', 'name rollNumber admissionNumber')
-      .select('-documents.aadhaar.dataUrl -documents.birthCertificate.dataUrl -documents.photo.dataUrl -documents.tc.dataUrl')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return res.status(200).json({ success: true, data: admissions });
+    const sanitized = admissions.map((adm) => {
+      if (adm.documents) {
+        for (const docType of ['aadhaar', 'birthCertificate', 'photo', 'tc']) {
+          if (adm.documents[docType]) {
+            delete adm.documents[docType].dataUrl;
+          }
+        }
+      }
+      return adm;
+    });
+
+    return res.status(200).json({ success: true, data: sanitized });
   } catch (err) {
     console.error('getAdmissionByStudent error:', err);
     return res.status(500).json({ success: false, message: 'Server error', error: err.message });
