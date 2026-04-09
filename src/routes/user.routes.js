@@ -6,7 +6,8 @@ const {
   updateUser,
   deleteUser,
   reactivateUser,
-  setUserPassword
+  setUserPassword,
+  updateMyProfile
 } = require('../controllers/user.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
@@ -46,6 +47,9 @@ router.get(
   filterBySchool,
   getAllUsers
 );
+
+// PATCH /api/users/me - update own profile (email/photo)
+router.patch('/me', authenticate, updateMyProfile);
 
 // GET /api/users/:id - Get user by ID
 router.get('/:id', enforceSchoolIsolation, getUserById);

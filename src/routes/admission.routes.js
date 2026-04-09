@@ -31,6 +31,20 @@ router.get(
   admissionCtrl.getAdmissionByStudent
 );
 
+// Get student photo for profile avatar
+router.get(
+  '/student/:studentId/photo',
+  authenticate,
+  admissionCtrl.getStudentPhoto
+);
+
+// Get single document dataUrl
+router.get(
+  '/:id/documents/:docType/data',
+  authenticate,
+  admissionCtrl.getDocumentData
+);
+
 // Update admission
 router.patch(
   '/:id',

@@ -270,6 +270,68 @@ exports.getAdmissionByStudent = async (req, res) => {
   }
 };
 
+// GET /api/admissions/:id/documents/:docType/data
+exports.getDocumentData = async (req, res) => {
+  try {
+    const { id, docType } = req.params;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+
+    const validDocTypes = ['aadhaar', 'birthCertificate', 'photo', 'tc'];
+    if (!validDocTypes.includes(docType)) {
+      return res.status(400).json({ success: false, message: 'Invalid document type' });
+    }
+
+    const admission = await Admission.findOne({ _id: id, schoolId }).select(
+      `+documents.${docType}.dataUrl documents.${docType}.fileName documents.${docType}.uploadedAt`
+    );
+
+    if (!admission) {
+      return res.status(404).json({ success: false, message: 'Admission not found' });
+    }
+
+    const docData = admission.documents?.[docType];
+    if (!docData?.dataUrl) {
+      return res.status(404).json({ success: false, message: 'Document data not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        fileName: docData.fileName,
+        uploadedAt: docData.uploadedAt,
+        dataUrl: docData.dataUrl,
+        docType,
+      },
+    });
+  } catch (err) {
+    console.error('getDocumentData error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/admissions/student/:studentId/photo
+exports.getStudentPhoto = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+
+    const admission = await Admission.findOne({ studentId, schoolId }).select(
+      '+documents.photo.dataUrl documents.photo.fileName'
+    );
+
+    if (!admission || !admission.documents?.photo?.dataUrl) {
+      return res.status(404).json({ success: false, message: 'No photo found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { dataUrl: admission.documents.photo.dataUrl },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // PATCH /api/admissions/:id — update admission (Principal/Operator only)
 exports.updateAdmission = async (req, res) => {
   try {

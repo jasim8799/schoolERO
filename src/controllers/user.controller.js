@@ -412,6 +412,51 @@ const setUserPassword = async (req, res) => {
   }
 };
 
+// Update authenticated user's own profile (email/photo)
+const updateMyProfile = async (req, res) => {
+  try {
+    const { email, photoUrl } = req.body || {};
+    const updates = {};
+
+    if (email !== undefined) {
+      const normalized = String(email).trim().toLowerCase();
+      updates.email = normalized;
+    }
+    if (photoUrl !== undefined) {
+      updates.photoUrl = photoUrl;
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: updates },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -419,5 +464,6 @@ module.exports = {
   updateUser,
   deleteUser,
   reactivateUser,
-  setUserPassword
+  setUserPassword,
+  updateMyProfile
 };
