@@ -8,7 +8,19 @@ const { auditLog } = require('../utils/auditLog.js');
 // Create User
 const createUser = async (req, res) => {
   try {
-    const { name, email, mobile, password, role, status } = req.body;
+    const {
+      name, email, mobile, password, role, status,
+      // Personal
+      gender, dateOfBirth, bloodGroup, address, city, state, pincode, whatsappNumber,
+      // Professional
+      employeeId, designation, department, dateOfJoining, qualification,
+      experienceYears, previousSchool, subjects,
+      // Salary
+      monthlySalary, accountNumber, bankName, ifscCode, upiId,
+      // Emergency
+      emergencyContactName, emergencyContactRelation, emergencyContactPhone,
+      spouseName, spouseMobile,
+    } = req.body;
     const schoolId = role === USER_ROLES.SUPER_ADMIN ? null : req.user.schoolId;
 
     // Validate required fields
@@ -64,7 +76,33 @@ const createUser = async (req, res) => {
       password: hashedPassword,
       role,
       schoolId,
-      status: status || 'active'
+      status: status || 'active',
+      gender,
+      dateOfBirth,
+      bloodGroup,
+      address,
+      city,
+      state,
+      pincode,
+      whatsappNumber,
+      employeeId,
+      designation,
+      department,
+      dateOfJoining,
+      qualification,
+      experienceYears,
+      previousSchool,
+      subjects: subjects || [],
+      monthlySalary,
+      accountNumber,
+      bankName,
+      ifscCode,
+      upiId,
+      emergencyContactName,
+      emergencyContactRelation,
+      emergencyContactPhone,
+      spouseName,
+      spouseMobile,
     });
 
     logger.success(`User created: ${user.name} (${user.role}) by ${req.user.role}`);
@@ -170,7 +208,15 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, mobile, status, role, password } = req.body;
+    const {
+      name, email, mobile, status, role, password,
+      gender, dateOfBirth, bloodGroup, address, city, state, pincode, whatsappNumber,
+      employeeId, designation, department, dateOfJoining, qualification,
+      experienceYears, previousSchool, subjects,
+      monthlySalary, accountNumber, bankName, ifscCode, upiId,
+      emergencyContactName, emergencyContactRelation, emergencyContactPhone,
+      spouseName, spouseMobile,
+    } = req.body;
 
     // Block password updates
     if (password) {
@@ -196,24 +242,63 @@ const updateUser = async (req, res) => {
       });
     }
 
-    // Update fields
-    if (name) user.name = name;
-    if (email) user.email = email;
-    if (mobile) user.mobile = mobile;
-    if (status) user.status = status;
-    if (role) user.role = role;
+    const fieldsToUpdate = {
+      name,
+      email,
+      mobile,
+      status,
+      role,
+      gender,
+      dateOfBirth,
+      bloodGroup,
+      address,
+      city,
+      state,
+      pincode,
+      whatsappNumber,
+      employeeId,
+      designation,
+      department,
+      dateOfJoining,
+      qualification,
+      experienceYears,
+      previousSchool,
+      ...(subjects !== undefined && { subjects }),
+      monthlySalary,
+      accountNumber,
+      bankName,
+      ifscCode,
+      upiId,
+      emergencyContactName,
+      emergencyContactRelation,
+      emergencyContactPhone,
+      spouseName,
+      spouseMobile,
+    };
 
-    await user.save();
+    Object.keys(fieldsToUpdate).forEach((k) => {
+      if (fieldsToUpdate[k] === undefined) delete fieldsToUpdate[k];
+    });
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: fieldsToUpdate },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
 
     logger.success(`User updated: ${user.name} by ${req.user.role}`);
-
-    const userResponse = user.toObject();
-    delete userResponse.password;
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'User updated successfully',
-      data: userResponse
+      data: updatedUser
     });
   } catch (error) {
     logger.error('Update user error:', error.message);
@@ -221,6 +306,68 @@ const updateUser = async (req, res) => {
       success: false,
       message: 'Error updating user',
       error: error.message
+    });
+  }
+};
+
+// Upload staff document (base64)
+const uploadStaffDocument = async (req, res) => {
+  try {
+    const { id, docType } = req.params;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+
+    const validTypes = [
+      'aadhaarCard',
+      'panCard',
+      'degreeCertificate',
+      'experienceCertificate',
+      'staffPhoto',
+    ];
+
+    if (!validTypes.includes(docType)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid document type',
+      });
+    }
+
+    const { fileName, dataUrl } = req.body || {};
+    if (!fileName || !dataUrl) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'fileName and dataUrl are required',
+      });
+    }
+
+    const uploadedAt = new Date();
+    const update = {
+      [`documents.${docType}.fileName`]: fileName,
+      [`documents.${docType}.dataUrl`]: dataUrl,
+      [`documents.${docType}.uploadedAt`]: uploadedAt,
+    };
+
+    const user = await User.findOneAndUpdate(
+      { _id: id, schoolId },
+      { $set: update },
+      { new: true, runValidators: false }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Document uploaded successfully',
+      data: { docType, fileName, uploadedAt },
+    });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message,
     });
   }
 };
@@ -465,5 +612,6 @@ module.exports = {
   deleteUser,
   reactivateUser,
   setUserPassword,
-  updateMyProfile
+  updateMyProfile,
+  uploadStaffDocument
 };

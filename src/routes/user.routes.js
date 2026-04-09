@@ -7,7 +7,8 @@ const {
   deleteUser,
   reactivateUser,
   setUserPassword,
-  updateMyProfile
+  updateMyProfile,
+  uploadStaffDocument
 } = require('../controllers/user.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
@@ -86,6 +87,13 @@ router.patch(
   '/:id/set-password',
   requireMinRole(USER_ROLES.OPERATOR),
   setUserPassword
+);
+
+// POST /api/users/:id/documents/:docType - Upload staff document (principal only)
+router.post(
+  '/:id/documents/:docType',
+  requireRole(USER_ROLES.PRINCIPAL),
+  uploadStaffDocument
 );
 
 module.exports = router;

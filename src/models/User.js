@@ -24,6 +24,161 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // Personal details
+  gender: {
+    type: String,
+    enum: ['Male', 'Female', 'Other'],
+    default: null
+  },
+  dateOfBirth: {
+    type: Date,
+    default: null
+  },
+  bloodGroup: {
+    type: String,
+    default: null
+  },
+  address: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  city: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  state: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  pincode: {
+    type: String,
+    trim: true,
+    default: null
+  },
+
+  // Professional details
+  employeeId: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  designation: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  department: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  dateOfJoining: {
+    type: Date,
+    default: null
+  },
+  qualification: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  experienceYears: {
+    type: Number,
+    default: 0
+  },
+  previousSchool: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  subjects: {
+    type: [String],
+    default: []
+  },
+
+  // Salary / bank details
+  monthlySalary: {
+    type: Number,
+    default: 0
+  },
+  accountNumber: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  bankName: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  ifscCode: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  upiId: {
+    type: String,
+    trim: true,
+    default: null
+  },
+
+  // Emergency / family
+  emergencyContactName: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  emergencyContactRelation: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  emergencyContactPhone: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  spouseName: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  spouseMobile: {
+    type: String,
+    trim: true,
+    default: null
+  },
+
+  // Documents (base64 dataUrls)
+  documents: {
+    aadhaarCard: {
+      fileName: String,
+      dataUrl: { type: String, select: false },
+      uploadedAt: Date
+    },
+    panCard: {
+      fileName: String,
+      dataUrl: { type: String, select: false },
+      uploadedAt: Date
+    },
+    degreeCertificate: {
+      fileName: String,
+      dataUrl: { type: String, select: false },
+      uploadedAt: Date
+    },
+    experienceCertificate: {
+      fileName: String,
+      dataUrl: { type: String, select: false },
+      uploadedAt: Date
+    },
+    staffPhoto: {
+      fileName: String,
+      dataUrl: { type: String, select: false },
+      uploadedAt: Date
+    }
+  },
   password: {
     type: String,
     required: [true, 'Password is required'],

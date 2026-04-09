@@ -1237,7 +1237,39 @@ const updateSchoolModules = async (req, res) => {
 const createOperator = async (req, res) => {
   try {
     const { id: schoolId } = req.params;
-    const { name, email, mobile, password, role } = req.body;
+    const {
+      name,
+      email,
+      mobile,
+      password,
+      role,
+      gender,
+      dateOfBirth,
+      bloodGroup,
+      address,
+      city,
+      state,
+      pincode,
+      whatsappNumber,
+      employeeId,
+      designation,
+      department,
+      dateOfJoining,
+      qualification,
+      experienceYears,
+      previousSchool,
+      subjects,
+      monthlySalary,
+      accountNumber,
+      bankName,
+      ifscCode,
+      upiId,
+      emergencyContactName,
+      emergencyContactRelation,
+      emergencyContactPhone,
+      spouseName,
+      spouseMobile,
+    } = req.body;
 
     // Validate required fields
     if (!name || !email || !password) {
@@ -1381,7 +1413,33 @@ const createOperator = async (req, res) => {
       password: hashedPassword,
       role: USER_ROLES.OPERATOR,
       schoolId,
-      status: USER_STATUS.ACTIVE
+      status: USER_STATUS.ACTIVE,
+      gender,
+      dateOfBirth,
+      bloodGroup,
+      address,
+      city,
+      state,
+      pincode,
+      whatsappNumber,
+      employeeId,
+      designation,
+      department,
+      dateOfJoining,
+      qualification,
+      experienceYears,
+      previousSchool,
+      subjects: subjects || [],
+      monthlySalary,
+      accountNumber,
+      bankName,
+      ifscCode,
+      upiId,
+      emergencyContactName,
+      emergencyContactRelation,
+      emergencyContactPhone,
+      spouseName,
+      spouseMobile,
     });
 
     // Log the operator creation
