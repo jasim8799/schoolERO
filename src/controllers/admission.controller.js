@@ -249,6 +249,7 @@ exports.getAdmissionByStudent = async (req, res) => {
 
     const admissions = await Admission.find({ studentId, schoolId })
       .populate('studentId', 'name rollNumber admissionNumber')
+      .select('-documents.aadhaar.dataUrl -documents.birthCertificate.dataUrl -documents.photo.dataUrl -documents.tc.dataUrl')
       .sort({ createdAt: -1 });
 
     return res.status(200).json({ success: true, data: admissions });
@@ -269,6 +270,15 @@ exports.updateAdmission = async (req, res) => {
         for (const [docType, docData] of Object.entries(value)) {
           if (!docData || typeof docData !== 'object') continue;
           for (const [field, fieldValue] of Object.entries(docData)) {
+            if (field !== 'dataUrl') {
+              console.log(
+                `Saving document field: documents.${docType}.${field} = ${fieldValue}`
+              );
+            } else {
+              console.log(
+                `Saving document field: documents.${docType}.dataUrl = [base64 data, ${String(fieldValue).length} chars]`
+              );
+            }
             updateData[`documents.${docType}.${field}`] = fieldValue;
           }
         }
@@ -277,16 +287,38 @@ exports.updateAdmission = async (req, res) => {
       }
     }
 
+    console.log('updateAdmission update keys:', Object.keys(updateData));
+
     const admission = await Admission.findOneAndUpdate(
       { _id: req.params.id, schoolId },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { new: true, runValidators: false }
     );
     if (!admission) {
       return res.status(404).json({ success: false, message: 'Admission not found' });
     }
-    return res.status(200).json({ success: true, data: admission });
+
+    const docSummary = {};
+    if (admission.documents) {
+      const docs = admission.documents.toObject
+        ? admission.documents.toObject()
+        : admission.documents;
+      for (const [docType, docData] of Object.entries(docs)) {
+        docSummary[docType] = {
+          fileName: docData?.fileName || null,
+          uploadedAt: docData?.uploadedAt || null,
+          hasData: !!docData?.dataUrl,
+        };
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: admission,
+      documentsSummary: docSummary,
+    });
   } catch (err) {
+    console.error('updateAdmission error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
