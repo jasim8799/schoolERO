@@ -23,10 +23,21 @@ router.get(
 );
 
 // GET /api/students/:id - Get student by ID
-router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getStudentById);
+router.get(
+  '/:id',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.TEACHER),
+  getStudentById
+);
 
 // PUT /api/students/:id — update student (PRINCIPAL, OPERATOR only)
 router.put(
+  '/:id',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  updateStudent
+);
+
+// PATCH /api/students/:id — update student (PRINCIPAL, OPERATOR only)
+router.patch(
   '/:id',
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   updateStudent

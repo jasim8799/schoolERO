@@ -216,30 +216,29 @@ const createStudent = async (req, res) => {
 // Get All Students (with filters)
 const getAllStudents = async (req, res) => {
   try {
-    const { classId, sectionId, schoolId, sessionId, status } = req.query;
+    const { classId, sectionId, sessionId, status } = req.query;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
 
     // Build filter
-    const filter = {};
+    const filter = { schoolId };
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
-    if (schoolId) filter.schoolId = schoolId;
     if (sessionId) filter.sessionId = sessionId;
     if (status) filter.status = status;
 
     const students = await Student.find(filter)
+      .populate('userId', 'name mobile email')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
-      .populate('parentId', 'userId')
       .populate({
         path: 'parentId',
         populate: {
           path: 'userId',
-          select: 'name email'
+          select: 'name mobile email'
         }
       })
-      .populate('schoolId', 'name code')
-      .populate('sessionId', 'name startDate endDate')
-      .sort({ classId: 1, sectionId: 1, rollNumber: 1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -260,20 +259,20 @@ const getAllStudents = async (req, res) => {
 const getStudentById = async (req, res) => {
   try {
     const { id } = req.params;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
 
-    const student = await Student.findById(id)
+    const student = await Student.findOne({ _id: id, schoolId })
+      .populate('userId', 'name mobile email')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate({
         path: 'parentId',
-        select: 'userId',
         populate: {
           path: 'userId',
-          select: 'name email'
+          select: 'name mobile email'
         }
       })
-      .populate('schoolId', 'name code')
-      .populate('sessionId', 'name startDate endDate');
+      .lean();
 
     if (!student) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
@@ -299,40 +298,87 @@ const getStudentById = async (req, res) => {
 // Update Student
 const updateStudent = async (req, res) => {
   try {
+    const { id } = req.params;
     const schoolId = req.user.schoolId._id || req.user.schoolId;
-    const { name, rollNumber, address, gender, classId, sectionId, mobile } = req.body;
+    const {
+      name,
+      rollNumber,
+      address,
+      gender,
+      mobile,
+      dateOfBirth,
+      classId,
+      sectionId,
+    } = req.body;
 
-    const updates = {
-      ...(name != null ? { name } : {}),
-      ...(rollNumber != null ? { rollNumber } : {}),
-      ...(address != null ? { address } : {}),
-      ...(gender != null ? { gender } : {}),
-      ...(classId != null ? { classId } : {}),
-      ...(sectionId != null ? { sectionId } : {}),
-      ...(mobile != null ? { mobile } : {}),
-    };
-
-    const student = await Student.findOneAndUpdate(
-      { _id: req.params.id, schoolId },
-      { $set: updates },
-      { new: true, runValidators: true }
-    ).populate('classId sectionId parentId userId');
+    const student = await Student.findOne({ _id: id, schoolId });
 
     if (!student) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
 
-    // Sync name on User too
-    if (name && student.userId) {
-      await User.findByIdAndUpdate(student.userId, { name });
+    const studentUpdates = {};
+    if (name !== undefined) studentUpdates.name = name;
+    if (rollNumber !== undefined) studentUpdates.rollNumber = rollNumber;
+    if (address !== undefined) studentUpdates.address = address;
+    if (gender !== undefined) studentUpdates.gender = gender;
+    if (dateOfBirth !== undefined) studentUpdates.dateOfBirth = dateOfBirth;
+    if (classId !== undefined) studentUpdates.classId = classId;
+    if (sectionId !== undefined) studentUpdates.sectionId = sectionId;
+    if (mobile !== undefined) studentUpdates.mobile = mobile;
+
+    if (Object.keys(studentUpdates).length > 0) {
+      await Student.findByIdAndUpdate(
+        id,
+        { $set: studentUpdates },
+        { new: true, runValidators: true }
+      );
     }
 
-    return res.status(200).json({ success: true, data: student });
+    if (student.userId) {
+      const userUpdates = {};
+      if (name !== undefined) userUpdates.name = name;
+
+      if (mobile !== undefined && mobile.trim() !== '') {
+        const existingUser = await User.findOne({
+          mobile: mobile.trim(),
+          schoolId,
+          _id: { $ne: student.userId },
+        });
+        if (existingUser) {
+          return res.status(409).json({
+            success: false,
+            message: 'Mobile number is already registered to another user',
+          });
+        }
+        userUpdates.mobile = mobile.trim();
+        await Student.findByIdAndUpdate(id, { mobile: mobile.trim() });
+      }
+
+      if (Object.keys(userUpdates).length > 0) {
+        await User.findByIdAndUpdate(student.userId, { $set: userUpdates });
+      }
+    }
+
+    const updatedStudent = await Student.findOne({ _id: id, schoolId })
+      .populate('userId', 'name mobile email')
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate({
+        path: 'parentId',
+        populate: { path: 'userId', select: 'name mobile email' },
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Student updated successfully',
+      data: updatedStudent,
+    });
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: 'Roll number already in use in this class',
+        message: 'Duplicate value - roll number or mobile already exists',
       });
     }
     return res.status(500).json({ success: false, message: err.message });

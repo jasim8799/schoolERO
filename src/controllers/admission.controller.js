@@ -228,7 +228,11 @@ exports.getAllAdmissions = async (req, res) => {
     if (studentId) filter.studentId = studentId;
 
     const admissions = await Admission.find(filter)
-      .populate('studentId', 'name rollNumber admissionNumber')
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber admissionNumber userId',
+        populate: { path: 'userId', select: 'name mobile' },
+      })
       .sort({ createdAt: -1 });
 
     return res.status(200).json({ success: true, data: admissions });
