@@ -16,7 +16,7 @@ router.use(enforceSchoolIsolation);
 router.post('/', requireMinRole(USER_ROLES.TEACHER), createHomework);
 
 // GET /api/homework/class - Get homework by class (TEACHER, PRINCIPAL, OPERATOR)
-router.get('/class', requireMinRole(USER_ROLES.OPERATOR), getHomeworkByClass);
+router.get('/class', requireMinRole(USER_ROLES.TEACHER), getHomeworkByClass);
 
 // GET /api/homework/student/me - Get homework for student/parent
 router.get('/student/me', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), getHomeworkForStudent);

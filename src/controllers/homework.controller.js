@@ -7,10 +7,56 @@ const Section = require('../models/Section.js');
 const Subject = require('../models/Subject.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 
+const toObjectId = (value) => {
+  if (!value || !mongoose.Types.ObjectId.isValid(value)) return null;
+  return new mongoose.Types.ObjectId(value);
+};
+
+const buildDueDateFilter = ({ date, fromDate, toDate }) => {
+  if (date) {
+    const day = new Date(date);
+    if (!Number.isNaN(day.getTime())) {
+      const start = new Date(day);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(day);
+      end.setHours(23, 59, 59, 999);
+      return { $gte: start, $lte: end };
+    }
+  }
+
+  const range = {};
+  if (fromDate) {
+    const from = new Date(fromDate);
+    if (!Number.isNaN(from.getTime())) {
+      from.setHours(0, 0, 0, 0);
+      range.$gte = from;
+    }
+  }
+  if (toDate) {
+    const to = new Date(toDate);
+    if (!Number.isNaN(to.getTime())) {
+      to.setHours(23, 59, 59, 999);
+      range.$lte = to;
+    }
+  }
+
+  return Object.keys(range).length ? range : null;
+};
+
 // Create Homework
 const createHomework = async (req, res) => {
   try {
-    const { title, description, classId, sectionId, subjectId, dueDate, attachments } = req.body;
+    const {
+      title,
+      description,
+      topic,
+      chapter,
+      classId,
+      sectionId,
+      subjectId,
+      dueDate,
+      attachments
+    } = req.body;
     const { role, schoolId, sessionId, _id: createdBy } = req.user;
 
     // Check role permissions
@@ -62,6 +108,8 @@ const createHomework = async (req, res) => {
     const homework = await Homework.create({
       title,
       description,
+      topic,
+      chapter,
       classId,
       sectionId,
       subjectId,
@@ -89,25 +137,67 @@ const createHomework = async (req, res) => {
 // Get Homework by Class
 const getHomeworkByClass = async (req, res) => {
   try {
-    const { classId } = req.query;
-    const { schoolId, sessionId } = req.user;
+    const { classId, sectionId, subjectId, date, fromDate, toDate } = req.query;
+    const { schoolId, sessionId, role, _id: userId } = req.user;
 
-    if (!classId) {
+    const schoolObjectId = toObjectId(schoolId);
+    if (!schoolObjectId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'classId is required'
+        message: 'Invalid schoolId'
       });
     }
 
-    const homework = await Homework.find({ classId, schoolId: new mongoose.Types.ObjectId(schoolId), sessionId })
+    const filter = {
+      schoolId: schoolObjectId,
+      sessionId
+    };
+
+    if (classId) {
+      filter.classId = classId;
+    }
+    if (sectionId) {
+      filter.sectionId = sectionId;
+    }
+    if (subjectId) {
+      filter.subjectId = subjectId;
+    }
+
+    // Teacher dashboard fallback: when classId is not provided, show only own homework.
+    if (role === USER_ROLES.TEACHER && !classId) {
+      filter.createdBy = userId;
+    }
+
+    const dueDateFilter = buildDueDateFilter({ date, fromDate, toDate });
+    if (dueDateFilter) {
+      filter.dueDate = dueDateFilter;
+    }
+
+    const homework = await Homework.find(filter)
       .populate('classId', 'name')
+      .populate('sectionId', 'name')
       .populate('subjectId', 'name')
+      .populate('createdBy', 'name')
       .sort({ dueDate: 1 });
+
+    const groupedByClass = {};
+    for (const item of homework) {
+      const classKey = item.classId?._id?.toString() || 'unknown';
+      if (!groupedByClass[classKey]) {
+        groupedByClass[classKey] = {
+          classId: item.classId?._id,
+          className: item.classId?.name || 'Unknown Class',
+          items: []
+        };
+      }
+      groupedByClass[classKey].items.push(item);
+    }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: homework.length,
-      data: homework
+      data: homework,
+      groupedByClass: Object.values(groupedByClass)
     });
   } catch (error) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
@@ -153,6 +243,7 @@ const getHomeworkForStudent = async (req, res) => {
         ]
       })
         .populate('classId', 'name')
+        .populate('sectionId', 'name')
         .populate('subjectId', 'name')
         .sort({ dueDate: 1 });
 
@@ -187,6 +278,7 @@ const getHomeworkForStudent = async (req, res) => {
           ]
         })
           .populate('classId', 'name')
+          .populate('sectionId', 'name')
           .populate('subjectId', 'name')
           .sort({ dueDate: 1 });
 

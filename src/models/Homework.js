@@ -8,6 +8,12 @@ const HomeworkSchema = new mongoose.Schema({
   description: {
     type: String
   },
+  topic: {
+    type: String
+  },
+  chapter: {
+    type: String
+  },
   classId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Class',
