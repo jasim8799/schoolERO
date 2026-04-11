@@ -113,10 +113,51 @@ const getStudentTransport = async (req, res) => {
     const { id } = req.params;
     const { schoolId } = req.user;
 
-    const transport = await StudentTransport.findOne({ studentId: id, schoolId }).populate('routeId vehicleId');
-    res.json(transport);
+    let transport = await StudentTransport.findOne({ studentId: id, schoolId, status: 'ACTIVE' })
+      .populate('routeId', 'name stops monthlyFee')
+      .populate('vehicleId', 'vehicleNumber driverName driverContact capacity')
+      .lean();
+
+    if (!transport) {
+      const student = await Student.findOne({ userId: id, schoolId }).select('_id').lean();
+      if (student?._id) {
+        transport = await StudentTransport.findOne({ studentId: student._id, schoolId, status: 'ACTIVE' })
+          .populate('routeId', 'name stops monthlyFee')
+          .populate('vehicleId', 'vehicleNumber driverName driverContact capacity')
+          .lean();
+      }
+    }
+
+    if (!transport) {
+      return res.json({ success: true, data: null });
+    }
+
+    const studentIdToUse = transport.studentId;
+    const fees = await TransportFee.find({ studentId: studentIdToUse, schoolId })
+      .sort({ year: -1, month: -1 })
+      .lean();
+
+    const totalPaid = fees
+      .filter((f) => f.status === 'PAID')
+      .reduce((sum, f) => sum + (f.amount || 0), 0);
+    const totalPending = fees
+      .filter((f) => f.status !== 'PAID')
+      .reduce((sum, f) => sum + (f.amount || 0), 0);
+    const totalAmount = totalPaid + totalPending;
+
+    const enriched = {
+      ...transport,
+      feeHistory: fees,
+      feeSummary: {
+        total: totalAmount,
+        paid: totalPaid,
+        pending: totalPending,
+      },
+    };
+
+    res.json({ success: true, data: enriched });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
