@@ -33,4 +33,34 @@ const getHostels = async (req, res) => {
   }
 };
 
-module.exports = { createHostel, getHostels };
+const updateHostel = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+    const { name, capacity, monthlyFee, gender, address } = req.body;
+
+    const payload = {
+      ...(name !== undefined && { name }),
+      ...(capacity !== undefined && { capacity }),
+      ...(monthlyFee !== undefined && { monthlyFee }),
+      ...(gender !== undefined && { gender }),
+      ...(address !== undefined && { address }),
+    };
+
+    const hostel = await Hostel.findOneAndUpdate(
+      { _id: id, schoolId },
+      payload,
+      { new: true, runValidators: true }
+    );
+
+    if (!hostel) {
+      return res.status(404).json({ message: 'Hostel not found' });
+    }
+
+    res.json({ success: true, data: hostel });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { createHostel, getHostels, updateHostel };
