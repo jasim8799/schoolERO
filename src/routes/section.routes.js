@@ -13,9 +13,9 @@ router.use(authenticate);
 router.post('/', requireMinRole(USER_ROLES.OPERATOR), createSection);
 
 // GET /api/sections - Get all sections (PRINCIPAL, OPERATOR)
-router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllSections);
+router.get('/', requireMinRole(USER_ROLES.TEACHER), getAllSections);
 
 // GET /api/sections/:id - Get section by ID
-router.get('/:id', requireMinRole(USER_ROLES.OPERATOR), getSectionById);
+router.get('/:id', requireMinRole(USER_ROLES.TEACHER), getSectionById);
 
 module.exports = router;

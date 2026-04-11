@@ -10,9 +10,9 @@ const router = express.Router();
 router.post('/', authenticate, requireMinRole(USER_ROLES.OPERATOR), createSubject);
 
 // GET /api/subjects - Get all subjects (PRINCIPAL, OPERATOR)
-router.get('/', authenticate, requireMinRole(USER_ROLES.OPERATOR), getAllSubjects);
+router.get('/', authenticate, requireMinRole(USER_ROLES.TEACHER), getAllSubjects);
 
 // GET /api/subjects/:id - Get subject by ID
-router.get('/:id', authenticate, requireMinRole(USER_ROLES.OPERATOR), getSubjectById);
+router.get('/:id', authenticate, requireMinRole(USER_ROLES.TEACHER), getSubjectById);
 
 module.exports = router;

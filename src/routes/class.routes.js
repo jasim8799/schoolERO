@@ -18,7 +18,7 @@ router.post(
 router.get(
   '/',
   authenticate,
-  requireMinRole(USER_ROLES.OPERATOR),
+  requireMinRole(USER_ROLES.TEACHER),
   getAllClasses
 );
 
@@ -26,7 +26,7 @@ router.get(
 router.get(
   '/:id',
   authenticate,
-  requireMinRole(USER_ROLES.OPERATOR),
+  requireMinRole(USER_ROLES.TEACHER),
   getClassById
 );
 
