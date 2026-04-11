@@ -374,6 +374,64 @@ const uploadStaffDocument = async (req, res) => {
   }
 };
 
+// Get staff document data (base64)
+const getStaffDocumentData = async (req, res) => {
+  try {
+    const { id, docType } = req.params;
+    const schoolId = req.user.schoolId?._id || req.user.schoolId;
+
+    const validTypes = [
+      'aadhaarCard',
+      'panCard',
+      'degreeCertificate',
+      'experienceCertificate',
+      'staffPhoto',
+    ];
+
+    if (!validTypes.includes(docType)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid document type',
+      });
+    }
+
+    const user = await User.findOne({ _id: id, schoolId }).select(
+      `+documents.${docType}.dataUrl documents.${docType}.fileName documents.${docType}.uploadedAt`
+    );
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const docData = user.documents?.[docType];
+    if (!docData?.dataUrl) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Document not found or not uploaded yet',
+      });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: {
+        docType,
+        fileName: docData.fileName,
+        uploadedAt: docData.uploadedAt,
+        dataUrl: docData.dataUrl,
+      },
+    });
+  } catch (error) {
+    logger.error('Get staff document data error:', error.message);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Delete User (Soft Delete)
 const deleteUser = async (req, res) => {
   try {
@@ -615,5 +673,6 @@ module.exports = {
   reactivateUser,
   setUserPassword,
   updateMyProfile,
-  uploadStaffDocument
+  uploadStaffDocument,
+  getStaffDocumentData
 };

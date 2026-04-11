@@ -8,7 +8,8 @@ const {
   reactivateUser,
   setUserPassword,
   updateMyProfile,
-  uploadStaffDocument
+  uploadStaffDocument,
+  getStaffDocumentData
 } = require('../controllers/user.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
@@ -94,6 +95,13 @@ router.post(
   '/:id/documents/:docType',
   requireRole(USER_ROLES.PRINCIPAL),
   uploadStaffDocument
+);
+
+// GET /api/users/:id/documents/:docType/data - Fetch staff document dataUrl
+router.get(
+  '/:id/documents/:docType/data',
+  requireMinRole(USER_ROLES.OPERATOR),
+  getStaffDocumentData
 );
 
 module.exports = router;
