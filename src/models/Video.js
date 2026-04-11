@@ -15,6 +15,11 @@ const VideoSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    chapter: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     classId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Class',

@@ -8,6 +8,7 @@ const createVideo = async (req, res) => {
       title,
       description,
       topic,
+      chapter,
       classId,
       subjectId,
       videoUrl,
@@ -29,6 +30,7 @@ const createVideo = async (req, res) => {
       title,
       description,
       topic,
+      chapter: chapter || null,
       classId,
       subjectId,
       videoUrl,
@@ -66,9 +68,54 @@ const createVideo = async (req, res) => {
 const getVideos = async (req, res) => {
   try {
     const { classId, subjectId } = req.query;
+    const role = req.user.role?.toUpperCase();
     const filter = { schoolId: req.schoolId };
-    if (classId) filter.classId = classId;
-    if (subjectId) filter.subjectId = subjectId;
+
+    if (
+      role === USER_ROLES.PRINCIPAL ||
+      role === USER_ROLES.OPERATOR ||
+      role === USER_ROLES.SUPER_ADMIN
+    ) {
+      if (classId) filter.classId = classId;
+      if (subjectId) filter.subjectId = subjectId;
+    } else if (role === USER_ROLES.TEACHER) {
+      filter.createdBy = req.user._id || req.user.userId;
+      if (classId) filter.classId = classId;
+      if (subjectId) filter.subjectId = subjectId;
+    } else if (role === USER_ROLES.STUDENT) {
+      const Student = require('../models/Student');
+      const student = await Student.findOne({
+        userId: req.user._id || req.user.userId,
+        schoolId: req.schoolId,
+      });
+
+      if (!student) {
+        return res.json({ success: true, data: [] });
+      }
+
+      filter.classId = student.classId;
+      if (subjectId) filter.subjectId = subjectId;
+    } else if (role === USER_ROLES.PARENT) {
+      const Parent = require('../models/Parent');
+      const parent = await Parent.findOne({
+        userId: req.user._id || req.user.userId,
+        schoolId: req.schoolId,
+      }).populate('children', 'classId');
+
+      if (!parent || !Array.isArray(parent.children) || parent.children.length === 0) {
+        return res.json({ success: true, data: [] });
+      }
+
+      const childId = req.query.childId;
+      let targetChild = parent.children[0];
+      if (childId) {
+        const found = parent.children.find((c) => c._id.toString() === childId);
+        if (found) targetChild = found;
+      }
+
+      filter.classId = targetChild.classId;
+      if (subjectId) filter.subjectId = subjectId;
+    }
 
     const videos = await Video.find(filter)
       .populate('classId', 'name')

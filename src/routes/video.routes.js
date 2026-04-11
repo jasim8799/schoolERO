@@ -11,8 +11,8 @@ const router = express.Router();
 router.use(authenticate);
 router.use(enforceSchoolIsolation);
 
-// GET /api/videos - Students and above can view videos
-router.get('/', requireMinRole(USER_ROLES.STUDENT), getVideos);
+// GET /api/videos - Parents and above can view videos
+router.get('/', requireMinRole(USER_ROLES.PARENT), getVideos);
 
 // POST /api/videos - Teachers, Operators, Principal can upload
 router.post('/', requireMinRole(USER_ROLES.TEACHER), createVideo);
