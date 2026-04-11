@@ -20,6 +20,18 @@ const RoomSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  wardenName: {
+    type: String,
+    default: ''
+  },
+  wardenPhone: {
+    type: String,
+    default: ''
+  },
+  wardenEmail: {
+    type: String,
+    default: ''
+  },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',

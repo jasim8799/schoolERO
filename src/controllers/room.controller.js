@@ -3,7 +3,7 @@ const Hostel = require('../models/Hostel.js');
 
 const createRoom = async (req, res) => {
   try {
-    const { hostelId, roomNumber, totalBeds } = req.body;
+    const { hostelId, roomNumber, totalBeds, wardenName, wardenPhone, wardenEmail } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
     // Validate hostel belongs to same school
@@ -17,6 +17,9 @@ const createRoom = async (req, res) => {
       roomNumber,
       totalBeds,
       availableBeds: totalBeds,
+      wardenName: wardenName || '',
+      wardenPhone: wardenPhone || '',
+      wardenEmail: wardenEmail || '',
       schoolId,
       createdBy,
     });
@@ -44,7 +47,39 @@ const getRooms = async (req, res) => {
   }
 };
 
+const updateRoom = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+    const { roomNumber, totalBeds, availableBeds, wardenName, wardenPhone, wardenEmail } = req.body;
+
+    const payload = {
+      ...(roomNumber !== undefined && { roomNumber }),
+      ...(totalBeds !== undefined && { totalBeds }),
+      ...(availableBeds !== undefined && { availableBeds }),
+      ...(wardenName !== undefined && { wardenName }),
+      ...(wardenPhone !== undefined && { wardenPhone }),
+      ...(wardenEmail !== undefined && { wardenEmail }),
+    };
+
+    const room = await Room.findOneAndUpdate(
+      { _id: id, schoolId },
+      payload,
+      { new: true, runValidators: true }
+    );
+
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    res.json({ success: true, data: room });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   createRoom,
-  getRooms
+  getRooms,
+  updateRoom
 };

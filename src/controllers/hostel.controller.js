@@ -36,7 +36,7 @@ const getHostels = async (req, res) => {
 
     const rooms = hostelIds.length > 0
       ? await Room.find({ hostelId: { $in: hostelIds }, schoolId })
-        .select('hostelId roomNumber totalBeds availableBeds')
+        .select('hostelId roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail')
         .lean()
       : [];
 

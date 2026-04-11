@@ -104,14 +104,14 @@ const getStudentHostel = async (req, res) => {
 
     let hostel = await StudentHostel.findOne({ studentId: id, schoolId, status: 'ACTIVE' })
       .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone wardenEmail')
-      .populate('roomId', 'roomNumber totalBeds availableBeds');
+      .populate('roomId', 'roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail');
 
     if (!hostel) {
       const student = await Student.findOne({ userId: id, schoolId }).select('_id').lean();
       if (student?._id) {
         hostel = await StudentHostel.findOne({ studentId: student._id, schoolId, status: 'ACTIVE' })
           .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone wardenEmail')
-          .populate('roomId', 'roomNumber totalBeds availableBeds');
+          .populate('roomId', 'roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail');
       }
     }
 
@@ -128,7 +128,7 @@ const getAllStudentHostels = async (req, res) => {
     const assignments = await StudentHostel.find({ schoolId, status: 'ACTIVE' })
       .populate('studentId', 'name rollNumber')
       .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone wardenEmail')
-      .populate('roomId', 'roomNumber totalBeds availableBeds')
+      .populate('roomId', 'roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, data: assignments });
