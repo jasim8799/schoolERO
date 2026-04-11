@@ -80,10 +80,16 @@ const createSubject = async (req, res) => {
 // Get All Subjects (with optional filters)
 const getAllSubjects = async (req, res) => {
   try {
-    const { classId } = req.query;
+    const { classId, sessionId: querySessionId } = req.query;
+
+    const schoolId = req.query.schoolId || req.schoolId || req.user?.schoolId;
+    const sessionId =
+      querySessionId || req.activeSession?._id || req.user?.sessionId;
 
     // Build filter
-    const filter = { schoolId: req.user.schoolId, sessionId: req.user.sessionId };
+    const filter = {};
+    if (schoolId) filter.schoolId = schoolId;
+    if (sessionId) filter.sessionId = sessionId;
     if (classId) filter.classId = classId;
 
     const subjects = await Subject.find(filter)

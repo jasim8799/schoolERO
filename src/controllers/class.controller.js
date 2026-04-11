@@ -95,7 +95,11 @@ const createClass = async (req, res) => {
 // Get All Classes (with optional school and session filters)
 const getAllClasses = async (req, res) => {
   try {
-    const { schoolId, sessionId } = req.query;
+    const { sessionId: querySessionId } = req.query;
+
+    const schoolId = req.query.schoolId || req.schoolId || req.user?.schoolId;
+    const sessionId =
+      querySessionId || req.activeSession?._id || req.user?.sessionId;
 
     // Build filter
     const filter = {};
