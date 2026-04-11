@@ -32,6 +32,18 @@ const HostelSchema = new mongoose.Schema({
   address: {
     type: String,
     default: ''
+  },
+  wardenName: {
+    type: String,
+    default: ''
+  },
+  wardenPhone: {
+    type: String,
+    default: ''
+  },
+  wardenEmail: {
+    type: String,
+    default: ''
   }
 }, {
   timestamps: true

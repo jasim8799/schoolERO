@@ -2,7 +2,7 @@ const Hostel = require('../models/Hostel.js');
 
 const createHostel = async (req, res) => {
   try {
-    const { name, capacity, monthlyFee, gender, address } = req.body;
+    const { name, capacity, monthlyFee, gender, address, wardenName, wardenPhone, wardenEmail } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
     const hostel = await Hostel.create({
@@ -11,6 +11,9 @@ const createHostel = async (req, res) => {
       monthlyFee: monthlyFee || 0,
       gender: gender || 'MIXED',
       address: address || '',
+      wardenName: wardenName || '',
+      wardenPhone: wardenPhone || '',
+      wardenEmail: wardenEmail || '',
       schoolId,
       createdBy,
     });
@@ -37,7 +40,7 @@ const updateHostel = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
-    const { name, capacity, monthlyFee, gender, address } = req.body;
+    const { name, capacity, monthlyFee, gender, address, wardenName, wardenPhone, wardenEmail } = req.body;
 
     const payload = {
       ...(name !== undefined && { name }),
@@ -45,6 +48,9 @@ const updateHostel = async (req, res) => {
       ...(monthlyFee !== undefined && { monthlyFee }),
       ...(gender !== undefined && { gender }),
       ...(address !== undefined && { address }),
+      ...(wardenName !== undefined && { wardenName }),
+      ...(wardenPhone !== undefined && { wardenPhone }),
+      ...(wardenEmail !== undefined && { wardenEmail }),
     };
 
     const hostel = await Hostel.findOneAndUpdate(
