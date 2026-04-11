@@ -32,13 +32,14 @@ const getVehicles = async (req, res) => {
 
 const createRoute = async (req, res) => {
   try {
-    const { name, stops, vehicleId } = req.body;
+    const { name, stops, vehicleId, monthlyFee } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
     const route = await Route.create({
       name,
       stops,
       vehicleId,
+      monthlyFee: monthlyFee || 0,
       schoolId,
       createdBy,
     });

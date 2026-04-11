@@ -1,50 +1,82 @@
+const mongoose = require('mongoose');
 const TransportFee = require('../models/TransportFee.js');
+const Bill = require('../models/Bill.js');
+const Payment = require('../models/Payment.js');
+const AcademicSession = require('../models/AcademicSession.js');
 
 const getAllFees = async (req, res) => {
   try {
     const { schoolId } = req.user;
-    const fees = await TransportFee.find({ schoolId })
+    const { studentId } = req.query;
+
+    const filter = { schoolId };
+    if (studentId) {
+      filter.studentId = new mongoose.Types.ObjectId(studentId);
+    }
+
+    const fees = await TransportFee.find(filter)
       .populate({ path: 'studentId', select: 'name rollNumber', populate: { path: 'userId', select: 'name' } })
       .populate('routeId', 'name monthlyFee stops')
       .populate('vehicleId', 'vehicleNumber driverName')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json({ data: fees });
+    res.json({ success: true, data: fees });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 const payFee = async (req, res) => {
   try {
-    const { feeId, paymentMethod } = req.body;
+    const { studentId, routeId, vehicleId, months, paymentMethod } = req.body;
     const { schoolId, _id: paidBy } = req.user;
 
-    if (!feeId || !paymentMethod) {
-      return res.status(400).json({ message: 'feeId and paymentMethod are required' });
+    if (!studentId || !routeId || !Array.isArray(months) || months.length === 0) {
+      return res.status(400).json({ success: false, message: 'studentId, routeId, and months[] are required' });
     }
 
-    const fee = await TransportFee.findOneAndUpdate(
-      { _id: feeId, schoolId, status: 'PENDING' },
-      {
-        status: 'PAID',
-        paymentDate: new Date(),
-        paymentMethod,
-        paidBy,
-      },
-      { new: true }
-    );
+    const studentObjId = new mongoose.Types.ObjectId(studentId);
+    const routeObjId = new mongoose.Types.ObjectId(routeId);
+    const schoolObjId = new mongoose.Types.ObjectId(schoolId);
+    const vehicleObjId = vehicleId ? new mongoose.Types.ObjectId(vehicleId) : null;
 
-    if (!fee) {
-      return res.status(404).json({ message: 'Fee record not found or already paid' });
+    const activeSession = await AcademicSession.findOne({ schoolId: schoolObjId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
     }
 
-    try {
-      const Bill = require('../models/Bill');
-      const Payment = require('../models/Payment');
-      const AcademicSession = require('../models/AcademicSession');
+    const results = [];
 
-      const activeSession = await AcademicSession.findOne({ schoolId, isActive: true });
+    for (const m of months) {
+      const month = Number(m.month);
+      const year = Number(m.year);
+      const amount = Number(m.amount || 0);
+
+      if (!month || !year || month < 1 || month > 12) {
+        continue;
+      }
+
+      let feeRecord = await TransportFee.findOne({
+        studentId: studentObjId,
+        routeId: routeObjId,
+        schoolId: schoolObjId,
+        month,
+        year,
+      });
+
+      if (!feeRecord) {
+        feeRecord = await TransportFee.create({
+          studentId: studentObjId,
+          routeId: routeObjId,
+          vehicleId: vehicleObjId,
+          schoolId: schoolObjId,
+          amount,
+          month,
+          year,
+          status: 'PENDING',
+        });
+      }
 
       const generateBillNumber = (sid) => {
         const ts = Date.now();
@@ -61,51 +93,59 @@ const payFee = async (req, res) => {
 
       const bill = await Bill.create({
         billNumber,
-        studentId: fee.studentId,
-        schoolId,
-        sessionId: activeSession?._id,
+        studentId: studentObjId,
+        schoolId: schoolObjId,
+        sessionId: activeSession._id,
         billType: 'TRANSPORT',
         sourceType: 'StudentTransport',
-        sourceId: fee._id,
-        description: `Transport Fee — Month ${fee.month}/${fee.year}`,
-        totalAmount: fee.amount,
-        paidAmount: fee.amount,
+        sourceId: feeRecord._id,
+        description: `Transport Fee — ${month}/${year}`,
+        totalAmount: amount,
+        paidAmount: amount,
         dueAmount: 0,
         status: 'PAID',
-        createdBy: paidBy
+        createdBy: paidBy,
       });
 
-      const generateReceiptNumber = (sid) => {
+      let receiptNumber;
+      let rAttempts = 0;
+      do {
         const ts = Date.now();
         const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        return `RCP-${sid.toString().slice(-4)}-${ts}-${r}`;
-      };
-
-      let receiptNumber;
-      attempts = 0;
-      do {
-        receiptNumber = generateReceiptNumber(schoolId);
-        attempts++;
-      } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+        receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+        rAttempts++;
+      } while (rAttempts < 10 && await Payment.findOne({ receiptNumber }));
 
       await Payment.create({
         receiptNumber,
         billId: bill._id,
-        studentId: fee.studentId,
-        schoolId,
-        sessionId: activeSession?._id,
-        amount: fee.amount,
+        studentId: studentObjId,
+        schoolId: schoolObjId,
+        sessionId: activeSession._id,
+        amount,
         paymentMode: paymentMethod === 'ONLINE' ? 'Online' : paymentMethod === 'CHEQUE' ? 'Cheque' : 'Cash',
         paymentDate: new Date(),
-        collectedBy: paidBy
+        collectedBy: paidBy,
       });
-    } catch (billErr) {
-      console.error('Transport fee bill dual-write failed:', billErr.message);
+
+      await TransportFee.findByIdAndUpdate(feeRecord._id, {
+        status: 'PAID',
+        paymentDate: new Date(),
+        paymentMethod: paymentMethod || 'CASH',
+        paidBy,
+      });
+
+      results.push({ month, year, billNumber, receiptNumber });
     }
 
-    res.json({ message: 'Payment recorded successfully', data: fee });
+    return res.status(201).json({
+      success: true,
+      message: `${results.length} month(s) payment recorded`,
+      data: results,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('payFee error:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
