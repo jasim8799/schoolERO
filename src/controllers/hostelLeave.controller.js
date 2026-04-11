@@ -69,7 +69,14 @@ const getLeaves = async (req, res) => {
     const { id } = req.params;
     const { schoolId } = req.user;
 
-    const leaves = await HostelLeave.find({ studentId: id, schoolId }).sort({ createdAt: -1 });
+    let resolvedStudentId = id;
+    const student = await Student.findOne({ userId: id, schoolId }).select('_id').lean();
+    if (student?._id) {
+      resolvedStudentId = student._id;
+    }
+
+    const leaves = await HostelLeave.find({ studentId: resolvedStudentId, schoolId })
+      .sort({ createdAt: -1 });
     res.json({ success: true, data: leaves });
   } catch (err) {
     res.status(500).json({ message: err.message });

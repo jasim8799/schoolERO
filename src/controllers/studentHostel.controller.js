@@ -102,12 +102,22 @@ const getStudentHostel = async (req, res) => {
     const { id } = req.params;
     const { schoolId } = req.user;
 
-    const hostel = await StudentHostel.findOne({ studentId: id, schoolId })
-      .populate('hostelId', 'name monthlyFee gender address capacity')
+    let hostel = await StudentHostel.findOne({ studentId: id, schoolId, status: 'ACTIVE' })
+      .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone')
       .populate('roomId', 'roomNumber totalBeds availableBeds');
-    res.json(hostel);
+
+    if (!hostel) {
+      const student = await Student.findOne({ userId: id, schoolId }).select('_id').lean();
+      if (student?._id) {
+        hostel = await StudentHostel.findOne({ studentId: student._id, schoolId, status: 'ACTIVE' })
+          .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone')
+          .populate('roomId', 'roomNumber totalBeds availableBeds');
+      }
+    }
+
+    res.json({ success: true, data: hostel || null });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
