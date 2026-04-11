@@ -8,8 +8,11 @@ const payHostelFee = async (req, res) => {
     const { studentId, hostelId, roomId, amount, paymentMethod, months } = req.body;
     const { schoolId, _id: paidBy } = req.user;
 
-    if (!studentId || !hostelId || !amount) {
+    if (!studentId || !hostelId || amount === undefined || amount === null) {
       return res.status(400).json({ success: false, message: 'studentId, hostelId, and amount are required' });
+    }
+    if (typeof amount === 'number' && amount < 0) {
+      return res.status(400).json({ success: false, message: 'Amount must be 0 or greater' });
     }
 
     const activeSession = await AcademicSession.findOne({ schoolId, isActive: true });
