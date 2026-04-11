@@ -105,6 +105,16 @@ const payHostelFee = async (req, res) => {
       collectedBy: paidBy
     });
 
+    await StudentHostel.findOneAndUpdate(
+      {
+        studentId: studentObjId,
+        hostelId: hostelObjId,
+        schoolId: schoolObjId,
+        status: 'ACTIVE'
+      },
+      { feeStatus: 'PAID', lastPaymentDate: new Date() }
+    );
+
     return res.status(201).json({
       success: true,
       message: 'Hostel fee payment recorded',

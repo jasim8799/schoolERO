@@ -29,6 +29,15 @@ const StudentHostelSchema = new mongoose.Schema({
     enum: ['ACTIVE', 'INACTIVE'],
     default: 'ACTIVE'
   },
+  feeStatus: {
+    type: String,
+    enum: ['PAID', 'PENDING', 'OVERDUE'],
+    default: 'PENDING'
+  },
+  lastPaymentDate: {
+    type: Date,
+    default: null
+  },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',
