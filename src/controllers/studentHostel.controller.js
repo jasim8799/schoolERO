@@ -1,6 +1,7 @@
 const StudentHostel = require('../models/StudentHostel.js');
 const Student = require('../models/Student.js');
 const Room = require('../models/Room.js');
+const School = require('../models/School.js');
 
 const assignHostel = async (req, res) => {
   try {
@@ -102,20 +103,37 @@ const getStudentHostel = async (req, res) => {
     const { id } = req.params;
     const { schoolId } = req.user;
 
-    let hostel = await StudentHostel.findOne({ studentId: id, schoolId, status: 'ACTIVE' })
+    let assignment = await StudentHostel.findOne({ studentId: id, schoolId, status: 'ACTIVE' })
       .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone wardenEmail')
       .populate('roomId', 'roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail');
 
-    if (!hostel) {
+    if (!assignment) {
       const student = await Student.findOne({ userId: id, schoolId }).select('_id').lean();
       if (student?._id) {
-        hostel = await StudentHostel.findOne({ studentId: student._id, schoolId, status: 'ACTIVE' })
+        assignment = await StudentHostel.findOne({ studentId: student._id, schoolId, status: 'ACTIVE' })
           .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone wardenEmail')
           .populate('roomId', 'roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail');
       }
     }
 
-    res.json({ success: true, data: hostel || null });
+    if (!assignment) {
+      return res.json({ success: true, data: null });
+    }
+
+    const school = await School.findById(schoolId).select('address name contact').lean();
+    const hostelAddress = assignment.hostelId?.address?.trim() || '';
+    const schoolAddress = school?.address?.trim() || '';
+
+    const data = assignment.toObject ? assignment.toObject() : assignment;
+    data.schoolAddress = schoolAddress;
+    data.schoolName = school?.name || '';
+    data.schoolPhone = school?.contact?.phone || '';
+
+    if (!hostelAddress && schoolAddress && data.hostelId) {
+      data.hostelId.address = schoolAddress;
+    }
+
+    return res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
