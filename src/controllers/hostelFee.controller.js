@@ -5,7 +5,7 @@ const AcademicSession = require('../models/AcademicSession');
 
 const payHostelFee = async (req, res) => {
   try {
-    const { studentId, hostelId, roomId, amount, paymentMethod } = req.body;
+    const { studentId, hostelId, roomId, amount, paymentMethod, months } = req.body;
     const { schoolId, _id: paidBy } = req.user;
 
     if (!studentId || !hostelId || !amount) {
@@ -22,9 +22,14 @@ const payHostelFee = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Active hostel assignment not found for student' });
     }
 
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    const monthsToPayFor =
+      Array.isArray(months) && months.length > 0
+        ? months
+        : [{ month: new Date().getMonth() + 1, year: new Date().getFullYear() }];
+
+    const description = monthsToPayFor.length > 1
+      ? `Hostel Fee — ${monthsToPayFor.map((m) => `${m.month}/${m.year}`).join(', ')}`
+      : `Hostel Fee — ${monthsToPayFor[0].month}/${monthsToPayFor[0].year}`;
 
     const generateBillNumber = (sid) => {
       const ts = Date.now();
@@ -47,7 +52,7 @@ const payHostelFee = async (req, res) => {
       billType: 'HOSTEL',
       sourceType: 'StudentHostel',
       sourceId: roomId || assignment._id,
-      description: `Hostel Fee — ${month}/${year}`,
+      description,
       totalAmount: amount,
       paidAmount: amount,
       dueAmount: 0,
