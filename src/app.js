@@ -65,6 +65,7 @@ const admissionRoutes = require('./routes/admission.routes');
 const teacherAssignmentRoutes = require('./routes/teacherAssignment.routes');
 const questionRoutes = require('./routes/question.routes');
 const ptmRoutes = require('./routes/ptm.routes');
+const noticeRoutes = require('./routes/notice.routes');
 
 const app = express();
 
@@ -191,6 +192,7 @@ app.use('/api/videos', attachSchoolId, checkSubscriptionStatus(), checkModuleAcc
 app.use('/api/admissions', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), admissionRoutes);
 app.use('/api/questions', attachSchoolId, checkSubscriptionStatus(), questionRoutes);
 app.use('/api/ptm', attachSchoolId, checkSubscriptionStatus(), ptmRoutes);
+app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('notices'), noticeRoutes);
 
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');
