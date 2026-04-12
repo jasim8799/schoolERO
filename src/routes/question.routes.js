@@ -21,9 +21,10 @@ router.use(enforceSchoolIsolation);
 router.post('/', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), askQuestion);
 router.get('/my', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), getMyQuestions);
 router.get('/teacher', requireRole(USER_ROLES.TEACHER), getTeacherQuestions);
+router.get('/teacher/all', requireRole(USER_ROLES.TEACHER), getTeacherQuestions);
 router.patch('/:id/answer', requireRole(USER_ROLES.TEACHER), answerQuestion);
 router.get('/all', requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getAllQuestions);
-router.get('/subjects', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), getSubjectsForStudent);
-router.get('/teachers', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), getTeachersForStudent);
+router.get('/subjects', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT, USER_ROLES.TEACHER), getSubjectsForStudent);
+router.get('/teachers', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT, USER_ROLES.TEACHER), getTeachersForStudent);
 
 module.exports = router;
