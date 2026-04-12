@@ -24,7 +24,7 @@ router.get('/teacher', requireRole(USER_ROLES.TEACHER), getTeacherQuestions);
 router.get('/teacher/all', requireRole(USER_ROLES.TEACHER), getTeacherQuestions);
 router.patch('/:id/answer', requireRole(USER_ROLES.TEACHER), answerQuestion);
 router.get('/all', requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getAllQuestions);
-router.get('/subjects', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT, USER_ROLES.TEACHER), getSubjectsForStudent);
-router.get('/teachers', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT, USER_ROLES.TEACHER), getTeachersForStudent);
+router.get('/subjects', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT, USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getSubjectsForStudent);
+router.get('/teachers', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT, USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getTeachersForStudent);
 
 module.exports = router;
