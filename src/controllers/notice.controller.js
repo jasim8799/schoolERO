@@ -8,7 +8,16 @@ function _activeExpiryFilter() {
 
 const createNotice = async (req, res) => {
   try {
-    const { title, message, target, classId, isImportant, expiryDate } = req.body;
+    const {
+      title,
+      message,
+      target,
+      classId,
+      isImportant,
+      expiryDate,
+      announcementType,
+      attachments,
+    } = req.body;
     const { schoolId, _id: createdBy } = req.user;
 
     if (!title || !message) {
@@ -24,6 +33,8 @@ const createNotice = async (req, res) => {
       message: message.trim(),
       target: target || 'All School',
       classId: target === 'Class' && classId ? classId : null,
+      announcementType: announcementType || 'Notice',
+      attachments: Array.isArray(attachments) ? attachments : [],
       isImportant: isImportant === true,
       expiryDate: expiryDate ? new Date(expiryDate) : null,
       createdBy,

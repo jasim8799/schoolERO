@@ -1,5 +1,28 @@
 const mongoose = require('mongoose');
 
+const AttachmentSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    type: {
+      type: String,
+      enum: ['image', 'pdf', 'document'],
+      required: true,
+    },
+    data: {
+      type: String,
+      required: true,
+    },
+    mimeType: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const NoticeSchema = new mongoose.Schema(
   {
     schoolId: {
@@ -32,6 +55,12 @@ const NoticeSchema = new mongoose.Schema(
       ref: 'Class',
       default: null,
     },
+    announcementType: {
+      type: String,
+      enum: ['Notice', 'Announcement', 'Exam', 'Result', 'Holiday', 'Event', 'Fee', 'General'],
+      default: 'Notice',
+    },
+    attachments: [AttachmentSchema],
     isImportant: {
       type: Boolean,
       default: false,
