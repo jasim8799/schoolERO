@@ -6,30 +6,18 @@ const AcademicSession = require('../models/AcademicSession');
 
 const payHostelFee = async (req, res) => {
   try {
-    const { studentId, hostelId, roomId, amount, paymentMethod, months } = req.body;
+    const { studentId, hostelId, roomId, months, paymentMethod } = req.body;
+    // months = [{ month: N, year: YYYY, amount: N }, ...]
     const { schoolId, _id: paidBy } = req.user;
 
-    if (!studentId || !hostelId || amount === undefined || amount === null) {
-      return res.status(400).json({ success: false, message: 'studentId, hostelId, and amount are required' });
+    if (!studentId || !hostelId || !Array.isArray(months) || months.length === 0) {
+      return res.status(400).json({ success: false, message: 'studentId, hostelId, and months[] are required' });
     }
 
-    const parsedAmount = Number(amount);
-    if (Number.isNaN(parsedAmount) || parsedAmount < 0) {
-      return res.status(400).json({ success: false, message: 'Amount must be 0 or greater' });
-    }
-
-    let studentObjId;
-    let hostelObjId;
-    let schoolObjId;
-    let roomObjId;
-    try {
-      studentObjId = new mongoose.Types.ObjectId(studentId);
-      hostelObjId = new mongoose.Types.ObjectId(hostelId);
-      schoolObjId = new mongoose.Types.ObjectId(schoolId);
-      roomObjId = roomId ? new mongoose.Types.ObjectId(roomId) : null;
-    } catch (_) {
-      return res.status(400).json({ success: false, message: 'Invalid ID format' });
-    }
+    const studentObjId = new mongoose.Types.ObjectId(studentId);
+    const hostelObjId  = new mongoose.Types.ObjectId(hostelId);
+    const schoolObjId  = new mongoose.Types.ObjectId(schoolId);
+    const roomObjId    = roomId ? new mongoose.Types.ObjectId(roomId) : null;
 
     const activeSession = await AcademicSession.findOne({ schoolId: schoolObjId, isActive: true });
     if (!activeSession) {
@@ -37,88 +25,83 @@ const payHostelFee = async (req, res) => {
     }
 
     const assignment = await StudentHostel.findOne({
-      studentId: studentObjId,
-      hostelId: hostelObjId,
-      schoolId: schoolObjId,
-      status: 'ACTIVE'
+      studentId: studentObjId, hostelId: hostelObjId, schoolId: schoolObjId, status: 'ACTIVE'
     });
     if (!assignment) {
-      return res.status(404).json({ success: false, message: 'Active hostel assignment not found for student' });
+      return res.status(404).json({ success: false, message: 'Active hostel assignment not found' });
     }
-
-    const monthsToPayFor =
-      Array.isArray(months) && months.length > 0
-        ? months
-        : [{ month: new Date().getMonth() + 1, year: new Date().getFullYear() }];
-
-    const description = monthsToPayFor.length > 1
-      ? `Hostel Fee — ${monthsToPayFor.map((m) => `${m.month}/${m.year}`).join(', ')}`
-      : `Hostel Fee — ${monthsToPayFor[0].month}/${monthsToPayFor[0].year}`;
 
     const generateBillNumber = (sid) => {
       const ts = Date.now();
-      const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      const r  = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
       return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
     };
 
-    let billNumber;
-    let attempts = 0;
-    do {
-      billNumber = generateBillNumber(schoolId);
-      attempts++;
-    } while (attempts < 10 && await Bill.findOne({ billNumber }));
+    const monthNames = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const results = [];
 
-    const bill = await Bill.create({
-      billNumber,
-      studentId: studentObjId,
-      schoolId: schoolObjId,
-      sessionId: activeSession._id,
-      billType: 'HOSTEL',
-      sourceType: 'StudentHostel',
-      sourceId: roomObjId || assignment._id,
-      description,
-      totalAmount: parsedAmount,
-      paidAmount: parsedAmount,
-      dueAmount: 0,
-      status: 'PAID',
-      createdBy: paidBy
-    });
+    for (const m of months) {
+      const month  = Number(m.month);
+      const year   = Number(m.year);
+      const amount = Number(m.amount || 0);
+      if (!month || !year || month < 1 || month > 12) continue;
 
-    let receiptNumber;
-    attempts = 0;
-    do {
-      const ts = Date.now();
-      const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-      receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
-      attempts++;
-    } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+      let billNumber, attempts = 0;
+      do {
+        billNumber = generateBillNumber(schoolId);
+        attempts++;
+      } while (attempts < 10 && await Bill.findOne({ billNumber }));
 
-    const payment = await Payment.create({
-      receiptNumber,
-      billId: bill._id,
-      studentId: studentObjId,
-      schoolId: schoolObjId,
-      sessionId: activeSession._id,
-      amount: parsedAmount,
-      paymentMode: paymentMethod === 'ONLINE' ? 'Online' : paymentMethod === 'CHEQUE' ? 'Cheque' : 'Cash',
-      paymentDate: new Date(),
-      collectedBy: paidBy
-    });
+      const description = `Hostel Fee — ${monthNames[month]} ${year}`;
+
+      const bill = await Bill.create({
+        billNumber,
+        studentId:   studentObjId,
+        schoolId:    schoolObjId,
+        sessionId:   activeSession._id,
+        billType:    'HOSTEL',
+        sourceType:  'StudentHostel',
+        sourceId:    roomObjId || assignment._id,
+        description,
+        totalAmount: amount,
+        paidAmount:  amount,
+        dueAmount:   0,
+        status:      'PAID',
+        createdBy:   paidBy,
+      });
+
+      let receiptNumber, rAttempts = 0;
+      do {
+        const ts = Date.now();
+        const r  = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+        rAttempts++;
+      } while (rAttempts < 10 && await Payment.findOne({ receiptNumber }));
+
+      await Payment.create({
+        receiptNumber,
+        billId:      bill._id,
+        studentId:   studentObjId,
+        schoolId:    schoolObjId,
+        sessionId:   activeSession._id,
+        amount,
+        paymentMode: paymentMethod === 'ONLINE' ? 'Online' : paymentMethod === 'CHEQUE' ? 'Cheque' : 'Cash',
+        paymentDate: new Date(),
+        collectedBy: paidBy,
+      });
+
+      results.push({ month, year, billNumber, receiptNumber, amount, description });
+    }
 
     await StudentHostel.findOneAndUpdate(
-      {
-        studentId: studentObjId,
-        hostelId: hostelObjId,
-        schoolId: schoolObjId,
-        status: 'ACTIVE'
-      },
+      { studentId: studentObjId, hostelId: hostelObjId, schoolId: schoolObjId, status: 'ACTIVE' },
       { feeStatus: 'PAID', lastPaymentDate: new Date() }
     );
 
     return res.status(201).json({
       success: true,
-      message: 'Hostel fee payment recorded',
-      data: { bill, payment }
+      message: `${results.length} month(s) payment recorded`,
+      data: results,
     });
   } catch (err) {
     console.error('payHostelFee error:', err);
