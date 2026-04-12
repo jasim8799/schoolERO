@@ -2,18 +2,39 @@ const Ptm        = require('../models/Ptm');
 const PtmBooking = require('../models/PtmBooking');
 const Student    = require('../models/Student');
 const Parent     = require('../models/Parent');
+const Teacher    = require('../models/Teacher');
+
+// Helpers
+async function _enrichPtms(ptms) {
+  const ids = ptms.map(p => p._id);
+  const bookings = await PtmBooking.find({
+    ptmId: { $in: ids }, status: 'BOOKED' }).select('ptmId').lean();
+  const countMap = {};
+  for (const b of bookings) {
+    const k = b.ptmId.toString();
+    countMap[k] = (countMap[k] || 0) + 1;
+  }
+  return ptms.map(p => ({ ...p, bookedCount: countMap[p._id.toString()] || 0 }));
+}
 
 // PRINCIPAL/OPERATOR: Create PTM
 const createPtm = async (req, res) => {
   try {
     const { title, description, date, startTime, endTime,
-            teacherId, classId, maxSlots } = req.body;
+            teacherId, classId, maxSlots, agendaPoints } = req.body;
     const { schoolId, _id: createdBy } = req.user;
     const ptm = await Ptm.create({
-      schoolId, title, description: description || '',
-      date: new Date(date), startTime, endTime,
-      teacherId, classId: classId || null,
-      maxSlots: maxSlots || 20, createdBy,
+      schoolId,
+      title,
+      description: description || '',
+      date: new Date(date),
+      startTime,
+      endTime,
+      teacherId,
+      classId: classId || null,
+      maxSlots: maxSlots || 20,
+      createdBy,
+      agendaPoints: Array.isArray(agendaPoints) ? agendaPoints : [],
     });
     return res.status(201).json({ success: true, data: ptm });
   } catch (err) {
@@ -21,44 +42,39 @@ const createPtm = async (req, res) => {
   }
 };
 
-// ALL: Get PTMs for this school
+// ALL roles: Get PTMs for this school
 const getPtms = async (req, res) => {
   try {
-    const { schoolId } = req.user;
+    const { schoolId, _id: userId, role } = req.user;
     const { classId, status } = req.query;
     const filter = { schoolId };
     if (classId) filter.classId = classId;
     if (status)  filter.status  = status;
+
+    // Teacher sees only PTMs assigned to them.
+    if (role === 'TEACHER') {
+      const teacher = await Teacher.findOne({ userId, schoolId }).select('_id').lean();
+      if (teacher) filter.teacherId = teacher._id;
+    }
+
     const ptms = await Ptm.find(filter)
       .populate({ path: 'teacherId', select: 'userId',
           populate: { path: 'userId', select: 'name' } })
       .populate('classId', 'name')
       .sort({ date: 1 })
       .lean();
-    // Attach booking count to each PTM
-    const ptmIds = ptms.map(p => p._id);
-    const bookings = await PtmBooking.find({
-      ptmId: { $in: ptmIds }, status: 'BOOKED' })
-      .select('ptmId').lean();
-    const countMap = {};
-    for (const b of bookings) {
-      const key = b.ptmId.toString();
-      countMap[key] = (countMap[key] || 0) + 1;
-    }
-    const enriched = ptms.map(p => ({
-      ...p,
-      bookedCount: countMap[p._id.toString()] || 0,
-    }));
+
+    const enriched = await _enrichPtms(ptms);
     return res.json({ success: true, data: enriched });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// PARENT/STUDENT: Book a PTM slot
+// STUDENT/PARENT: Book PTM with optional note
 const bookPtm = async (req, res) => {
   try {
-    const { ptmId, studentId: bodyStudentId } = req.body;
+    const { ptmId, studentId: bodyStudentId, notes } = req.body;
     const { schoolId, _id: userId, role } = req.user;
     if (!ptmId) return res.status(400).json({
       success: false, message: 'ptmId is required' });
@@ -68,7 +84,7 @@ const bookPtm = async (req, res) => {
       success: false, message: 'PTM not found' });
     if (ptm.status === 'CANCELLED' || ptm.status === 'COMPLETED')
       return res.status(400).json({
-        success: false, message: 'This PTM is no longer accepting bookings' });
+        success: false, message: 'PTM no longer accepting bookings' });
 
     // Check slot availability
     const existingCount = await PtmBooking.countDocuments({
@@ -101,6 +117,7 @@ const bookPtm = async (req, res) => {
     const booking = await PtmBooking.create({
       ptmId, studentId, parentId: parentId || null,
       schoolId, bookedBy: userId,
+      notes: notes || '',
     });
     return res.status(201).json({ success: true, data: booking });
   } catch (err) {
@@ -145,8 +162,12 @@ const getPtmBookings = async (req, res) => {
     const { ptmId } = req.params;
     const { schoolId } = req.user;
     const bookings = await PtmBooking.find({ ptmId, schoolId })
-      .populate({ path: 'studentId', select: 'rollNumber',
-          populate: { path: 'userId', select: 'name' } })
+      .populate({ path: 'studentId', select: 'rollNumber classId sectionId',
+          populate: [
+            { path: 'userId', select: 'name' },
+            { path: 'classId', select: 'name' },
+            { path: 'sectionId', select: 'name' },
+          ] })
       .sort({ createdAt: 1 })
       .lean();
     return res.json({ success: true, data: bookings });
@@ -186,8 +207,56 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+// PRINCIPAL/OPERATOR: Mark booking as attended
+const markAttendance = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { schoolId } = req.user;
+    const booking = await PtmBooking.findOneAndUpdate(
+      { _id: bookingId, schoolId },
+      { status: 'ATTENDED' },
+      { new: true }
+    );
+    if (!booking) return res.status(404).json({
+      success: false, message: 'Booking not found' });
+    return res.json({ success: true, data: booking });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// PRINCIPAL/OPERATOR/TEACHER: Save meeting notes and recording info
+const addMeetingNotes = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { meetingSummary, discussionPoints, recordingUrl, recordingTitle } = req.body;
+    const { schoolId } = req.user;
+
+    const update = {};
+    if (meetingSummary !== undefined) update.meetingSummary = meetingSummary;
+    if (discussionPoints !== undefined) {
+      update.discussionPoints = Array.isArray(discussionPoints) ? discussionPoints : [];
+    }
+    if (recordingUrl !== undefined) update.recordingUrl = recordingUrl;
+    if (recordingTitle !== undefined) update.recordingTitle = recordingTitle;
+
+    const ptm = await Ptm.findOneAndUpdate(
+      { _id: id, schoolId },
+      update,
+      { new: true }
+    );
+
+    if (!ptm) return res.status(404).json({
+      success: false, message: 'PTM not found' });
+    return res.json({ success: true, data: ptm });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createPtm, getPtms, bookPtm,
   getMyBookings, getPtmBookings,
   updatePtmStatus, cancelBooking,
+  markAttendance, addMeetingNotes,
 };
