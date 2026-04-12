@@ -135,7 +135,7 @@ const payFee = async (req, res) => {
         paidBy,
       });
 
-      results.push({ month, year, billNumber, receiptNumber });
+      results.push({ month, year, billNumber, receiptNumber, amount });
     }
 
     return res.status(201).json({
