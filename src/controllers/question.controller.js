@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Question = require('../models/Question.js');
 const Student = require('../models/Student.js');
 const Teacher = require('../models/Teacher.js');
+const Subject = require('../models/Subject.js');
 
 const askQuestion = async (req, res) => {
   try {
@@ -196,10 +197,39 @@ const getAllQuestions = async (req, res) => {
   }
 };
 
+const getSubjectsForStudent = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const subjects = await Subject.find({ schoolId })
+      .select('name _id')
+      .sort({ name: 1 })
+      .lean();
+    return res.json({ success: true, data: subjects });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getTeachersForStudent = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const teachers = await Teacher.find({ schoolId })
+      .select('_id userId')
+      .populate('userId', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+    return res.json({ success: true, data: teachers });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   askQuestion,
   getMyQuestions,
   getTeacherQuestions,
   answerQuestion,
   getAllQuestions,
+  getSubjectsForStudent,
+  getTeachersForStudent,
 };
