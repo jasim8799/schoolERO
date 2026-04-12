@@ -57,8 +57,12 @@ const NoticeSchema = new mongoose.Schema(
     },
     announcementType: {
       type: String,
-      enum: ['Notice', 'Announcement', 'Exam', 'Result', 'Holiday', 'Event', 'Fee', 'General'],
+      enum: ['Notice', 'Announcement'],
       default: 'Notice',
+    },
+    eventDate: {
+      type: Date,
+      default: null,
     },
     attachments: [AttachmentSchema],
     isImportant: {

@@ -16,6 +16,7 @@ const createNotice = async (req, res) => {
       isImportant,
       expiryDate,
       announcementType,
+      eventDate,
       attachments,
     } = req.body;
     const { schoolId, _id: createdBy } = req.user;
@@ -27,13 +28,17 @@ const createNotice = async (req, res) => {
       });
     }
 
+    const validTypes = ['Notice', 'Announcement'];
+    const finalType = validTypes.includes(announcementType) ? announcementType : 'Notice';
+
     const payload = {
       schoolId,
       title: title.trim(),
       message: message.trim(),
       target: target || 'All School',
       classId: target === 'Class' && classId ? classId : null,
-      announcementType: announcementType || 'Notice',
+      announcementType: finalType,
+      eventDate: eventDate ? new Date(eventDate) : null,
       attachments: Array.isArray(attachments) ? attachments : [],
       isImportant: isImportant === true,
       expiryDate: expiryDate ? new Date(expiryDate) : null,
