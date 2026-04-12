@@ -48,13 +48,41 @@ const getPtms = async (req, res) => {
     const { schoolId, _id: userId, role } = req.user;
     const { classId, status } = req.query;
     const filter = { schoolId };
-    if (classId) filter.classId = classId;
-    if (status)  filter.status  = status;
+    if (status) filter.status = status;
 
-    // Teacher sees only PTMs assigned to them.
     if (role === 'TEACHER') {
-      const teacher = await Teacher.findOne({ userId, schoolId }).select('_id').lean();
+      const teacher = await Teacher.findOne({ userId, schoolId })
+        .select('_id')
+        .lean();
       if (teacher) filter.teacherId = teacher._id;
+      if (classId) filter.classId = classId;
+    } else if (role === 'STUDENT') {
+      const student = await Student.findOne({ userId, schoolId })
+        .select('classId')
+        .lean();
+      if (student?.classId) {
+        filter.$or = [
+          { classId: student.classId },
+          { classId: null },
+          { classId: { $exists: false } },
+        ];
+      }
+    } else if (role === 'PARENT') {
+      const studentId = req.query.studentId;
+      if (studentId) {
+        const student = await Student.findById(studentId)
+          .select('classId')
+          .lean();
+        if (student?.classId) {
+          filter.$or = [
+            { classId: student.classId },
+            { classId: null },
+            { classId: { $exists: false } },
+          ];
+        }
+      }
+    } else {
+      if (classId) filter.classId = classId;
     }
 
     const ptms = await Ptm.find(filter)
@@ -244,7 +272,9 @@ const addMeetingNotes = async (req, res) => {
       { _id: id, schoolId },
       update,
       { new: true }
-    );
+    )
+      .populate({ path: 'teacherId', select: 'userId', populate: { path: 'userId', select: 'name' } })
+      .populate('classId', 'name');
 
     if (!ptm) return res.status(404).json({
       success: false, message: 'PTM not found' });
