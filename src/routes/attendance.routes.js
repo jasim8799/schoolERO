@@ -16,6 +16,7 @@ const {
   getAttendanceSummary,
   getMonthlyAttendanceSummary,
   getStaffMembers,
+  getTeacherClassStudents,
   checkDuplicateAttendance,
   checkLateThreshold,
 } = require('../controllers/attendance.controller.js');
@@ -74,6 +75,13 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.PRINCIPAL),
   getStudentAttendanceByTeacher
+);
+
+router.get(
+  '/teacher/class-students',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getTeacherClassStudents
 );
 
 

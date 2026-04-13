@@ -3,6 +3,7 @@ const Parent = require('../models/Parent.js');
 const User = require('../models/User.js');
 const Class = require('../models/Class.js');
 const Section = require('../models/Section.js');
+const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
@@ -225,6 +226,52 @@ const getAllStudents = async (req, res) => {
     if (sectionId) filter.sectionId = sectionId;
     if (sessionId) filter.sessionId = sessionId;
     if (status) filter.status = status;
+
+    // Teachers can only access students from their assigned class/section.
+    if (req.user.role === 'TEACHER') {
+      const assignments = await TeacherAssignment.find({
+        teacherId: req.user.userId,
+        schoolId,
+      })
+        .select('classId sectionId')
+        .lean();
+
+      const assignedClassIds = [
+        ...new Set(assignments.map((a) => a.classId?.toString()).filter(Boolean)),
+      ];
+      const assignedSectionIds = [
+        ...new Set(assignments.map((a) => a.sectionId?.toString()).filter(Boolean)),
+      ];
+
+      if (assignedClassIds.length === 0) {
+        return res.status(HTTP_STATUS.OK).json({
+          success: true,
+          count: 0,
+          data: [],
+        });
+      }
+
+      if (classId && !assignedClassIds.includes(classId.toString())) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'You are not assigned to this class',
+        });
+      }
+
+      if (sectionId && !assignedSectionIds.includes(sectionId.toString())) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'You are not assigned to this section',
+        });
+      }
+
+      if (!classId) {
+        filter.classId = { $in: assignedClassIds };
+      }
+      if (!sectionId && assignedSectionIds.length > 0) {
+        filter.sectionId = { $in: assignedSectionIds };
+      }
+    }
 
     const students = await Student.find(filter)
       .populate('userId', 'name mobile email')

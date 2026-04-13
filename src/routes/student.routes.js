@@ -12,8 +12,8 @@ router.use(authenticate);
 // POST /api/students - Create student (PRINCIPAL, OPERATOR)
 router.post('/', requireMinRole(USER_ROLES.OPERATOR), createStudent);
 
-// GET /api/students - Get all students (PRINCIPAL, OPERATOR)
-router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAllStudents);
+// GET /api/students - Get all students (TEACHER+ with assignment guard in controller)
+router.get('/', requireMinRole(USER_ROLES.TEACHER), getAllStudents);
 
 // GET /api/students/me - Student self profile
 router.get(

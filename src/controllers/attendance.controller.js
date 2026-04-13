@@ -6,6 +6,7 @@ const Student = require('../models/Student.js');
 const User = require('../models/User.js');
 const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
+const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { auditLog } = require('../utils/auditLog.js');
 
@@ -902,6 +903,74 @@ const getStudentAttendanceByTeacher = async (req, res) => {
   }
 };
 
+// GET /api/attendance/teacher/class-students?classId=&sectionId=
+const getTeacherClassStudents = async (req, res) => {
+  try {
+    const { classId, sectionId } = req.query;
+    const { userId, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!classId) {
+      return res.status(400).json({ success: false, message: 'classId is required' });
+    }
+
+    const assignmentFilter = {
+      teacherId: userId,
+      schoolId: normalizedSchoolId,
+      classId,
+    };
+    if (sectionId) {
+      assignmentFilter.sectionId = sectionId;
+    }
+
+    const assignments = await TeacherAssignment.find(assignmentFilter)
+      .select('sectionId')
+      .lean();
+
+    if (!assignments.length) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not assigned to this class',
+      });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active session' });
+    }
+
+    const filter = {
+      classId,
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+    };
+
+    if (sectionId) {
+      filter.sectionId = sectionId;
+    } else {
+      const allowedSectionIds = [
+        ...new Set(assignments.map((a) => a.sectionId?.toString()).filter(Boolean)),
+      ];
+      if (allowedSectionIds.length > 0) {
+        filter.sectionId = { $in: allowedSectionIds };
+      }
+    }
+
+    const students = await Student.find(filter)
+      .select('_id name rollNumber classId sectionId')
+      .sort({ rollNumber: 1 })
+      .lean();
+
+    return res.json({ success: true, data: students });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // GET /api/attendance/summary/monthly?classId=&month=YYYY-MM
 const getMonthlyAttendanceSummary = async (req, res) => {
   try {
@@ -989,6 +1058,7 @@ module.exports = {
   markStudentDailyAttendance,
   getStudentDailyAttendance,
   getStudentAttendanceByTeacher,
+  getTeacherClassStudents,
   markSubjectAttendance,
   getSubjectAttendance,
   getPeriodWiseSummary,
