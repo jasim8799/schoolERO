@@ -2,8 +2,10 @@ const express = require('express');
 const {
   markStudentDailyAttendance,
   getStudentDailyAttendance,
+  getStudentAttendanceByTeacher,
   markSubjectAttendance,
   getSubjectAttendance,
+  getPeriodWiseSummary,
   markTeacherAttendance,
   getTeacherAttendance,
   markStaffAttendance,
@@ -12,8 +14,10 @@ const {
   getAttendanceForParent,
   getStudentSelfAttendance,
   getAttendanceSummary,
+  getMonthlyAttendanceSummary,
   getStaffMembers,
   checkDuplicateAttendance,
+  checkLateThreshold,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
@@ -30,10 +34,24 @@ router.get(
 );
 
 router.get(
+  '/summary/monthly',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getMonthlyAttendanceSummary
+);
+
+router.get(
   '/check',
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   checkDuplicateAttendance
+);
+
+router.post(
+  '/check-late',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  checkLateThreshold
 );
 
 // Student Daily Attendance
@@ -51,6 +69,13 @@ router.get(
   getStudentDailyAttendance
 );
 
+router.get(
+  '/students/daily/teacher/:teacherId',
+  authenticate,
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  getStudentAttendanceByTeacher
+);
+
 
 
 // Subject Attendance
@@ -59,6 +84,13 @@ router.post(
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   markSubjectAttendance
+);
+
+router.get(
+  '/students/subject/period-summary',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getPeriodWiseSummary
 );
 
 router.get(

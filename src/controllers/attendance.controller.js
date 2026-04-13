@@ -95,6 +95,41 @@ const markStudentDailyAttendance = async (req, res) => {
 
     const result = await StudentDailyAttendance.bulkWrite(bulkOps);
 
+    // Auto-notify parents of absent students
+    try {
+      const Notice = require('../models/Notice.js');
+      const absentRecords = records.filter((r) => r.status === 'ABSENT');
+      if (absentRecords.length > 0) {
+        const absentStudentIds = absentRecords.map((r) => r.studentId);
+        const absentStudents = await Student.find({
+          _id: { $in: absentStudentIds },
+          schoolId: normalizedSchoolId,
+        }).select('name classId');
+
+        // Find parents of absent students
+        const parents = await Parent.find({
+          children: { $in: absentStudentIds },
+          schoolId: normalizedSchoolId,
+        });
+
+        if (parents.length > 0 && absentStudents.length > 0) {
+          const studentNames = absentStudents.map((s) => s.name).join(', ');
+          await Notice.create({
+            schoolId: normalizedSchoolId,
+            title: `Absent Alert - ${records[0].date}`,
+            message: `The following student(s) were marked absent today (${records[0].date}): ${studentNames}. Please contact the school if this is incorrect.`,
+            target: 'Parents',
+            classId: records[0].classId,
+            announcementType: 'Notice',
+            isImportant: true,
+            createdBy: userId,
+          });
+        }
+      }
+    } catch (_) {
+      // Notification failure should never block attendance marking
+    }
+
     await auditLog({
       action: 'STUDENT_ATTENDANCE_MARKED',
       userId: req.user.userId,
@@ -338,6 +373,66 @@ const getSubjectAttendance = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /api/attendance/students/subject/period-summary
+// Query: classId, subjectId, date (optional), month (optional YYYY-MM)
+const getPeriodWiseSummary = async (req, res) => {
+  try {
+    const { classId, subjectId, date, month } = req.query;
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active session' });
+    }
+
+    const filter = {
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+    };
+    if (classId) filter.classId = classId;
+    if (subjectId) filter.subjectId = subjectId;
+
+    if (date) {
+      filter.date = normalizeDate(date);
+    } else if (month) {
+      const [y, m] = month.split('-').map(Number);
+      filter.date = {
+        $gte: new Date(y, m - 1, 1),
+        $lte: new Date(y, m, 0, 23, 59, 59),
+      };
+    }
+
+    const records = await StudentSubjectAttendance.find(filter).lean();
+
+    const periodMap = {};
+    for (const rec of records) {
+      const period = rec.period ?? 0;
+      if (!periodMap[period]) {
+        periodMap[period] = { period, present: 0, absent: 0, total: 0 };
+      }
+      periodMap[period].total++;
+      if (rec.status === 'PRESENT') periodMap[period].present++;
+      else periodMap[period].absent++;
+    }
+
+    const summary = Object.values(periodMap)
+      .sort((a, b) => a.period - b.period)
+      .map((p) => ({
+        ...p,
+        percentage: p.total > 0 ? Math.round((p.present / p.total) * 100) : 0,
+        label: p.period === 0 ? 'All Periods' : `Period ${p.period}`,
+      }));
+
+    return res.json({ success: true, data: summary });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -733,11 +828,170 @@ const checkDuplicateAttendance = async (req, res) => {
   }
 };
 
+// POST /api/attendance/check-late-threshold
+// Body: { checkIn: "09:15", schoolStartTime: "09:00" }
+const checkLateThreshold = async (req, res) => {
+  try {
+    const { checkIn, schoolStartTime = '09:00' } = req.body;
+    if (!checkIn) {
+      return res.status(400).json({ success: false, message: 'checkIn is required' });
+    }
+
+    const [startH, startM] = schoolStartTime.split(':').map(Number);
+    const [checkH, checkM] = checkIn.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const checkMinutes = checkH * 60 + checkM;
+    const diffMinutes = checkMinutes - startMinutes;
+
+    let suggestedStatus = 'PRESENT';
+    let message = 'On time';
+
+    if (diffMinutes > 30) {
+      suggestedStatus = 'LATE';
+      message = `${diffMinutes} minutes late - marked as LATE`;
+    } else if (diffMinutes > 0) {
+      suggestedStatus = 'PRESENT';
+      message = `${diffMinutes} minutes late but within grace period`;
+    }
+
+    return res.json({
+      success: true,
+      data: { isLate: diffMinutes > 30, diffMinutes, suggestedStatus, message },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/attendance/students/daily/teacher/:teacherId
+const getStudentAttendanceByTeacher = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { date } = req.query;
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active session' });
+    }
+
+    const filter = {
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+      markedBy: teacherId,
+    };
+
+    if (date) {
+      filter.date = normalizeDate(date);
+    }
+
+    const records = await StudentDailyAttendance.find(filter)
+      .populate('studentId', 'name rollNumber')
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .sort({ date: -1 });
+
+    return res.json({ success: true, data: records });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/attendance/summary/monthly?classId=&month=YYYY-MM
+const getMonthlyAttendanceSummary = async (req, res) => {
+  try {
+    const { classId, month } = req.query;
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!month) {
+      return res.status(400).json({
+        success: false,
+        message: 'month is required (YYYY-MM)',
+      });
+    }
+
+    const [year, mon] = month.split('-').map(Number);
+    const startDate = new Date(year, mon - 1, 1);
+    const endDate = new Date(year, mon, 0, 23, 59, 59);
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active session' });
+    }
+
+    const filter = {
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+      date: { $gte: startDate, $lte: endDate },
+    };
+
+    if (classId) {
+      filter.classId = classId;
+    }
+
+    const records = await StudentDailyAttendance.find(filter)
+      .populate('studentId', 'name rollNumber')
+      .lean();
+
+    const studentMap = {};
+
+    for (const rec of records) {
+      const sid = rec.studentId?._id?.toString() || rec.studentId?.toString();
+      if (!sid) {
+        continue;
+      }
+
+      if (!studentMap[sid]) {
+        studentMap[sid] = {
+          studentId: sid,
+          name: rec.studentId?.name || 'Unknown',
+          rollNumber: rec.studentId?.rollNumber || '',
+          present: 0,
+          absent: 0,
+          late: 0,
+          leave: 0,
+          total: 0,
+        };
+      }
+
+      studentMap[sid].total++;
+      const s = rec.status;
+      if (s === 'PRESENT') studentMap[sid].present++;
+      else if (s === 'ABSENT') studentMap[sid].absent++;
+      else if (s === 'LATE') studentMap[sid].late++;
+      else if (s === 'LEAVE' || s === 'SICK_LEAVE' || s === 'HALF_DAY') {
+        studentMap[sid].leave++;
+      }
+    }
+
+    const result = Object.values(studentMap).map((s) => ({
+      ...s,
+      percentage: s.total > 0 ? Math.round((s.present / s.total) * 100) : 0,
+    }));
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   markStudentDailyAttendance,
   getStudentDailyAttendance,
+  getStudentAttendanceByTeacher,
   markSubjectAttendance,
   getSubjectAttendance,
+  getPeriodWiseSummary,
   markTeacherAttendance,
   getTeacherAttendance,
   getParentAttendance,
@@ -746,8 +1000,10 @@ module.exports = {
   markStaffAttendance,
   getStaffAttendance,
   getAttendanceSummary,
+  getMonthlyAttendanceSummary,
   getStaffMembers,
   checkDuplicateAttendance,
+  checkLateThreshold,
 };
 
 const STAFF_MEMBER_ROLES = ['TEACHER', 'OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
