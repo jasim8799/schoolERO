@@ -14,11 +14,12 @@ const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
 
+// TEACHER added — controller enforces Class-only for teachers
 router.post(
   '/',
   authenticate,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.TEACHER),
   createNotice
 );
 

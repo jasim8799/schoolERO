@@ -33,13 +33,23 @@ const createNotice = async (req, res) => {
       eventDate,
       attachments,
     } = req.body;
-    const { schoolId, _id: createdBy } = req.user;
+    const { schoolId, _id: createdBy, role } = req.user;
 
     if (!title || !message) {
       return res.status(400).json({
         success: false,
         message: 'Title and message are required',
       });
+    }
+
+    // Teachers can ONLY send to a specific class
+    if (role === 'TEACHER') {
+      if (target !== 'Class' || !classId) {
+        return res.status(403).json({
+          success: false,
+          message: 'Teachers can only send notices to a specific class. Please select "Specific Class" and choose a class.',
+        });
+      }
     }
 
     const validTypes = ['Notice', 'Announcement'];
@@ -148,12 +158,25 @@ const getParentNotices = async (req, res) => {
 
 const getTeacherNotices = async (req, res) => {
   try {
-    const { schoolId } = req.user;
+    const { schoolId, _id: userId } = req.user;
 
     const audienceConditions = [{ target: 'All School' }, { target: 'Teachers' }];
 
+    // Also include class notices created by this teacher
+    const teacherCreatedNotices = await Notice.find({
+      schoolId,
+      createdBy: userId,
+      target: 'Class',
+    }).select('classId').lean();
+
+    const classIds = teacherCreatedNotices.map((n) => n.classId).filter(Boolean);
+    for (const cid of classIds) {
+      audienceConditions.push({ target: 'Class', classId: cid });
+    }
+
     const notices = await Notice.find(_buildFilter(schoolId, audienceConditions))
       .populate('classId', 'name')
+      .populate('createdBy', 'name')
       .sort({ createdAt: -1 })
       .lean();
 
