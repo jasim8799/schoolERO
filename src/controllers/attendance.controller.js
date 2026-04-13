@@ -914,17 +914,26 @@ const getTeacherClassStudents = async (req, res) => {
       return res.status(400).json({ success: false, message: 'classId is required' });
     }
 
-    const assignmentFilter = {
-      $or: [
-        { teacherId: userId, classId, schoolId: normalizedSchoolId },
-        { userId,            classId, schoolId: normalizedSchoolId },
-      ],
-    };
-    if (sectionId) {
-      assignmentFilter.$or.forEach((f) => (f.sectionId = sectionId));
+    // TeacherAssignment.teacherId references the Teacher model, not the User model.
+    // req.user.userId is User._id — resolve the Teacher profile first.
+    const Teacher = require('../models/Teacher.js');
+    const teacherProfile = await Teacher.findOne({
+      userId,
+      schoolId: normalizedSchoolId,
+    }).select('_id').lean();
+
+    if (!teacherProfile) {
+      return res.status(403).json({
+        success: false,
+        message: 'Teacher profile not found for this user',
+      });
     }
 
-    const assignments = await TeacherAssignment.find(assignmentFilter)
+    const assignments = await TeacherAssignment.find({
+      teacherId: teacherProfile._id,
+      classId,
+      schoolId: normalizedSchoolId,
+    })
       .select('sectionId')
       .lean();
 
