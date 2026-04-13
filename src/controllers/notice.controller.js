@@ -3,7 +3,21 @@ const Student = require('../models/Student');
 const Parent = require('../models/Parent');
 
 function _activeExpiryFilter() {
-  return { $or: [{ expiryDate: null }, { expiryDate: { $gte: new Date() } }] };
+  return {
+    $or: [
+      { expiryDate: null },
+      { expiryDate: { $exists: false } },
+      { expiryDate: { $gte: new Date() } },
+    ],
+  };
+}
+
+function _buildFilter(schoolId, audienceConditions) {
+  return {
+    schoolId,
+    isActive: true,
+    $and: [{ $or: audienceConditions }, _activeExpiryFilter()],
+  };
 }
 
 const createNotice = async (req, res) => {
@@ -79,17 +93,12 @@ const getStudentNotices = async (req, res) => {
 
     const student = await Student.findOne({ userId, schoolId }).select('classId').lean();
 
-    const orConditions = [{ target: 'All School' }, { target: 'Students' }];
+    const audienceConditions = [{ target: 'All School' }, { target: 'Students' }];
     if (student?.classId) {
-      orConditions.push({ target: 'Class', classId: student.classId });
+      audienceConditions.push({ target: 'Class', classId: student.classId });
     }
 
-    const notices = await Notice.find({
-      schoolId,
-      isActive: true,
-      $or: orConditions,
-      ..._activeExpiryFilter(),
-    })
+    const notices = await Notice.find(_buildFilter(schoolId, audienceConditions))
       .populate('classId', 'name')
       .sort({ createdAt: -1 })
       .lean();
@@ -121,17 +130,12 @@ const getParentNotices = async (req, res) => {
       classId = student?.classId || null;
     }
 
-    const orConditions = [{ target: 'All School' }, { target: 'Parents' }];
+    const audienceConditions = [{ target: 'All School' }, { target: 'Parents' }];
     if (classId) {
-      orConditions.push({ target: 'Class', classId });
+      audienceConditions.push({ target: 'Class', classId });
     }
 
-    const notices = await Notice.find({
-      schoolId,
-      isActive: true,
-      $or: orConditions,
-      ..._activeExpiryFilter(),
-    })
+    const notices = await Notice.find(_buildFilter(schoolId, audienceConditions))
       .populate('classId', 'name')
       .sort({ createdAt: -1 })
       .lean();
@@ -146,12 +150,9 @@ const getTeacherNotices = async (req, res) => {
   try {
     const { schoolId } = req.user;
 
-    const notices = await Notice.find({
-      schoolId,
-      isActive: true,
-      $or: [{ target: 'All School' }, { target: 'Teachers' }],
-      ..._activeExpiryFilter(),
-    })
+    const audienceConditions = [{ target: 'All School' }, { target: 'Teachers' }];
+
+    const notices = await Notice.find(_buildFilter(schoolId, audienceConditions))
       .populate('classId', 'name')
       .sort({ createdAt: -1 })
       .lean();

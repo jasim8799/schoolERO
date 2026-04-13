@@ -192,7 +192,7 @@ app.use('/api/videos', attachSchoolId, checkSubscriptionStatus(), checkModuleAcc
 app.use('/api/admissions', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), admissionRoutes);
 app.use('/api/questions', attachSchoolId, checkSubscriptionStatus(), questionRoutes);
 app.use('/api/ptm', attachSchoolId, checkSubscriptionStatus(), ptmRoutes);
-app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('notices'), noticeRoutes);
+app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), noticeRoutes);
 
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');
