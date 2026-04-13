@@ -915,12 +915,13 @@ const getTeacherClassStudents = async (req, res) => {
     }
 
     const assignmentFilter = {
-      teacherId: userId,
-      schoolId: normalizedSchoolId,
-      classId,
+      $or: [
+        { teacherId: userId, classId, schoolId: normalizedSchoolId },
+        { userId,            classId, schoolId: normalizedSchoolId },
+      ],
     };
     if (sectionId) {
-      assignmentFilter.sectionId = sectionId;
+      assignmentFilter.$or.forEach((f) => (f.sectionId = sectionId));
     }
 
     const assignments = await TeacherAssignment.find(assignmentFilter)
