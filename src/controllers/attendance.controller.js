@@ -944,33 +944,30 @@ const getTeacherClassStudents = async (req, res) => {
       });
     }
 
-    const activeSession = await AcademicSession.findOne({
-      schoolId: normalizedSchoolId,
-      isActive: true,
-    });
 
-    if (!activeSession) {
-      return res.status(400).json({ success: false, message: 'No active session' });
-    }
-
-    const filter = {
+    // Build student filter — NO sessionId filter here.
+    // Student.sessionId = the session they were enrolled in (not current session).
+    // We want all ACTIVE students in this class regardless of enrollment session.
+    const studentFilter = {
       classId,
       schoolId: normalizedSchoolId,
-      sessionId: activeSession._id,
+      status: 'ACTIVE', // only active students
     };
 
     if (sectionId) {
-      filter.sectionId = sectionId;
+      // If teacher selected a specific section, use it
+      studentFilter.sectionId = sectionId;
     } else {
+      // Restrict to sections the teacher is assigned to
       const allowedSectionIds = [
         ...new Set(assignments.map((a) => a.sectionId?.toString()).filter(Boolean)),
       ];
       if (allowedSectionIds.length > 0) {
-        filter.sectionId = { $in: allowedSectionIds };
+        studentFilter.sectionId = { $in: allowedSectionIds };
       }
     }
 
-    const students = await Student.find(filter)
+    const students = await Student.find(studentFilter)
       .select('_id name rollNumber classId sectionId')
       .sort({ rollNumber: 1 })
       .lean();
