@@ -1,3 +1,7 @@
+// Stub for markSubjectAttendance
+const markSubjectAttendance = async (req, res) => {
+  return res.status(200).json({ success: true, message: 'Mark subject attendance endpoint stub.' });
+};
 const StudentDailyAttendance = require('../models/StudentDailyAttendance.js');
 const StudentSubjectAttendance = require('../models/StudentSubjectAttendance.js');
 const TeacherAttendance = require('../models/TeacherAttendance.js');
