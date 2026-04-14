@@ -229,10 +229,11 @@ const getAllStudents = async (req, res) => {
 
     // Teachers can only access students from their assigned class/section.
     if (req.user.role === 'TEACHER') {
+      const mongoose = require('mongoose');
       const Teacher = require('../models/Teacher.js');
       const teacherProfile = await Teacher.findOne({
-        userId: req.user.userId,
-        schoolId,
+        userId:   new mongoose.Types.ObjectId(req.user.userId),
+        schoolId: new mongoose.Types.ObjectId(schoolId?._id || schoolId),
       }).select('_id').lean();
 
       if (!teacherProfile) {

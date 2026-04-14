@@ -908,60 +908,75 @@ const getTeacherClassStudents = async (req, res) => {
   try {
     const { classId, sectionId } = req.query;
     const { userId, schoolId } = req.user;
-    const normalizedSchoolId = schoolId?._id || schoolId;
 
-    console.log('getTeacherClassStudents called:', { userId, normalizedSchoolId, classId, sectionId });
+    // ── Normalize schoolId to ObjectId ────────────────────────────────────
+    const mongoose = require('mongoose');
+    let normalizedSchoolId;
+    try {
+      normalizedSchoolId = new mongoose.Types.ObjectId(schoolId?._id || schoolId);
+    } catch (_) {
+      return res.status(400).json({ success: false, message: 'Invalid school ID' });
+    }
 
+    if (!classId) {
+      return res.status(400).json({ success: false, message: 'classId is required' });
+    }
+
+    // ── Resolve Teacher profile from User ID ──────────────────────────────
     const Teacher = require('../models/Teacher.js');
     const teacherProfile = await Teacher.findOne({
-      userId,
+      userId: new mongoose.Types.ObjectId(userId),
       schoolId: normalizedSchoolId,
     }).select('_id').lean();
 
-    console.log('Teacher profile found:', teacherProfile);
-
     if (!teacherProfile) {
-      return res.status(403).json({ success: false, message: 'Teacher profile not found' });
+      return res.status(403).json({
+        success: false,
+        message: 'Teacher profile not found for this user',
+      });
     }
 
+    // ── Verify teacher is assigned to this class ──────────────────────────
     const assignments = await TeacherAssignment.find({
       teacherId: teacherProfile._id,
-      classId,
-      schoolId: normalizedSchoolId,
+      classId:   new mongoose.Types.ObjectId(classId),
+      schoolId:  normalizedSchoolId,
     }).select('sectionId').lean();
 
-    console.log('Assignments found:', assignments.length, assignments);
-
     if (!assignments.length) {
-      return res.status(403).json({ success: false, message: 'You are not assigned to this class' });
+      return res.status(403).json({
+        success: false,
+        message: 'You are not assigned to this class',
+      });
     }
 
+    // ── Fetch students ────────────────────────────────────────────────────
     const studentFilter = {
-      classId,
+      classId:  new mongoose.Types.ObjectId(classId),
       schoolId: normalizedSchoolId,
-      status: 'ACTIVE',
+      status:   'ACTIVE',
     };
 
     if (sectionId) {
-      studentFilter.sectionId = sectionId;
+      studentFilter.sectionId = new mongoose.Types.ObjectId(sectionId);
     } else {
       const allowedSectionIds = [
-        ...new Set(assignments.map((a) => a.sectionId?.toString()).filter(Boolean)),
-      ];
-      console.log('Allowed section IDs:', allowedSectionIds);
+        ...new Set(
+          assignments
+            .map((a) => a.sectionId?.toString())
+            .filter(Boolean)
+        ),
+      ].map((id) => new mongoose.Types.ObjectId(id));
+
       if (allowedSectionIds.length > 0) {
         studentFilter.sectionId = { $in: allowedSectionIds };
       }
     }
 
-    console.log('Student filter:', JSON.stringify(studentFilter));
-
     const students = await Student.find(studentFilter)
       .select('_id name rollNumber classId sectionId')
       .sort({ rollNumber: 1 })
       .lean();
-
-    console.log('Students found:', students.length);
 
     return res.json({ success: true, data: students });
   } catch (err) {
