@@ -1,3 +1,7 @@
+// Stub for markStaffAttendance
+const markStaffAttendance = async (req, res) => {
+  return res.status(200).json({ success: true, message: 'Mark staff attendance endpoint stub.' });
+};
 // Stub for markSubjectAttendance
 const markSubjectAttendance = async (req, res) => {
   return res.status(200).json({ success: true, message: 'Mark subject attendance endpoint stub.' });
