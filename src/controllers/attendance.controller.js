@@ -1,3 +1,7 @@
+// Stub for getAttendanceSummary
+const getAttendanceSummary = async (req, res) => {
+  return res.status(200).json({ success: true, message: 'Attendance summary endpoint stub.' });
+};
 // Stub for markStaffAttendance
 const markStaffAttendance = async (req, res) => {
   return res.status(200).json({ success: true, message: 'Mark staff attendance endpoint stub.' });
