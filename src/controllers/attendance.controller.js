@@ -910,70 +910,62 @@ const getTeacherClassStudents = async (req, res) => {
     const { userId, schoolId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
 
-    if (!classId) {
-      return res.status(400).json({ success: false, message: 'classId is required' });
-    }
+    console.log('getTeacherClassStudents called:', { userId, normalizedSchoolId, classId, sectionId });
 
-    // TeacherAssignment.teacherId references the Teacher model, not the User model.
-    // req.user.userId is User._id — resolve the Teacher profile first.
     const Teacher = require('../models/Teacher.js');
     const teacherProfile = await Teacher.findOne({
       userId,
       schoolId: normalizedSchoolId,
     }).select('_id').lean();
 
+    console.log('Teacher profile found:', teacherProfile);
+
     if (!teacherProfile) {
-      return res.status(403).json({
-        success: false,
-        message: 'Teacher profile not found for this user',
-      });
+      return res.status(403).json({ success: false, message: 'Teacher profile not found' });
     }
 
     const assignments = await TeacherAssignment.find({
       teacherId: teacherProfile._id,
       classId,
       schoolId: normalizedSchoolId,
-    })
-      .select('sectionId')
-      .lean();
+    }).select('sectionId').lean();
+
+    console.log('Assignments found:', assignments.length, assignments);
 
     if (!assignments.length) {
-      return res.status(403).json({
-        success: false,
-        message: 'You are not assigned to this class',
-      });
+      return res.status(403).json({ success: false, message: 'You are not assigned to this class' });
     }
 
-
-    // Build student filter — NO sessionId filter here.
-    // Student.sessionId = the session they were enrolled in (not current session).
-    // We want all ACTIVE students in this class regardless of enrollment session.
     const studentFilter = {
       classId,
       schoolId: normalizedSchoolId,
-      status: 'ACTIVE', // only active students
+      status: 'ACTIVE',
     };
 
     if (sectionId) {
-      // If teacher selected a specific section, use it
       studentFilter.sectionId = sectionId;
     } else {
-      // Restrict to sections the teacher is assigned to
       const allowedSectionIds = [
         ...new Set(assignments.map((a) => a.sectionId?.toString()).filter(Boolean)),
       ];
+      console.log('Allowed section IDs:', allowedSectionIds);
       if (allowedSectionIds.length > 0) {
         studentFilter.sectionId = { $in: allowedSectionIds };
       }
     }
+
+    console.log('Student filter:', JSON.stringify(studentFilter));
 
     const students = await Student.find(studentFilter)
       .select('_id name rollNumber classId sectionId')
       .sort({ rollNumber: 1 })
       .lean();
 
+    console.log('Students found:', students.length);
+
     return res.json({ success: true, data: students });
   } catch (err) {
+    console.error('getTeacherClassStudents error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };

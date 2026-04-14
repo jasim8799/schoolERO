@@ -229,8 +229,18 @@ const getAllStudents = async (req, res) => {
 
     // Teachers can only access students from their assigned class/section.
     if (req.user.role === 'TEACHER') {
+      const Teacher = require('../models/Teacher.js');
+      const teacherProfile = await Teacher.findOne({
+        userId: req.user.userId,
+        schoolId,
+      }).select('_id').lean();
+
+      if (!teacherProfile) {
+        return res.status(HTTP_STATUS.OK).json({ success: true, count: 0, data: [] });
+      }
+
       const assignments = await TeacherAssignment.find({
-        teacherId: req.user.userId,
+        teacherId: teacherProfile._id,
         schoolId,
       })
         .select('classId sectionId')
