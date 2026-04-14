@@ -1068,106 +1068,24 @@ const getMonthlyAttendanceSummary = async (req, res) => {
   }
 };
 
+
 module.exports = {
-
-    // Block non-staff roles
-    if (!STAFF_ROLES.includes(role)) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
-
-    // Validate required fields
-    if (!date || !status) {
-      return res.status(400).json({ success: false, message: 'date and status are required' });
-    }
-    if (!VALID_STATUSES.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Allowed: ${VALID_STATUSES.join(', ')}`
-      });
-    }
-    if (checkIn  && !TIME_REGEX.test(checkIn))
-      return res.status(400).json({ success: false, message: 'Invalid checkIn format. Use HH:mm.' });
-    if (checkOut && !TIME_REGEX.test(checkOut))
-      return res.status(400).json({ success: false, message: 'Invalid checkOut format. Use HH:mm.' });
-
-    // Resolve which staff member is being marked
-    let staffId = userId;
-    let staffRole = role;
-
-    if (targetStaffId && targetStaffId !== userId.toString()) {
-      // Only admins can mark others
-      if (!ADMIN_ROLES.includes(role)) {
-        return res.status(403).json({ success: false, message: 'You can only mark your own attendance' });
-      }
-      // Look up the target user to get their role
-      const User = require('../models/User');
-      const targetUser = await User.findOne({ _id: targetStaffId, schoolId: normalizedSchoolId }).select('role');
-      if (!targetUser) {
-        return res.status(404).json({ success: false, message: 'Staff member not found in this school' });
-      }
-      if (!STAFF_ROLES.includes(targetUser.role)) {
-        return res.status(400).json({ success: false, message: 'Target user is not a staff member' });
-      }
-      staffId   = targetStaffId;
-      staffRole = targetUser.role;
-    } else {
-      // Self-mark: teachers can only mark today
-      if (role === 'TEACHER') {
-        const today = new Date().toISOString().split('T')[0];
-        if (date !== today) {
-          return res.status(400).json({ success: false, message: 'Teachers can only mark attendance for today' });
-        }
-      }
-    }
-
-    // Active session
-    const activeSession = await AcademicSession.findOne({ schoolId: normalizedSchoolId, isActive: true });
-    if (!activeSession) {
-      return res.status(400).json({ success: false, message: 'No active academic session found' });
-    }
-
-    const attendanceDate = normalizeDate(date);
-
-    // Prevent duplicate self-mark for teachers (admins may overwrite)
-    if (role === 'TEACHER' && staffId.toString() === userId.toString()) {
-      const existing = await StaffAttendance.findOne({ staffId, date: attendanceDate, schoolId: normalizedSchoolId });
-      if (existing) {
-        return res.status(400).json({ success: false, message: 'Attendance already marked for today. Contact admin to update.' });
-      }
-    }
-
-    const record = await StaffAttendance.findOneAndUpdate(
-      { staffId, date: attendanceDate, schoolId: normalizedSchoolId },
-      {
-        $set: {
-          role: staffRole,
-          status,
-          checkIn:   checkIn  ?? null,
-          checkOut:  checkOut ?? null,
-          markedBy:  userId,
-          sessionId: activeSession._id,
-        },
-      },
-      { upsert: true, new: true }
-    );
-
-    await auditLog({
-      action: 'TEACHER_ATTENDANCE_MARKED',   // reuse existing audit action
-      userId: req.user.userId,
-      schoolId,
-      details: { staffId, staffRole, date, status, markedByRole: role },
-      req,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Staff attendance marked successfully',
-      data: record,
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
-  }
-}
+  markStudentDailyAttendance,
+  getStudentDailyAttendance,
+  getStudentAttendanceByTeacher,
+  getTeacherClassStudents,
+  markSubjectAttendance,
+  getSubjectAttendance,
+  getPeriodWiseSummary,
+  markTeacherAttendance,
+  getTeacherAttendance,
+  getParentAttendance,
+  getAttendanceForParent,
+  getStudentSelfAttendance,
+  checkDuplicateAttendance,
+  checkLateThreshold,
+  getStaffAttendance,
+};
 
 /**
  * GET /api/attendance/staff
