@@ -71,7 +71,6 @@ const leaveRoutes = require('./routes/leave.routes');
 const app = express();
 
 // Middlewares
-//test
 app.use(cors({
   origin: config.cors.origin,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
