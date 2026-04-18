@@ -23,6 +23,7 @@ const studentRoutes = require('./routes/student.routes');
 const attendanceRoutes = require('./routes/attendance.routes');
 const examRoutes = require('./routes/exam.routes');
 const examSubjectRoutes = require('./routes/examSubject.routes');
+const examQuestionPaperRoutes = require('./routes/examQuestionPaper.routes');
 const examFormRoutes = require('./routes/examForm.routes');
 const examPaymentRoutes = require('./routes/examPayment.routes');
 const seatingArrangementRoutes = require('./routes/seatingArrangement.routes');
@@ -121,6 +122,7 @@ app.use('/api/students', attachSchoolId, attachActiveSession, checkSubscriptionS
 app.use('/api/homework', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('homework'), homeworkRoutes);
 app.use('/api/exams', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examRoutes);
 app.use('/api/exams', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examSubjectRoutes);
+app.use('/api/exam-question-papers', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examQuestionPaperRoutes);
 app.use('/api/exam-forms', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examFormRoutes);
 app.use('/api/exam-payments', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), examPaymentRoutes);
 app.use('/api/seating-arrangements', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('exams'), seatingArrangementRoutes);
