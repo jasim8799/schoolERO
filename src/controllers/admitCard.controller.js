@@ -176,6 +176,18 @@ const getMyAdmitCardByExamId = async (req, res) => {
     const { examId } = req.params;
     const { schoolId, sessionId, _id: userId, role } = req.user;
 
+    const Exam = require('../models/Exam.js');
+    const exam = await Exam.findById(examId);
+    if (!exam) {
+      return res.status(404).json({ success: false, message: 'Exam not found' });
+    }
+    if (!exam.isAdmitCardPublished) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admit cards have not been released yet. Please check back later.'
+      });
+    }
+
     let studentIds = [];
 
     if (role === 'STUDENT') {

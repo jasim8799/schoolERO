@@ -89,6 +89,38 @@ const publishExam = async (req, res) => {
   }
 };
 
+const publishAdmitCards = async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
+    if (!exam) {
+      return res.status(404).json({ message: 'Exam not found' });
+    }
+
+    if (exam.status !== 'Published') {
+      return res.status(403).json({ message: 'Exam must be published before releasing admit cards' });
+    }
+
+    const AdmitCard = require('../models/AdmitCard.js');
+    const count = await AdmitCard.countDocuments({ examId, schoolId, sessionId });
+    if (count === 0) {
+      return res.status(400).json({ message: 'No admit cards generated yet. Generate admit cards first.' });
+    }
+
+    const updated = await Exam.findByIdAndUpdate(
+      examId,
+      { isAdmitCardPublished: true, admitCardPublishedAt: new Date() },
+      { new: true }
+    );
+
+    res.json({ success: true, message: 'Admit cards published successfully', data: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const getExamById = async (req, res) => {
   try {
     const { examId } = req.params;
@@ -124,4 +156,4 @@ const getExamById = async (req, res) => {
   }
 };
 
-module.exports = { createExam, getExamsByClass, getExamById, updateExam, publishExam };
+module.exports = { createExam, getExamsByClass, getExamById, updateExam, publishExam, publishAdmitCards };
