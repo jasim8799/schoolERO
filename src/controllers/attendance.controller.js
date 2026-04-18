@@ -193,18 +193,19 @@ const markSubjectAttendance = async (req, res) => {
         return res.status(403).json({ success: false, message: 'Teacher profile not found for this user' });
       }
 
-      const assignmentFilters = records.map((record) => ({
+      const firstRecord = records[0];
+      const assignment = await TeacherAssignment.findOne({
         teacherId: teacherProfile._id,
-        classId: record.classId,
-        sectionId: record.sectionId,
-        subjectId: record.subjectId,
+        classId: firstRecord.classId,
+        subjectId: firstRecord.subjectId,
         schoolId: normalizedSchoolId,
-        sessionId: activeSession._id,
-      }));
+      }).select('_id');
 
-      const assignments = await TeacherAssignment.find({ $or: assignmentFilters }).select('_id');
-      if (assignments.length === 0) {
-        return res.status(403).json({ success: false, message: 'You are not assigned to this class/subject combination' });
+      if (!assignment) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not assigned to teach this subject in this class',
+        });
       }
     }
 
@@ -212,7 +213,7 @@ const markSubjectAttendance = async (req, res) => {
       if (!record.studentId || !record.classId || !record.subjectId || !record.date || !record.status) {
         return res.status(400).json({ success: false, message: 'Each record must include studentId, classId, subjectId, date, and status' });
       }
-      if (!['PRESENT', 'ABSENT'].includes(record.status)) {
+      if (!['PRESENT', 'ABSENT', 'LEAVE'].includes(record.status)) {
         return res.status(400).json({ success: false, message: 'Invalid subject attendance status' });
       }
 

@@ -27,7 +27,7 @@ const studentSubjectAttendanceSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PRESENT', 'ABSENT'],
+      enum: ['PRESENT', 'ABSENT', 'LEAVE'],
       required: true,
     },
     teacherId: {
