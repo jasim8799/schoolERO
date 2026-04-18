@@ -1,19 +1,3 @@
-// Stub for getStaffMembers
-const getStaffMembers = async (req, res) => {
-  return res.status(200).json({ success: true, message: 'Get staff members endpoint stub.' });
-};
-// Stub for getAttendanceSummary
-const getAttendanceSummary = async (req, res) => {
-  return res.status(200).json({ success: true, message: 'Attendance summary endpoint stub.' });
-};
-// Stub for markStaffAttendance
-const markStaffAttendance = async (req, res) => {
-  return res.status(200).json({ success: true, message: 'Mark staff attendance endpoint stub.' });
-};
-// Stub for markSubjectAttendance
-const markSubjectAttendance = async (req, res) => {
-  return res.status(200).json({ success: true, message: 'Mark subject attendance endpoint stub.' });
-};
 const StudentDailyAttendance = require('../models/StudentDailyAttendance.js');
 const StudentSubjectAttendance = require('../models/StudentSubjectAttendance.js');
 const TeacherAttendance = require('../models/TeacherAttendance.js');
@@ -33,17 +17,268 @@ const normalizeDate = (d) => {
   return date;
 };
 
+const STAFF_ROLES = ['TEACHER', 'OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
+const ADMIN_ROLES = ['OPERATOR', 'PRINCIPAL', 'SUPER_ADMIN'];
+const VALID_STATUSES = ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'LEAVE', 'SICK_LEAVE'];
+const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 // All function definitions (const style)
 
 const markStudentDailyAttendance = async (req, res) => {
   try {
-    // TODO: Implement real logic
+    const { records } = req.body;
+    const { userId, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'Records array is required' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId, isActive: true
+    });
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false, message: 'No active academic session found for this school'
+      });
+    }
+
+    const studentIds = records.map(r => r.studentId);
+    const students = await Student.find({
+      _id: { $in: studentIds }, schoolId: normalizedSchoolId
+    });
+    const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+
+    for (const record of records) {
+      const student = studentMap.get(record.studentId.toString());
+      if (!student) {
+        return res.status(400).json({
+          success: false, message: 'Student not found or does not belong to this school'
+        });
+      }
+      if (student.classId.toString() !== record.classId.toString()) {
+        return res.status(400).json({
+          success: false, message: 'Student does not belong to the specified class'
+        });
+      }
+      if (record.sectionId && student.sectionId.toString() !== record.sectionId.toString()) {
+        return res.status(400).json({
+          success: false, message: 'Student does not belong to the specified section'
+        });
+      }
+    }
+
+    const bulkOps = records.map((record) => {
+      const attendanceDate = normalizeDate(record.date);
+      return {
+        updateOne: {
+          filter: {
+            studentId: record.studentId,
+            date: attendanceDate,
+            schoolId: normalizedSchoolId,
+          },
+          update: {
+            $set: {
+              classId: record.classId,
+              sectionId: record.sectionId,
+              status: record.status,
+              markedBy: userId,
+              schoolId: normalizedSchoolId,
+              sessionId: activeSession._id,
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = await StudentDailyAttendance.bulkWrite(bulkOps);
+
+    try {
+      const Notice = require('../models/Notice.js');
+      const absentRecords = records.filter(r => r.status === 'ABSENT');
+      if (absentRecords.length > 0) {
+        const absentStudentIds = absentRecords.map(r => r.studentId);
+        const absentStudents = await Student.find({
+          _id: { $in: absentStudentIds }, schoolId: normalizedSchoolId,
+        }).select('name classId');
+        const parents = await Parent.find({
+          children: { $in: absentStudentIds }, schoolId: normalizedSchoolId,
+        });
+        if (parents.length > 0 && absentStudents.length > 0) {
+          const studentNames = absentStudents.map(s => s.name).join(', ');
+          await Notice.create({
+            schoolId: normalizedSchoolId,
+            title: `Absent Alert - ${records[0].date}`,
+            message: `The following student(s) were marked absent today (${records[0].date}): ${studentNames}.`,
+            target: 'Parents',
+            classId: records[0].classId,
+            announcementType: 'Notice',
+            isImportant: true,
+            createdBy: userId,
+          });
+        }
+      }
+    } catch (_) {}
+
+    await auditLog({
+      action: 'STUDENT_ATTENDANCE_MARKED',
+      userId: req.user.userId,
+      schoolId: req.user.schoolId,
+      details: { date: records[0].date, totalRecords: records.length },
+      req
+    });
+
     res.status(200).json({
       success: true,
-      message: 'Student daily attendance marked (stub)'
+      message: 'Attendance marked successfully',
+      data: { upserted: result.upsertedCount, modified: result.modifiedCount },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const markSubjectAttendance = async (req, res) => {
+  try {
+    const { records } = req.body;
+    const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'Records array is required' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found for this school',
+      });
+    }
+
+    const studentIds = [...new Set(records.map((r) => r.studentId?.toString()).filter(Boolean))];
+    const subjectIds = [...new Set(records.map((r) => r.subjectId?.toString()).filter(Boolean))];
+
+    if (studentIds.length === 0 || subjectIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'studentId and subjectId are required in records' });
+    }
+
+    const students = await Student.find({
+      _id: { $in: studentIds },
+      schoolId: normalizedSchoolId,
+    }).select('_id classId sectionId');
+    const studentMap = new Map(students.map((s) => [s._id.toString(), s]));
+
+    const subjects = await Subject.find({
+      _id: { $in: subjectIds },
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+    }).select('_id classId');
+    const subjectMap = new Map(subjects.map((s) => [s._id.toString(), s]));
+
+    if (role === 'TEACHER') {
+      const Teacher = require('../models/Teacher.js');
+      const teacherProfile = await Teacher.findOne({
+        userId,
+        schoolId: normalizedSchoolId,
+        sessionId: activeSession._id,
+      }).select('_id');
+
+      if (!teacherProfile) {
+        return res.status(403).json({ success: false, message: 'Teacher profile not found for this user' });
+      }
+
+      const assignmentFilters = records.map((record) => ({
+        teacherId: teacherProfile._id,
+        classId: record.classId,
+        sectionId: record.sectionId,
+        subjectId: record.subjectId,
+        schoolId: normalizedSchoolId,
+        sessionId: activeSession._id,
+      }));
+
+      const assignments = await TeacherAssignment.find({ $or: assignmentFilters }).select('_id');
+      if (assignments.length === 0) {
+        return res.status(403).json({ success: false, message: 'You are not assigned to this class/subject combination' });
+      }
+    }
+
+    for (const record of records) {
+      if (!record.studentId || !record.classId || !record.subjectId || !record.date || !record.status) {
+        return res.status(400).json({ success: false, message: 'Each record must include studentId, classId, subjectId, date, and status' });
+      }
+      if (!['PRESENT', 'ABSENT'].includes(record.status)) {
+        return res.status(400).json({ success: false, message: 'Invalid subject attendance status' });
+      }
+
+      const student = studentMap.get(record.studentId.toString());
+      if (!student) {
+        return res.status(400).json({ success: false, message: 'Student not found or does not belong to this school' });
+      }
+      if (student.classId.toString() !== record.classId.toString()) {
+        return res.status(400).json({ success: false, message: 'Student does not belong to the specified class' });
+      }
+      if (record.sectionId && student.sectionId.toString() !== record.sectionId.toString()) {
+        return res.status(400).json({ success: false, message: 'Student does not belong to the specified section' });
+      }
+
+      const subject = subjectMap.get(record.subjectId.toString());
+      if (!subject) {
+        return res.status(400).json({ success: false, message: 'Subject not found for this school/session' });
+      }
+      if (subject.classId.toString() !== record.classId.toString()) {
+        return res.status(400).json({ success: false, message: 'Subject does not belong to the specified class' });
+      }
+    }
+
+    const bulkOps = records.map((record) => ({
+      updateOne: {
+        filter: {
+          studentId: record.studentId,
+          subjectId: record.subjectId,
+          date: normalizeDate(record.date),
+          period: record.period ? Number(record.period) : null,
+          schoolId: normalizedSchoolId,
+        },
+        update: {
+          $set: {
+            classId: record.classId,
+            status: record.status,
+            teacherId: userId,
+            schoolId: normalizedSchoolId,
+            sessionId: activeSession._id,
+            period: record.period ? Number(record.period) : null,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await StudentSubjectAttendance.bulkWrite(bulkOps);
+
+    await auditLog({
+      action: 'SUBJECT_ATTENDANCE_MARKED',
+      userId,
+      schoolId: normalizedSchoolId,
+      details: { date: records[0].date, totalRecords: records.length, subjectId: records[0].subjectId },
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Subject attendance marked successfully',
+      data: {
+        upserted: result.upsertedCount,
+        modified: result.modifiedCount,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -840,9 +1075,262 @@ const getMonthlyAttendanceSummary = async (req, res) => {
 
 
 
-// --- END OF FUNCTION DEFINITIONS ---
+const markStaffAttendance = async (req, res) => {
+  try {
+    const { date, status, checkIn, checkOut, staffId: targetStaffId } = req.body;
+    const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
 
-// Single module.exports at the very end
+    if (!STAFF_ROLES.includes(role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    if (!date || !status) {
+      return res.status(400).json({ success: false, message: 'date and status are required' });
+    }
+
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status value' });
+    }
+
+    if (checkIn && !TIME_REGEX.test(checkIn)) {
+      return res.status(400).json({ success: false, message: 'Invalid checkIn time format. Use HH:mm.' });
+    }
+    if (checkOut && !TIME_REGEX.test(checkOut)) {
+      return res.status(400).json({ success: false, message: 'Invalid checkOut time format. Use HH:mm.' });
+    }
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    }
+
+    let staffId = userId;
+    if (ADMIN_ROLES.includes(role)) {
+      if (targetStaffId) {
+        staffId = targetStaffId;
+      }
+    } else {
+      if (targetStaffId && targetStaffId.toString() !== userId.toString()) {
+        return res.status(403).json({ success: false, message: 'You can only mark your own attendance' });
+      }
+      const today = new Date().toISOString().split('T')[0];
+      if (date !== today) {
+        return res.status(400).json({ success: false, message: 'Teachers can only mark attendance for today' });
+      }
+    }
+
+    const staffUser = await User.findOne({
+      _id: staffId,
+      schoolId: normalizedSchoolId,
+      role: { $in: STAFF_ROLES },
+    }).select('_id role');
+
+    if (!staffUser) {
+      return res.status(404).json({ success: false, message: 'Staff user not found in this school' });
+    }
+
+    const attendanceDate = normalizeDate(date);
+
+    const attendance = await StaffAttendance.findOneAndUpdate(
+      {
+        staffId,
+        date: attendanceDate,
+        schoolId: normalizedSchoolId,
+      },
+      {
+        $set: {
+          role: staffUser.role,
+          status,
+          checkIn,
+          checkOut,
+          markedBy: userId,
+          schoolId: normalizedSchoolId,
+          sessionId: activeSession._id,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+      }
+    );
+
+    await auditLog({
+      action: 'STAFF_ATTENDANCE_MARKED',
+      userId,
+      schoolId: normalizedSchoolId,
+      details: {
+        staffId,
+        date,
+        status,
+        markedByRole: role,
+      },
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Staff attendance marked successfully',
+      data: attendance,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/attendance/staff
+ * Query: date?, startDate?, endDate?, staffId?, role?
+ *
+ * - Staff members see only their own records.
+ * - OPERATOR / PRINCIPAL / SUPER_ADMIN see all (filterable by role / staffId).
+ */
+const getStaffAttendance = async (req, res) => {
+  try {
+    const { date, startDate, endDate, staffId, role: filterRole } = req.query;
+    const { userId, role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!STAFF_ROLES.includes(role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const activeSession = await AcademicSession.findOne({ schoolId: normalizedSchoolId, isActive: true });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    }
+
+    const filter = { schoolId: normalizedSchoolId, sessionId: activeSession._id };
+
+    if (!ADMIN_ROLES.includes(role)) {
+      filter.staffId = userId;
+    } else {
+      if (staffId) filter.staffId = staffId;
+      if (filterRole) filter.role = filterRole;
+    }
+
+    if (date) {
+      filter.date = normalizeDate(date);
+    } else if (startDate && endDate) {
+      const start = normalizeDate(startDate);
+      const end = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
+    }
+
+    const records = await StaffAttendance.find(filter)
+      .populate('staffId', 'name email role')
+      .populate('markedBy', 'name')
+      .sort({ date: -1 });
+
+    return res.status(200).json({ success: true, data: records });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getStaffMembers = async (req, res) => {
+  try {
+    const { role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (!STAFF_ROLES.includes(role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const users = await User.find({
+      schoolId: normalizedSchoolId,
+      role: { $in: STAFF_ROLES },
+      status: { $regex: /^active$/i },
+    })
+      .select('_id name email role employeeId designation mobile')
+      .sort({ name: 1 })
+      .lean();
+
+    return res.status(200).json({ success: true, data: users });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getAttendanceSummary = async (req, res) => {
+  try {
+    const { date } = req.query;
+    const { schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    const activeSession = await AcademicSession.findOne({
+      schoolId: normalizedSchoolId,
+      isActive: true,
+    });
+    if (!activeSession) {
+      return res.status(400).json({ success: false, message: 'No active academic session found' });
+    }
+
+    const targetDate = normalizeDate(date || new Date().toISOString().split('T')[0]);
+
+    const totalStudents = await Student.countDocuments({
+      schoolId: normalizedSchoolId,
+      sessionId: activeSession._id,
+      status: { $regex: /^active$/i },
+    });
+
+    const attendanceAgg = await StudentDailyAttendance.aggregate([
+      {
+        $match: {
+          schoolId: normalizedSchoolId,
+          sessionId: activeSession._id,
+          date: targetDate,
+        },
+      },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const counters = {
+      PRESENT: 0,
+      ABSENT: 0,
+      LATE: 0,
+      HALF_DAY: 0,
+      LEAVE: 0,
+      SICK_LEAVE: 0,
+    };
+
+    for (const row of attendanceAgg) {
+      counters[row._id] = row.count;
+    }
+
+    const presentCount = counters.PRESENT;
+    const absentCount = counters.ABSENT;
+    const lateCount = counters.LATE;
+    const leaveCount = counters.HALF_DAY + counters.LEAVE + counters.SICK_LEAVE;
+    const markedCount = presentCount + absentCount + lateCount + leaveCount;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        date: targetDate,
+        totalStudents,
+        presentCount,
+        absentCount,
+        lateCount,
+        leaveCount,
+        markedCount,
+        unmarkedCount: Math.max(0, totalStudents - markedCount),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   markStudentDailyAttendance,
   getStudentDailyAttendance,
@@ -864,55 +1352,3 @@ module.exports = {
   checkDuplicateAttendance,
   checkLateThreshold,
 };
-
-/**
- * GET /api/attendance/staff
- * Query: date?, startDate?, endDate?, staffId?, role?
- *
- * - Staff members see only their own records.
- * - OPERATOR / PRINCIPAL / SUPER_ADMIN see all (filterable by role / staffId).
- */
-async function getStaffAttendance(req, res) {
-  try {
-    const { date, startDate, endDate, staffId, role: filterRole } = req.query;
-    const { userId, role, schoolId } = req.user;
-    const normalizedSchoolId = schoolId?._id || schoolId;
-
-    if (!STAFF_ROLES.includes(role)) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
-
-    const activeSession = await AcademicSession.findOne({ schoolId: normalizedSchoolId, isActive: true });
-    if (!activeSession) {
-      return res.status(400).json({ success: false, message: 'No active academic session found' });
-    }
-
-    const filter = { schoolId: normalizedSchoolId, sessionId: activeSession._id };
-
-    // Non-admin staff only see their own records
-    if (!ADMIN_ROLES.includes(role)) {
-      filter.staffId = userId;
-    } else {
-      if (staffId)     filter.staffId = staffId;
-      if (filterRole)  filter.role    = filterRole;
-    }
-
-    if (date) {
-      filter.date = normalizeDate(date);
-    } else if (startDate && endDate) {
-      const start = normalizeDate(startDate);
-      const end   = new Date(normalizeDate(endDate));
-      end.setHours(23, 59, 59, 999);
-      filter.date = { $gte: start, $lte: end };
-    }
-
-    const records = await StaffAttendance.find(filter)
-      .populate('staffId',   'name email')
-      .populate('markedBy',  'name')
-      .sort({ date: -1 });
-
-    return res.status(200).json({ success: true, data: records });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
-  }
-}
