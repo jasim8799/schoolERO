@@ -47,85 +47,66 @@ const getExamsByClass = async (req, res) => {
 
 const getMyAssignedExams = async (req, res) => {
   try {
-    const { schoolId, sessionId, _id: userId } = req.user;
+    const { _id: teacherId, schoolId, sessionId } = req.user;
 
-    const myExamSubjects = await ExamSubject.find({
-      teacherId: userId,
+    // Find all ExamSubject rows assigned to this teacher
+    const mySubjectRows = await ExamSubject.find({
+      teacherId,
       schoolId,
       sessionId,
     }).populate('subjectId', 'name');
 
-    if (!myExamSubjects.length) {
-      return res.json({
-        success: true,
-        message: 'No assigned exams found',
-        data: [],
-      });
+    if (mySubjectRows.length === 0) {
+      return res.json({ success: true, data: [] });
     }
 
-    const examIdStrings = [...new Set(myExamSubjects.map((es) => String(es.examId)))];
+    // Get unique examIds
+    const examIds = [...new Set(mySubjectRows.map((s) => s.examId.toString()))];
 
+    // Fetch the actual exams
     const exams = await Exam.find({
-      _id: { $in: examIdStrings },
+      _id: { $in: examIds },
       schoolId,
       sessionId,
     }).sort({ startDate: 1 });
 
-    const myPapers = await ExamQuestionPaper.find({
-      examId: { $in: examIdStrings },
-      teacherId: userId,
-      schoolId,
-      sessionId,
-    }).select('examId subjectId status');
+    // For each exam, attach only THIS teacher's subjects + paper status
+    const result = await Promise.all(
+      exams.map(async (exam) => {
+        const mySubjectsForExam = mySubjectRows.filter(
+          (s) => s.examId.toString() === exam._id.toString()
+        );
 
-    const paperStatusByExamSubject = new Map();
-    for (const paper of myPapers) {
-      const key = `${String(paper.examId)}_${String(paper.subjectId)}`;
-      paperStatusByExamSubject.set(key, paper.status || 'Draft');
-    }
+        const subjectsWithPaperStatus = await Promise.all(
+          mySubjectsForExam.map(async (sub) => {
+            const paper = await ExamQuestionPaper.findOne({
+              examId: exam._id,
+              subjectId: sub.subjectId._id,
+              teacherId,
+              schoolId,
+              sessionId,
+            });
+            return {
+              subjectId: sub.subjectId._id,
+              subjectName: sub.subjectId?.name ?? '',
+              maxMarks: sub.maxMarks,
+              passMarks: sub.passMarks,
+              examDate: sub.examDate,
+              paperStatus: paper ? paper.status : 'NotStarted',
+            };
+          })
+        );
 
-    const subjectsByExam = new Map();
-    for (const examSubject of myExamSubjects) {
-      const examId = String(examSubject.examId);
-      const subjectId = examSubject.subjectId;
-      const subjectIdString =
-        subjectId && typeof subjectId === 'object' && subjectId._id
-          ? String(subjectId._id)
-          : String(subjectId);
-      const paperKey = `${examId}_${subjectIdString}`;
-      const paperStatus = paperStatusByExamSubject.get(paperKey) || 'NotStarted';
+        return {
+          ...exam.toObject(),
+          mySubjects: subjectsWithPaperStatus,
+        };
+      })
+    );
 
-      if (!subjectsByExam.has(examId)) {
-        subjectsByExam.set(examId, []);
-      }
-
-      subjectsByExam.get(examId).push({
-        subjectId: subjectIdString,
-        subjectName:
-          subjectId && typeof subjectId === 'object' && subjectId.name
-            ? subjectId.name
-            : '',
-        maxMarks: examSubject.maxMarks,
-        examDate: examSubject.examDate,
-        paperStatus,
-      });
-    }
-
-    const data = exams.map((exam) => {
-      const examId = String(exam._id);
-      return {
-        ...exam.toObject(),
-        mySubjects: subjectsByExam.get(examId) || [],
-      };
-    });
-
-    res.json({
-      success: true,
-      message: 'Assigned exams fetched successfully',
-      data,
-    });
+    res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message, data: [] });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
