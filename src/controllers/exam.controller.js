@@ -1,5 +1,6 @@
 const Exam = require('../models/Exam.js');
 const ExamSubject = require('../models/ExamSubject.js');
+const ExamQuestionPaper = require('../models/ExamQuestionPaper.js');
 
 const createExam = async (req, res) => {
   try {
@@ -41,6 +42,90 @@ const getExamsByClass = async (req, res) => {
     res.json({ success: true, data: exams });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+const getMyAssignedExams = async (req, res) => {
+  try {
+    const { schoolId, sessionId, _id: userId } = req.user;
+
+    const myExamSubjects = await ExamSubject.find({
+      teacherId: userId,
+      schoolId,
+      sessionId,
+    }).populate('subjectId', 'name');
+
+    if (!myExamSubjects.length) {
+      return res.json({
+        success: true,
+        message: 'No assigned exams found',
+        data: [],
+      });
+    }
+
+    const examIdStrings = [...new Set(myExamSubjects.map((es) => String(es.examId)))];
+
+    const exams = await Exam.find({
+      _id: { $in: examIdStrings },
+      schoolId,
+      sessionId,
+    }).sort({ startDate: 1 });
+
+    const myPapers = await ExamQuestionPaper.find({
+      examId: { $in: examIdStrings },
+      teacherId: userId,
+      schoolId,
+      sessionId,
+    }).select('examId subjectId status');
+
+    const paperStatusByExamSubject = new Map();
+    for (const paper of myPapers) {
+      const key = `${String(paper.examId)}_${String(paper.subjectId)}`;
+      paperStatusByExamSubject.set(key, paper.status || 'Draft');
+    }
+
+    const subjectsByExam = new Map();
+    for (const examSubject of myExamSubjects) {
+      const examId = String(examSubject.examId);
+      const subjectId = examSubject.subjectId;
+      const subjectIdString =
+        subjectId && typeof subjectId === 'object' && subjectId._id
+          ? String(subjectId._id)
+          : String(subjectId);
+      const paperKey = `${examId}_${subjectIdString}`;
+      const paperStatus = paperStatusByExamSubject.get(paperKey) || 'NotStarted';
+
+      if (!subjectsByExam.has(examId)) {
+        subjectsByExam.set(examId, []);
+      }
+
+      subjectsByExam.get(examId).push({
+        subjectId: subjectIdString,
+        subjectName:
+          subjectId && typeof subjectId === 'object' && subjectId.name
+            ? subjectId.name
+            : '',
+        maxMarks: examSubject.maxMarks,
+        examDate: examSubject.examDate,
+        paperStatus,
+      });
+    }
+
+    const data = exams.map((exam) => {
+      const examId = String(exam._id);
+      return {
+        ...exam.toObject(),
+        mySubjects: subjectsByExam.get(examId) || [],
+      };
+    });
+
+    res.json({
+      success: true,
+      message: 'Assigned exams fetched successfully',
+      data,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message, data: [] });
   }
 };
 
@@ -156,4 +241,12 @@ const getExamById = async (req, res) => {
   }
 };
 
-module.exports = { createExam, getExamsByClass, getExamById, updateExam, publishExam, publishAdmitCards };
+module.exports = {
+  createExam,
+  getExamsByClass,
+  getMyAssignedExams,
+  getExamById,
+  updateExam,
+  publishExam,
+  publishAdmitCards,
+};
