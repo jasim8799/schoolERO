@@ -19,6 +19,9 @@ const ExamSubjectSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  examDate: {
+    type: Date,
+  },
   teacherId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

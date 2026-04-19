@@ -1,6 +1,5 @@
 const ExamQuestionPaper = require('../models/ExamQuestionPaper');
 const ExamSubject = require('../models/ExamSubject');
-const Teacher = require('../models/Teacher');
 
 const saveQuestionPaper = async (req, res) => {
   try {
@@ -16,13 +15,6 @@ const saveQuestionPaper = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: 'At least one question is required' });
-    }
-
-    const teacher = await Teacher.findOne({ userId, schoolId });
-    if (!teacher) {
-      return res
-        .status(403)
-        .json({ success: false, message: 'Teacher profile not found' });
     }
 
     const examSubject = await ExamSubject.findOne({

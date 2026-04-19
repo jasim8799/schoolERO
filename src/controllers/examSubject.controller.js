@@ -1,9 +1,10 @@
 const Exam = require('../models/Exam.js');
 const ExamSubject = require('../models/ExamSubject.js');
+const Teacher = require('../models/Teacher.js');
 
 const createExamSubject = async (req, res) => {
   try {
-    const { subjectId, maxMarks, passMarks, teacherId } = req.body;
+    const { subjectId, maxMarks, passMarks, teacherId, examDate } = req.body;
     const { examId } = req.params;
     const { schoolId, sessionId, _id: userId } = req.user;
 
@@ -25,12 +26,19 @@ const createExamSubject = async (req, res) => {
       });
     }
 
+    const teacherProfile = await Teacher.findOne({ _id: teacherId, schoolId });
+    if (!teacherProfile) {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+    const teacherUserId = teacherProfile.userId;
+
     const examSubject = await ExamSubject.create({
       examId,
       subjectId,
-      teacherId,
+      teacherId: teacherUserId,
       maxMarks,
       passMarks,
+      examDate: examDate || null,
       sessionId: exam.sessionId, // ✅ USE EXAM SESSION
       schoolId,
       createdBy: userId
