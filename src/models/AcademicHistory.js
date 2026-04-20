@@ -31,7 +31,7 @@ const AcademicHistorySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Completed', 'Promoted', 'Retained', 'Left'],
+    enum: ['Completed', 'Promoted', 'Retained', 'Left', 'Graduated'],
     required: true
   },
   schoolId: {

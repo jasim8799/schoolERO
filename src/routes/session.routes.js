@@ -3,10 +3,13 @@ const {
   createSession,
   getSessionsBySchool,
   getActiveSession,
-  updateSession
+  updateSession,
+  duplicateSessionSetup,
+  getSessionReadiness,
+  activateSession
 } = require('../controllers/session.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
-const { requireMinRole } = require('../middlewares/role.middleware.js');
+const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
@@ -32,6 +35,24 @@ router.patch(
   '/:id',
   requireMinRole(USER_ROLES.PRINCIPAL),
   updateSession
+);
+
+router.post(
+  '/:sessionId/duplicate-setup',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  duplicateSessionSetup
+);
+
+router.get(
+  '/:sessionId/readiness',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  getSessionReadiness
+);
+
+router.post(
+  '/:sessionId/activate',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  activateSession
 );
 
 module.exports = router;

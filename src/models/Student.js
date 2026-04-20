@@ -53,7 +53,7 @@ const studentSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['ACTIVE', 'INACTIVE', 'PROMOTED', 'LEFT'],
+    enum: ['ACTIVE', 'INACTIVE', 'PROMOTED', 'LEFT', 'GRADUATED'],
     default: 'ACTIVE'
   },
   dateOfBirth: {

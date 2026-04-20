@@ -2,6 +2,7 @@ const Student = require('../models/Student.js');
 const AcademicHistory = require('../models/AcademicHistory.js');
 const Result = require('../models/Result.js');
 const Class = require('../models/Class.js');
+const Bill = require('../models/Bill.js');
 
 // Shared helper function for consistent promotion logic
 async function getNextClass(currentClassId, schoolId, toSessionId) {
@@ -39,7 +40,32 @@ const previewPromotion = async (req, res) => {
       return res.status(400).json({ message: 'Sessions must be different' });
     }
 
-    const students = await Student.find({ classId, sessionId: fromSessionId, status: 'ACTIVE', schoolId }).select('name rollNumber classId');
+    const targetClassCount = await Class.countDocuments({
+      schoolId,
+      sessionId: toSessionId,
+      status: 'active'
+    });
+    if (targetClassCount === 0) {
+      return res.status(400).json({
+        message: 'Target session has no classes. Run session setup first.'
+      });
+    }
+
+    const students = await Student.find({
+      classId,
+      sessionId: fromSessionId,
+      status: 'ACTIVE',
+      schoolId
+    }).select('name rollNumber classId sectionId');
+
+    const dueList = await Bill.find({
+      schoolId,
+      sessionId: fromSessionId,
+      studentId: { $in: students.map((s) => s._id) },
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 }
+    }).select('studentId');
+    const dueSet = new Set(dueList.map((b) => b.studentId.toString()));
 
     // Get all results for these students in the fromSessionId
     const studentIds = students.map(s => s._id);
@@ -60,6 +86,7 @@ const previewPromotion = async (req, res) => {
       const promotionStatus = promotionMap[student._id.toString()] || 'NOT_ELIGIBLE';
       let suggestedNextClassId = student.classId;
       let action = 'RETAIN';
+      const feesCleared = !dueSet.has(student._id.toString());
 
       if (promotionStatus === 'ELIGIBLE') {
         const nextClassId = await getNextClass(student.classId, schoolId, toSessionId);
@@ -67,9 +94,14 @@ const previewPromotion = async (req, res) => {
           suggestedNextClassId = nextClassId;
           action = 'PROMOTE';
         } else {
-          // Terminal class, but still eligible? Perhaps retain or complete
-          action = 'RETAIN';
+          // Eligible student in terminal class should graduate.
+          action = 'GRADUATE';
         }
+      }
+
+      // Default suggestion: unpaid dues are retained (can be overridden in UI).
+      if (!feesCleared && action === 'PROMOTE') {
+        action = 'RETAIN';
       }
 
       return {
@@ -77,9 +109,11 @@ const previewPromotion = async (req, res) => {
         name: student.name,
         rollNumber: student.rollNumber,
         currentClassId: student.classId,
+        currentSectionId: student.sectionId,
         suggestedNextClassId,
         promotionStatus,
-        action
+        action,
+        feesCleared
       };
     }));
 
@@ -92,45 +126,205 @@ const previewPromotion = async (req, res) => {
 const executePromotion = async (req, res) => {
   try {
     const { fromSessionId, toSessionId, promotions } = req.body;
-    const { role } = req.user;
+    const { role, schoolId } = req.user;
 
     if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    for (const promo of promotions) {
-      const student = await Student.findById(promo.studentId);
-      if (!student || student.sessionId.toString() !== fromSessionId) {
-        return res.status(400).json({ message: 'Invalid student' });
-      }
+    if (fromSessionId === toSessionId) {
+      return res.status(400).json({ message: 'Sessions must be different' });
+    }
 
-      let newClassId = student.classId;
-      let status = 'Retained';
-      if (promo.action === 'PROMOTE') {
-        const nextClassId = await getNextClass(student.classId, student.schoolId, toSessionId);
-        if (nextClassId) {
-          newClassId = nextClassId;
-          status = 'Promoted';
-        } else {
-          // Terminal class
-          status = 'Completed';
-        }
-      }
+    if (!Array.isArray(promotions) || promotions.length === 0) {
+      return res.status(400).json({ message: 'Promotions list is required' });
+    }
 
-      await Student.findByIdAndUpdate(promo.studentId, { classId: newClassId, sessionId: toSessionId });
-
-      await AcademicHistory.create({
-        studentId: promo.studentId,
-        sessionId: fromSessionId,
-        classId: student.classId,
-        sectionId: student.sectionId,
-        rollNumber: student.rollNumber,
-        status,
-        schoolId: student.schoolId,
+    const targetClassCount = await Class.countDocuments({
+      schoolId,
+      sessionId: toSessionId,
+      status: 'active'
+    });
+    if (targetClassCount === 0) {
+      return res.status(400).json({
+        message: 'Target session has no classes. Run session setup first.'
       });
     }
 
-    res.json({ success: true, message: 'Promotion executed' });
+    const results = { promoted: 0, retained: 0, graduated: 0, errors: [] };
+
+    for (const promo of promotions) {
+      try {
+        const student = await Student.findById(promo.studentId);
+        if (
+          !student ||
+          student.schoolId.toString() !== schoolId ||
+          student.sessionId.toString() !== fromSessionId
+        ) {
+          results.errors.push(`Student ${promo.studentId} not found`);
+          continue;
+        }
+
+        await AcademicHistory.updateOne(
+          {
+            studentId: promo.studentId,
+            sessionId: fromSessionId,
+            schoolId: student.schoolId
+          },
+          {
+            $set: {
+              classId: student.classId,
+              sectionId: student.sectionId,
+              rollNumber: student.rollNumber,
+              status: promo.action === 'PROMOTE'
+                ? 'Promoted'
+                : promo.action === 'GRADUATE'
+                    ? 'Graduated'
+                    : 'Retained'
+            }
+          },
+          { upsert: true }
+        );
+
+        if (promo.action === 'GRADUATE') {
+          await Student.findByIdAndUpdate(promo.studentId, {
+            status: 'GRADUATED'
+          });
+          results.graduated++;
+        } else if (promo.action === 'PROMOTE') {
+          const nextClassId = await getNextClass(
+            student.classId,
+            student.schoolId,
+            toSessionId
+          );
+
+          if (!nextClassId) {
+            await Student.findByIdAndUpdate(promo.studentId, {
+              status: 'GRADUATED'
+            });
+            results.graduated++;
+          } else {
+            await Student.findByIdAndUpdate(promo.studentId, {
+              classId: nextClassId,
+              sessionId: toSessionId,
+              sectionId: null,
+              status: 'ACTIVE'
+            });
+            results.promoted++;
+          }
+        } else {
+          const currentClass = await Class.findById(student.classId);
+          const retainedClass = await Class.findOne({
+            schoolId: student.schoolId,
+            sessionId: toSessionId,
+            order: currentClass?.order,
+            status: 'active'
+          });
+
+          await Student.findByIdAndUpdate(promo.studentId, {
+            classId: retainedClass?._id ?? student.classId,
+            sessionId: toSessionId,
+            sectionId: null,
+            status: 'ACTIVE'
+          });
+          results.retained++;
+        }
+      } catch (studentErr) {
+        results.errors.push(`Error for ${promo.studentId}: ${studentErr.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Promotion complete: ${results.promoted} promoted, ${results.retained} retained, ${results.graduated} graduated`,
+      data: results
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const executeAllPromotion = async (req, res) => {
+  try {
+    const { fromSessionId, toSessionId } = req.body;
+    const { role, schoolId } = req.user;
+
+    if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    if (fromSessionId === toSessionId) {
+      return res.status(400).json({ message: 'Sessions must be different' });
+    }
+
+    const targetClassCount = await Class.countDocuments({
+      schoolId,
+      sessionId: toSessionId,
+      status: 'active'
+    });
+    if (targetClassCount === 0) {
+      return res.status(400).json({
+        message: 'Target session has no classes. Run session setup first.'
+      });
+    }
+
+    const classes = await Class.find({
+      sessionId: fromSessionId,
+      schoolId,
+      status: 'active'
+    });
+
+    const results = { promoted: 0, retained: 0, graduated: 0, errors: [] };
+
+    for (const cls of classes) {
+      const students = await Student.find({
+        classId: cls._id,
+        sessionId: fromSessionId,
+        status: 'ACTIVE',
+        schoolId
+      });
+
+      for (const student of students) {
+        try {
+          const nextClassId = await getNextClass(student.classId, schoolId, toSessionId);
+          const action = nextClassId ? 'PROMOTE' : 'GRADUATE';
+
+          await AcademicHistory.updateOne(
+            {
+              studentId: student._id,
+              sessionId: fromSessionId,
+              schoolId
+            },
+            {
+              $set: {
+                classId: student.classId,
+                sectionId: student.sectionId,
+                rollNumber: student.rollNumber,
+                status: action === 'PROMOTE' ? 'Promoted' : 'Graduated'
+              }
+            },
+            { upsert: true }
+          );
+
+          if (action === 'GRADUATE') {
+            await Student.findByIdAndUpdate(student._id, { status: 'GRADUATED' });
+            results.graduated++;
+          } else {
+            await Student.findByIdAndUpdate(student._id, {
+              classId: nextClassId,
+              sessionId: toSessionId,
+              sectionId: null,
+              status: 'ACTIVE'
+            });
+            results.promoted++;
+          }
+        } catch (studentErr) {
+          results.errors.push(`Error for ${student._id}: ${studentErr.message}`);
+        }
+      }
+    }
+
+    res.json({ success: true, message: 'All classes promoted', data: results });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -138,5 +332,6 @@ const executePromotion = async (req, res) => {
 
 module.exports = {
   previewPromotion,
-  executePromotion
+  executePromotion,
+  executeAllPromotion
 };

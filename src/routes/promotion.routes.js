@@ -1,5 +1,9 @@
 const express = require('express');
-const { previewPromotion, executePromotion } = require('../controllers/promotion.controller.js');
+const {
+  previewPromotion,
+  executePromotion,
+  executeAllPromotion
+} = require('../controllers/promotion.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
@@ -21,6 +25,14 @@ router.post(
   enforceSchoolIsolation,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   executePromotion
+);
+
+router.post(
+  '/execute-all',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  executeAllPromotion
 );
 
 module.exports = router;
