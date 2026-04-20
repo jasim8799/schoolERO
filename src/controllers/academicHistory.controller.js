@@ -33,7 +33,11 @@ const getStudentAcademicHistory = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const history = await AcademicHistory.find({ studentId, schoolId }).sort({ sessionId: 1 });
+    const history = await AcademicHistory.find({ studentId, schoolId })
+      .populate('sessionId', 'name startDate endDate')
+      .populate('classId', 'name order')
+      .populate('sectionId', 'name')
+      .sort({ createdAt: -1 });
     res.json({ success: true, data: history });
   } catch (err) {
     res.status(500).json({ message: err.message });
