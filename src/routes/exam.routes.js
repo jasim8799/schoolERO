@@ -27,7 +27,9 @@ router.get(
   requireRole(
     USER_ROLES.PRINCIPAL,
     USER_ROLES.OPERATOR,
-    USER_ROLES.TEACHER
+    USER_ROLES.TEACHER,
+    USER_ROLES.STUDENT,
+    USER_ROLES.PARENT
   ),
   getExamsByClass
 );
