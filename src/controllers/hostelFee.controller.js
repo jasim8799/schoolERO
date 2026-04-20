@@ -4,6 +4,17 @@ const Bill = require('../models/Bill');
 const Payment = require('../models/Payment');
 const AcademicSession = require('../models/AcademicSession');
 
+const _sessionFilter = (sessionId) =>
+  sessionId
+    ? {
+        $or: [
+          { sessionId },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ],
+      }
+    : {};
+
 const payHostelFee = async (req, res) => {
   try {
     const { studentId, hostelId, roomId, months, paymentMethod } = req.body;
@@ -111,10 +122,10 @@ const payHostelFee = async (req, res) => {
 
 const getHostelFeeHistory = async (req, res) => {
   try {
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
     const { studentId } = req.query;
 
-    const filter = { schoolId, billType: 'HOSTEL' };
+    const filter = { schoolId, billType: 'HOSTEL', ..._sessionFilter(sessionId) };
     if (studentId) filter.studentId = studentId;
 
     const bills = await Bill.find(filter)

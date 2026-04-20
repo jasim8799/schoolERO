@@ -5,6 +5,7 @@ const PtmBookingSchema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
   parentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Parent' },
   schoolId:  { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
+  sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicSession', required: false },
   bookedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   status:    { type: String, enum: ['BOOKED', 'CANCELLED', 'ATTENDED'], default: 'BOOKED' },
   notes:     { type: String, default: '' },
@@ -12,4 +13,5 @@ const PtmBookingSchema = new mongoose.Schema({
 
 PtmBookingSchema.index({ ptmId: 1, studentId: 1 }, { unique: true });
 PtmBookingSchema.index({ schoolId: 1, studentId: 1 });
+PtmBookingSchema.index({ schoolId: 1, sessionId: 1 });
 module.exports = mongoose.model('PtmBooking', PtmBookingSchema);

@@ -18,7 +18,7 @@ const BillSchema = new mongoose.Schema({
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
-    required: true
+    required: false
   },
   // What this bill is for
   billType: {
@@ -92,6 +92,7 @@ BillSchema.pre('save', function(next) {
 
 BillSchema.index({ studentId: 1, schoolId: 1, status: 1 });
 BillSchema.index({ schoolId: 1, billType: 1 });
+BillSchema.index({ schoolId: 1, sessionId: 1 });
 BillSchema.index({ billNumber: 1 }, { unique: true });
 
 module.exports = mongoose.model('Bill', BillSchema);

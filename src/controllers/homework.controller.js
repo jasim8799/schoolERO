@@ -7,6 +7,32 @@ const Section = require('../models/Section.js');
 const Subject = require('../models/Subject.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 
+const sessionFilter = (req) => {
+  const sid = req.user?.sessionId;
+  if (!sid) return {};
+  return {
+    $or: [
+      { sessionId: sid },
+      { sessionId: null },
+      { sessionId: { $exists: false } },
+    ],
+  };
+};
+
+const applySessionFilter = (req, filter) => {
+  const sFilter = sessionFilter(req);
+  if (!sFilter.$or) return filter;
+  if (!filter.$or) return { ...filter, ...sFilter };
+
+  const userOr = filter.$or;
+  const base = { ...filter };
+  delete base.$or;
+  return {
+    ...base,
+    $and: [{ $or: userOr }, sFilter],
+  };
+};
+
 const toObjectId = (value) => {
   if (!value || !mongoose.Types.ObjectId.isValid(value)) return null;
   return new mongoose.Types.ObjectId(value);
@@ -138,7 +164,7 @@ const createHomework = async (req, res) => {
 const getHomeworkByClass = async (req, res) => {
   try {
     const { classId, sectionId, subjectId, date, fromDate, toDate } = req.query;
-    const { schoolId, sessionId, role, _id: userId } = req.user;
+    const { schoolId, role, _id: userId } = req.user;
 
     const schoolObjectId = toObjectId(schoolId);
     if (!schoolObjectId) {
@@ -150,7 +176,7 @@ const getHomeworkByClass = async (req, res) => {
 
     const filter = {
       schoolId: schoolObjectId,
-      sessionId
+      ...sessionFilter(req)
     };
 
     if (classId) {
@@ -211,7 +237,7 @@ const getHomeworkByClass = async (req, res) => {
 // Get Homework for Student/Parent
 const getHomeworkForStudent = async (req, res) => {
   try {
-    const { role, userId, schoolId, sessionId } = req.user;
+    const { role, userId, schoolId } = req.user;
 
     const schoolObjectId = mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : null;
     if (!schoolObjectId) {
@@ -223,7 +249,7 @@ const getHomeworkForStudent = async (req, res) => {
 
     if (role === USER_ROLES.STUDENT) {
       // Find student by userId
-      const student = await Student.findOne({ userId, schoolId: schoolObjectId, sessionId });
+      const student = await Student.findOne({ userId, schoolId: schoolObjectId, ...sessionFilter(req) });
       if (!student) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({
           success: false,
@@ -232,16 +258,15 @@ const getHomeworkForStudent = async (req, res) => {
       }
 
       // Find homework for the student's class with section filtering
-      const homework = await Homework.find({
+      const homework = await Homework.find(applySessionFilter(req, {
         classId: student.classId,
         schoolId: schoolObjectId,
-        sessionId,
         $or: [
           { sectionId: null },
           { sectionId: { $exists: false } },
           { sectionId: student.sectionId }
         ]
-      })
+      }))
         .populate('classId', 'name')
         .populate('sectionId', 'name')
         .populate('subjectId', 'name')
@@ -267,16 +292,15 @@ const getHomeworkForStudent = async (req, res) => {
       const childrenHomework = [];
 
       for (const child of parent.children) {
-        const homework = await Homework.find({
+        const homework = await Homework.find(applySessionFilter(req, {
           classId: child.classId,
           schoolId: schoolObjectId,
-          sessionId,
           $or: [
             { sectionId: null },
             { sectionId: { $exists: false } },
             { sectionId: child.sectionId }
           ]
-        })
+        }))
           .populate('classId', 'name')
           .populate('sectionId', 'name')
           .populate('subjectId', 'name')

@@ -50,7 +50,8 @@ const teacherAssignmentSchema = new mongoose.Schema({
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
-    required: [true, 'Session ID is required']
+    required: false,
+    index: true
   },
   isPublished: {
     type: Boolean,
@@ -71,6 +72,9 @@ teacherAssignmentSchema.index(
   { teacherId: 1, day: 1, periodNumber: 1, sessionId: 1 },
   { unique: true }
 );
+
+teacherAssignmentSchema.index({ schoolId: 1, sessionId: 1 });
+teacherAssignmentSchema.index({ schoolId: 1, sessionId: 1, classId: 1 });
 
 const TeacherAssignment = mongoose.model('TeacherAssignment', teacherAssignmentSchema);
 

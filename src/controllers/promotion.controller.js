@@ -173,6 +173,8 @@ const executePromotion = async (req, res) => {
           },
           {
             $set: {
+              fromSessionId,
+              sessionId: fromSessionId,
               classId: student.classId,
               sectionId: student.sectionId,
               rollNumber: student.rollNumber,
@@ -297,6 +299,8 @@ const executeAllPromotion = async (req, res) => {
             },
             {
               $set: {
+                fromSessionId,
+                sessionId: fromSessionId,
                 classId: student.classId,
                 sectionId: student.sectionId,
                 rollNumber: student.rollNumber,

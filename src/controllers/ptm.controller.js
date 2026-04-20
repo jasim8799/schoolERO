@@ -4,6 +4,17 @@ const Student    = require('../models/Student');
 const Parent     = require('../models/Parent');
 const Teacher    = require('../models/Teacher');
 
+const _sessionFilter = (sessionId) =>
+  sessionId
+    ? {
+        $or: [
+          { sessionId },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ],
+      }
+    : {};
+
 // Helpers
 async function _enrichPtms(ptms) {
   const ids = ptms.map(p => p._id);
@@ -22,9 +33,10 @@ const createPtm = async (req, res) => {
   try {
     const { title, description, date, startTime, endTime,
             teacherId, classId, maxSlots, agendaPoints } = req.body;
-    const { schoolId, _id: createdBy } = req.user;
+    const { schoolId, _id: createdBy, sessionId } = req.user;
     const ptm = await Ptm.create({
       schoolId,
+      sessionId,
       title,
       description: description || '',
       date: new Date(date),
@@ -45,9 +57,9 @@ const createPtm = async (req, res) => {
 // ALL roles: Get PTMs for this school
 const getPtms = async (req, res) => {
   try {
-    const { schoolId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role, sessionId } = req.user;
     const { classId, status } = req.query;
-    const filter = { schoolId };
+    const filter = { schoolId, ..._sessionFilter(sessionId) };
     if (status) filter.status = status;
 
     if (role === 'TEACHER') {
@@ -61,10 +73,15 @@ const getPtms = async (req, res) => {
         .select('classId')
         .lean();
       if (student?.classId) {
-        filter.$or = [
-          { classId: student.classId },
-          { classId: null },
-          { classId: { $exists: false } },
+        filter.$and = [
+          ...(filter.$and || []),
+          {
+            $or: [
+              { classId: student.classId },
+              { classId: null },
+              { classId: { $exists: false } },
+            ],
+          },
         ];
       }
     } else if (role === 'PARENT') {
@@ -74,10 +91,15 @@ const getPtms = async (req, res) => {
           .select('classId')
           .lean();
         if (student?.classId) {
-          filter.$or = [
-            { classId: student.classId },
-            { classId: null },
-            { classId: { $exists: false } },
+          filter.$and = [
+            ...(filter.$and || []),
+            {
+              $or: [
+                { classId: student.classId },
+                { classId: null },
+                { classId: { $exists: false } },
+              ],
+            },
           ];
         }
       }
@@ -103,11 +125,11 @@ const getPtms = async (req, res) => {
 const bookPtm = async (req, res) => {
   try {
     const { ptmId, studentId: bodyStudentId, notes } = req.body;
-    const { schoolId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role, sessionId } = req.user;
     if (!ptmId) return res.status(400).json({
       success: false, message: 'ptmId is required' });
 
-    const ptm = await Ptm.findOne({ _id: ptmId, schoolId });
+    const ptm = await Ptm.findOne({ _id: ptmId, schoolId, ..._sessionFilter(sessionId) });
     if (!ptm) return res.status(404).json({
       success: false, message: 'PTM not found' });
     if (ptm.status === 'CANCELLED' || ptm.status === 'COMPLETED')
@@ -209,9 +231,9 @@ const updatePtmStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
     const ptm = await Ptm.findOneAndUpdate(
-      { _id: id, schoolId }, { status }, { new: true });
+      { _id: id, schoolId, ..._sessionFilter(sessionId) }, { status }, { new: true });
     if (!ptm) return res.status(404).json({
       success: false, message: 'PTM not found' });
     return res.json({ success: true, data: ptm });
@@ -258,7 +280,7 @@ const addMeetingNotes = async (req, res) => {
   try {
     const { id } = req.params;
     const { meetingSummary, discussionPoints, recordingUrl, recordingTitle } = req.body;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
     const update = {};
     if (meetingSummary !== undefined) update.meetingSummary = meetingSummary;
@@ -269,7 +291,7 @@ const addMeetingNotes = async (req, res) => {
     if (recordingTitle !== undefined) update.recordingTitle = recordingTitle;
 
     const ptm = await Ptm.findOneAndUpdate(
-      { _id: id, schoolId },
+      { _id: id, schoolId, ..._sessionFilter(sessionId) },
       update,
       { new: true }
     )

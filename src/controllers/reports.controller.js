@@ -4,6 +4,8 @@ const TC = require('../models/TC');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 
+const getRequestedSessionId = (req) => req.query.sessionId || req.user?.sessionId;
+
 const exportProfitLossExcel = (report, res) => {
   const data = [
     { Category: 'Fee Collection', Amount: report.income.feeCollection },
@@ -27,7 +29,7 @@ const exportProfitLossExcel = (report, res) => {
 // Get profit loss report
 const getProfitLossReport = async (req, res) => {
   try {
-    const { sessionId } = req.query;
+    const sessionId = getRequestedSessionId(req);
     const { schoolId, role } = req.user;
 
     // Role-based access
@@ -69,7 +71,7 @@ const getProfitLossReport = async (req, res) => {
 // Get promotion report
 const getPromotionReport = async (req, res) => {
   try {
-    const { sessionId } = req.query;
+    const sessionId = getRequestedSessionId(req);
     const { schoolId, role } = req.user;
 
     // Role-based access
@@ -123,7 +125,7 @@ const getPromotionReport = async (req, res) => {
 // Get retention report
 const getRetentionReport = async (req, res) => {
   try {
-    const { sessionId } = req.query;
+    const sessionId = getRequestedSessionId(req);
     const { schoolId, role } = req.user;
 
     // Role-based access
@@ -177,7 +179,7 @@ const getRetentionReport = async (req, res) => {
 // Get TC report
 const getTCReport = async (req, res) => {
   try {
-    const { sessionId } = req.query;
+    const sessionId = getRequestedSessionId(req);
     const { schoolId, role } = req.user;
 
     // Role-based access
@@ -230,7 +232,7 @@ const getTCReport = async (req, res) => {
 // Get session-wise academic history report
 const getHistoryReport = async (req, res) => {
   try {
-    const { sessionId } = req.query;
+    const sessionId = getRequestedSessionId(req);
     const { schoolId, role } = req.user;
 
     // Role-based access

@@ -11,6 +11,10 @@ const AcademicHistorySchema = new mongoose.Schema({
     ref: 'AcademicSession',
     required: true
   },
+  fromSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicSession'
+  },
   classId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Class',
@@ -44,5 +48,6 @@ const AcademicHistorySchema = new mongoose.Schema({
 });
 
 AcademicHistorySchema.index({ studentId: 1, sessionId: 1, schoolId: 1 }, { unique: true });
+AcademicHistorySchema.index({ schoolId: 1, fromSessionId: 1 });
 
 module.exports = mongoose.model('AcademicHistory', AcademicHistorySchema);

@@ -4,6 +4,18 @@ const Exam = require('../models/Exam.js');
 const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
 
+const sessionFilter = (req) => {
+  const sid = req.user?.sessionId;
+  if (!sid) return {};
+  return {
+    $or: [
+      { sessionId: sid },
+      { sessionId: null },
+      { sessionId: { $exists: false } },
+    ],
+  };
+};
+
 const createOrUpdateResult = async (req, res) => {
   try {
     const { studentId, examId, marks } = req.body;
@@ -165,11 +177,11 @@ const publishResult = async (req, res) => {
 
 const getMyResult = async (req, res) => {
   try {
-    const { schoolId, sessionId, _id: userId } = req.user;
+    const { schoolId, _id: userId } = req.user;
     const { examId } = req.params;
 
     // Fetch studentId for STUDENT role
-    const student = await Student.findOne({ userId, schoolId });
+    const student = await Student.findOne({ userId, schoolId, ...sessionFilter(req) });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found.' });
     }
@@ -179,13 +191,13 @@ const getMyResult = async (req, res) => {
     let result;
     if (examId) {
       // Return specific exam result
-      result = await Result.findOne({ studentId, examId, schoolId, sessionId, status: 'Published' })
+      result = await Result.findOne({ studentId, examId, schoolId, ...sessionFilter(req), status: 'Published' })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name')
         .populate('marks.subjectId', 'name');
     } else {
       // Return latest published result
-      result = await Result.findOne({ studentId, schoolId, sessionId, status: 'Published' })
+      result = await Result.findOne({ studentId, schoolId, ...sessionFilter(req), status: 'Published' })
         .populate('studentId', 'name rollNumber')
         .populate('examId', 'name')
         .populate('marks.subjectId', 'name')
@@ -204,9 +216,9 @@ const getMyResult = async (req, res) => {
 const getResultsByExam = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
 
-    const results = await Result.find({ examId, schoolId, sessionId })
+    const results = await Result.find({ examId, schoolId, ...sessionFilter(req) })
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name')
@@ -219,7 +231,7 @@ const getResultsByExam = async (req, res) => {
 
 const getChildrenResults = async (req, res) => {
   try {
-    const { _id: userId, schoolId, sessionId } = req.user;
+    const { _id: userId, schoolId } = req.user;
     const { examId } = req.query;
 
     const parent = await Parent.findOne({
@@ -235,7 +247,7 @@ const getChildrenResults = async (req, res) => {
     const filter = {
       studentId: { $in: parent.children },
       schoolId,
-      sessionId,
+      ...sessionFilter(req),
       status: 'Published'
     };
 
@@ -254,10 +266,10 @@ const getChildrenResults = async (req, res) => {
 
 const getMyResults = async (req, res) => {
   try {
-    const { schoolId, sessionId, _id: userId } = req.user;
+    const { schoolId, _id: userId } = req.user;
     const { examId } = req.query;
 
-    const student = await Student.findOne({ userId, schoolId });
+    const student = await Student.findOne({ userId, schoolId, ...sessionFilter(req) });
     if (!student) {
       return res.status(404).json({ success: false, message: 'Student profile not found.' });
     }
@@ -266,13 +278,13 @@ const getMyResults = async (req, res) => {
 
     // Check resultDate gate when a specific exam is requested
     if (examId) {
-      const exam = await Exam.findById(examId);
+      const exam = await Exam.findOne({ _id: examId, schoolId, ...sessionFilter(req) });
       if (exam && exam.resultDate && new Date() < new Date(exam.resultDate)) {
         return res.json({ success: true, data: [], resultDate: exam.resultDate });
       }
     }
 
-    const filter = { studentId, schoolId, sessionId, status: 'Published' };
+    const filter = { studentId, schoolId, ...sessionFilter(req), status: 'Published' };
     if (examId) filter.examId = examId;
 
     const results = await Result.find(filter)
@@ -289,9 +301,9 @@ const getMyResults = async (req, res) => {
 const getResultsByStudentId = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
 
-    const results = await Result.find({ studentId, schoolId, sessionId, status: 'Published' })
+    const results = await Result.find({ studentId, schoolId, ...sessionFilter(req), status: 'Published' })
       .populate('examId', 'name')
       .populate('studentId', 'name rollNumber')
       .populate('marks.subjectId', 'name')
@@ -306,7 +318,8 @@ const getResultsByStudentId = async (req, res) => {
 const getResultPDF = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await Result.findById(id)
+    const { schoolId } = req.user;
+    const result = await Result.findOne({ _id: id, schoolId, ...sessionFilter(req) })
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('marks.subjectId', 'name')
@@ -402,7 +415,7 @@ const submitSimpleMarks = async (req, res) => {
       return res.status(400).json({ success: false, message: 'marks must be an object mapping subject names to obtained marks' });
     }
 
-    const exam = await Exam.findOne({ _id: examId, schoolId });
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
     if (!exam) return res.status(404).json({ success: false, message: 'Exam not found' });
 
     const entries = Object.entries(marks);
@@ -463,14 +476,14 @@ const submitSimpleMarks = async (req, res) => {
 // ── Get all results with optional filters ─────────────────────────────────────
 const getAllResults = async (req, res) => {
   try {
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
     const { examId, status } = req.query;
 
     if (!examId) {
       return res.status(400).json({ success: false, message: 'examId query param is required' });
     }
 
-    const filter = { examId, schoolId, sessionId };
+    const filter = { examId, schoolId, ...sessionFilter(req) };
     if (status) filter.status = status;
 
     const results = await Result.find(filter)

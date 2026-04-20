@@ -5,6 +5,11 @@ const Student = require('../models/Student.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { auditLog } = require('../utils/auditLog.js');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 const normalizeDate = (d) => {
   const date = new Date(d);
   date.setHours(0, 0, 0, 0);
@@ -85,6 +90,7 @@ const getMyLeaveApplications = async (req, res) => {
     const applications = await LeaveApplication.find({
       applicantId: userId,
       schoolId: normalizedSchoolId,
+      ...getSessionFilter(req),
     })
       .populate('reviewedBy', 'name')
       .sort({ createdAt: -1 });
@@ -102,7 +108,7 @@ const getAllLeaveApplications = async (req, res) => {
     const { status, role: filterRole } = req.query;
     const normalizedSchoolId = schoolId?._id || schoolId;
 
-    const filter = { schoolId: normalizedSchoolId };
+    const filter = { schoolId: normalizedSchoolId, ...getSessionFilter(req) };
     if (status) filter.status = status;
     if (filterRole) filter.applicantRole = filterRole;
 
@@ -136,6 +142,7 @@ const reviewLeaveApplication = async (req, res) => {
     const application = await LeaveApplication.findOne({
       _id: id,
       schoolId: normalizedSchoolId,
+      ...getSessionFilter(req),
     });
     if (!application) {
       return res.status(404).json({ success: false, message: 'Application not found' });

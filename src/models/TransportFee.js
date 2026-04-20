@@ -21,6 +21,11 @@ const TransportFeeSchema = new mongoose.Schema({
     ref: 'School',
     required: true,
   },
+  sessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicSession',
+    required: false,
+  },
   amount: {
     type: Number,
     required: true,
@@ -57,5 +62,6 @@ const TransportFeeSchema = new mongoose.Schema({
 });
 
 TransportFeeSchema.index({ studentId: 1, month: 1, year: 1, schoolId: 1 });
+TransportFeeSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('TransportFee', TransportFeeSchema);

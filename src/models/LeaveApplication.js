@@ -25,7 +25,7 @@ const leaveApplicationSchema = new mongoose.Schema(
     sessionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AcademicSession',
-      required: true,
+      required: false,
     },
     fromDate: { type: Date, required: true },
     toDate: { type: Date, required: true },
@@ -51,5 +51,6 @@ const leaveApplicationSchema = new mongoose.Schema(
 
 leaveApplicationSchema.index({ applicantId: 1, schoolId: 1, status: 1 });
 leaveApplicationSchema.index({ schoolId: 1, status: 1, fromDate: -1 });
+leaveApplicationSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('LeaveApplication', leaveApplicationSchema);

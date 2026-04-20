@@ -4,12 +4,23 @@ const Bill = require('../models/Bill.js');
 const Payment = require('../models/Payment.js');
 const AcademicSession = require('../models/AcademicSession.js');
 
+const _sessionFilter = (sessionId) =>
+  sessionId
+    ? {
+        $or: [
+          { sessionId },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ],
+      }
+    : {};
+
 const getAllFees = async (req, res) => {
   try {
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
     const { studentId } = req.query;
 
-    const filter = { schoolId };
+    const filter = { schoolId, ..._sessionFilter(sessionId) };
     if (studentId) {
       filter.studentId = new mongoose.Types.ObjectId(studentId);
     }
@@ -30,7 +41,7 @@ const getAllFees = async (req, res) => {
 const payFee = async (req, res) => {
   try {
     const { studentId, routeId, vehicleId, months, paymentMethod } = req.body;
-    const { schoolId, _id: paidBy } = req.user;
+    const { schoolId, _id: paidBy, sessionId } = req.user;
 
     if (!studentId || !routeId || !Array.isArray(months) || months.length === 0) {
       return res.status(400).json({ success: false, message: 'studentId, routeId, and months[] are required' });
@@ -63,6 +74,7 @@ const payFee = async (req, res) => {
         schoolId: schoolObjId,
         month,
         year,
+        ..._sessionFilter(sessionId),
       });
 
       if (!feeRecord) {
@@ -71,6 +83,7 @@ const payFee = async (req, res) => {
           routeId: routeObjId,
           vehicleId: vehicleObjId,
           schoolId: schoolObjId,
+          sessionId: activeSession._id,
           amount,
           month,
           year,

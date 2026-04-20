@@ -9,6 +9,17 @@ const PDFDocument = require('pdfkit');
 const { USER_ROLES, USER_STATUS } = require('../config/constants');
 const { auditLog } = require('../utils/auditLog');
 
+const _sessionFilter = (sessionId) =>
+  sessionId
+    ? {
+        $or: [
+          { sessionId },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ],
+      }
+    : {};
+
 // Setup salary profile
 const setupSalaryProfile = async (req, res) => {
   try {
@@ -127,6 +138,7 @@ const _calcForStaff = async ({ staffId, month, schoolId }) => {
 
   const salaryCalculation = await SalaryCalculation.create({
     staffId, month, schoolId,
+    sessionId: null,
     baseSalary: salaryProfile.baseSalary,
     attendanceDays,
     workingDays,
@@ -143,7 +155,7 @@ const _calcForStaff = async ({ staffId, month, schoolId }) => {
 const calculateSalary = async (req, res) => {
   try {
     const { staffId, month } = req.body;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
     if (!month) {
       return res.status(400).json({ message: 'month is required (format: YYYY-MM)' });
@@ -168,7 +180,12 @@ const calculateSalary = async (req, res) => {
         return res.status(400).json({ message: 'User is not a staff member' });
       }
 
-      const existing = await SalaryCalculation.findOne({ staffId, month, schoolId });
+      const existing = await SalaryCalculation.findOne({
+        staffId,
+        month,
+        schoolId,
+        ..._sessionFilter(sessionId),
+      });
       if (existing) {
         return res.status(409).json({ message: 'Salary calculation already exists for this staff and month' });
       }
@@ -177,6 +194,8 @@ const calculateSalary = async (req, res) => {
       if (!salaryCalculation) {
         return res.status(404).json({ message: 'Salary profile not found for this staff member' });
       }
+      salaryCalculation.sessionId = sessionId || null;
+      await salaryCalculation.save();
 
       await salaryCalculation.populate('staffId', 'name email mobile role');
 
@@ -205,11 +224,18 @@ const calculateSalary = async (req, res) => {
 
     for (const member of staffList) {
       try {
-        const existing = await SalaryCalculation.findOne({ staffId: member._id, month, schoolId });
+        const existing = await SalaryCalculation.findOne({
+          staffId: member._id,
+          month,
+          schoolId,
+          ..._sessionFilter(sessionId),
+        });
         if (existing) { skipped++; continue; }
 
         const calc = await _calcForStaff({ staffId: member._id, month, schoolId });
         if (!calc) { skipped++; continue; } // no salary profile
+        calc.sessionId = sessionId || null;
+        await calc.save();
         created++;
       } catch (e) {
         errors.push({ staff: member.name, error: e.message });
@@ -241,7 +267,7 @@ const calculateSalary = async (req, res) => {
 const getMonthlySalaries = async (req, res) => {
   try {
     const { month } = req.query;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
     // Validate month parameter
     if (!month) {
@@ -255,7 +281,7 @@ const getMonthlySalaries = async (req, res) => {
     }
 
     // Get salary calculations for the month
-    const salaryCalculations = await SalaryCalculation.find({ schoolId, month })
+    const salaryCalculations = await SalaryCalculation.find({ schoolId, month, ..._sessionFilter(sessionId) })
       .populate('staffId', 'name email mobile role')
       .sort({ createdAt: -1 });
 
@@ -272,7 +298,7 @@ const getMonthlySalaries = async (req, res) => {
 const paySalary = async (req, res) => {
   try {
     const { salaryCalculationId, paymentMode } = req.body;
-    const { _id: paidBy, schoolId } = req.user;
+    const { _id: paidBy, schoolId, sessionId } = req.user;
 
     // Validate required fields
     if (!salaryCalculationId || !paymentMode) {
@@ -286,7 +312,11 @@ const paySalary = async (req, res) => {
     }
 
     // Find salary calculation
-    const salaryCalculation = await SalaryCalculation.findById(salaryCalculationId)
+    const salaryCalculation = await SalaryCalculation.findOne({
+      _id: salaryCalculationId,
+      schoolId,
+      ..._sessionFilter(sessionId),
+    })
       .populate('staffId', 'name email mobile role');
 
     if (!salaryCalculation) {
@@ -304,7 +334,7 @@ const paySalary = async (req, res) => {
     }
 
     // Check if payment already exists
-    const existingPayment = await SalaryPayment.findOne({ salaryCalculationId });
+    const existingPayment = await SalaryPayment.findOne({ salaryCalculationId, ..._sessionFilter(sessionId) });
     if (existingPayment) {
       return res.status(409).json({ message: 'Payment already exists for this salary calculation' });
     }
@@ -317,7 +347,8 @@ const paySalary = async (req, res) => {
       amountPaid: salaryCalculation.netPayable,
       paymentMode: normalizedMode,
       paidBy,
-      schoolId
+      schoolId,
+      sessionId: sessionId || null,
     });
 
     // Update salary calculation status to Paid
@@ -379,7 +410,7 @@ const paySalary = async (req, res) => {
 const getSalarySlip = async (req, res) => {
   try {
     const { month } = req.params;
-    const { _id: userId, schoolId, role } = req.user;
+    const { _id: userId, schoolId, role, sessionId } = req.user;
 
     // Validate month format
     const monthRegex = /^\d{4}-\d{2}$/;
@@ -391,7 +422,8 @@ const getSalarySlip = async (req, res) => {
     const salaryCalculation = await SalaryCalculation.findOne({
       staffId: userId,
       month,
-      schoolId
+      schoolId,
+      ..._sessionFilter(sessionId),
     }).populate('staffId', 'name email mobile role');
 
     if (!salaryCalculation) {
@@ -400,7 +432,8 @@ const getSalarySlip = async (req, res) => {
 
     // Find payment if exists
     const salaryPayment = await SalaryPayment.findOne({
-      salaryCalculationId: salaryCalculation._id
+      salaryCalculationId: salaryCalculation._id,
+      ..._sessionFilter(sessionId),
     }).populate('paidBy', 'name');
 
     // Get salary profile for allowances/deductions details
@@ -450,7 +483,7 @@ const getSalarySlip = async (req, res) => {
 const getSalarySlipPdf = async (req, res) => {
   try {
     const { month } = req.params;
-    const { _id: userId, schoolId } = req.user;
+    const { _id: userId, schoolId, sessionId } = req.user;
 
     // Validate month format
     const monthRegex = /^\d{4}-\d{2}$/;
@@ -461,7 +494,8 @@ const getSalarySlipPdf = async (req, res) => {
     const salaryCalculation = await SalaryCalculation.findOne({
       staffId: userId,
       month,
-      schoolId
+      schoolId,
+      ..._sessionFilter(sessionId),
     }).populate('staffId', 'name email mobile role');
 
     if (!salaryCalculation) {
@@ -474,7 +508,8 @@ const getSalarySlipPdf = async (req, res) => {
     });
 
     const salaryPayment = await SalaryPayment.findOne({
-      salaryCalculationId: salaryCalculation._id
+      salaryCalculationId: salaryCalculation._id,
+      ..._sessionFilter(sessionId),
     }).populate('paidBy', 'name');
 
     // Format month display (e.g., "2024-01" -> "January 2024")
@@ -584,20 +619,28 @@ const getAllStaffList = async (req, res) => {
 const getStaffSlipAdmin = async (req, res) => {
   try {
     const { staffId, month } = req.params;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
     const monthRegex = /^\d{4}-\d{2}$/;
     if (!monthRegex.test(month)) {
       return res.status(400).json({ message: 'Invalid month format. Use YYYY-MM' });
     }
 
-    const salaryCalculation = await SalaryCalculation.findOne({ staffId, month, schoolId })
+    const salaryCalculation = await SalaryCalculation.findOne({
+      staffId,
+      month,
+      schoolId,
+      ..._sessionFilter(sessionId),
+    })
       .populate('staffId', 'name email mobile role');
     if (!salaryCalculation) {
       return res.status(404).json({ message: 'Salary slip not found for this staff and month' });
     }
 
-    const salaryPayment = await SalaryPayment.findOne({ salaryCalculationId: salaryCalculation._id })
+    const salaryPayment = await SalaryPayment.findOne({
+      salaryCalculationId: salaryCalculation._id,
+      ..._sessionFilter(sessionId),
+    })
       .populate('paidBy', 'name');
 
     const salaryProfile = await SalaryProfile.findOne({ userId: staffId, schoolId });

@@ -23,7 +23,7 @@ const FeeStructureSchema = new mongoose.Schema({
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
-    required: true
+    required: false
   },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -49,5 +49,6 @@ const FeeStructureSchema = new mongoose.Schema({
 });
 
 FeeStructureSchema.index({ name: 1, classId: 1, sessionId: 1 }, { unique: true });
+FeeStructureSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('FeeStructure', FeeStructureSchema);

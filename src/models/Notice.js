@@ -30,6 +30,11 @@ const NoticeSchema = new mongoose.Schema(
       ref: 'School',
       required: true,
     },
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AcademicSession',
+      required: false,
+    },
     title: {
       type: String,
       required: true,

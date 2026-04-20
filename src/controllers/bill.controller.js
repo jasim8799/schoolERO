@@ -4,6 +4,11 @@ const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 // Generate bill number
 const generateBillNumber = (schoolId) => {
   const timestamp = Date.now();
@@ -28,7 +33,7 @@ exports.getStudentBills = async (req, res) => {
     const { schoolId } = req.user;
     const { status, billType } = req.query;
 
-    const filter = { studentId, schoolId };
+    const filter = { studentId, schoolId, ...getSessionFilter(req) };
     if (status) filter.status = status;
     if (billType) filter.billType = billType;
 
@@ -51,7 +56,7 @@ exports.getSchoolBills = async (req, res) => {
     const { schoolId } = req.user;
     const { status, billType, studentId, page = 1, limit = 50 } = req.query;
 
-    const filter = { schoolId };
+    const filter = { schoolId, ...getSessionFilter(req) };
     if (status) filter.status = status;
     if (billType) filter.billType = billType;
     if (studentId) filter.studentId = studentId;
@@ -82,7 +87,7 @@ exports.getSchoolBills = async (req, res) => {
 // Create a bill manually
 exports.createBill = async (req, res) => {
   try {
-    const { schoolId, _id: createdBy } = req.user;
+    const { schoolId, _id: createdBy, sessionId } = req.user;
     const {
       studentId, billType, description,
       totalAmount, dueDate, sourceType, sourceId
@@ -94,14 +99,8 @@ exports.createBill = async (req, res) => {
       return res.status(400).json({ message: 'Student not found' });
     }
 
-    // Get active session
-    const session = await AcademicSession.findOne({
-      schoolId, isActive: true
-    });
-    if (!session) {
-      return res.status(400).json({
-        message: 'No active session found'
-      });
+    if (!sessionId) {
+      return res.status(400).json({ message: 'No active session found' });
     }
 
     // Generate bill number
@@ -117,7 +116,7 @@ exports.createBill = async (req, res) => {
       billNumber,
       studentId,
       schoolId,
-      sessionId: session._id,
+      sessionId,
       billType,
       sourceType: sourceType || 'Manual',
       sourceId: sourceId || null,
@@ -141,10 +140,10 @@ exports.createBill = async (req, res) => {
 exports.payBill = async (req, res) => {
   try {
     const { billId } = req.params;
-    const { schoolId, _id: collectedBy } = req.user;
+    const { schoolId, _id: collectedBy, sessionId } = req.user;
     const { amount, paymentMode, notes } = req.body;
 
-    const bill = await Bill.findOne({ _id: billId, schoolId });
+    const bill = await Bill.findOne({ _id: billId, schoolId, ...getSessionFilter(req) });
     if (!bill) {
       return res.status(404).json({ message: 'Bill not found' });
     }
@@ -157,10 +156,7 @@ exports.payBill = async (req, res) => {
       });
     }
 
-    // Get active session
-    const session = await AcademicSession.findOne({
-      schoolId, isActive: true
-    });
+    const activeSessionId = sessionId || bill.sessionId;
 
     // Generate receipt number
     let receiptNumber;
@@ -177,7 +173,7 @@ exports.payBill = async (req, res) => {
       billId: bill._id,
       studentId: bill.studentId,
       schoolId,
-      sessionId: session ? session._id : bill.sessionId,
+      sessionId: activeSessionId,
       amount,
       paymentMode,
       paymentDate: new Date(),
@@ -199,7 +195,7 @@ exports.payBill = async (req, res) => {
       };
       await LedgerEntry.create({
         schoolId,
-        sessionId: session ? session._id : bill.sessionId,
+        sessionId: activeSessionId,
         entryType: 'DEBIT',
         category: billTypeToCategory[bill.billType] || 'FEE_COLLECTION',
         amount,
@@ -239,6 +235,7 @@ exports.payBill = async (req, res) => {
 exports.getBillSummary = async (req, res) => {
   try {
     const { schoolId } = req.user;
+    const sessionMatch = req.user?.sessionId ? { sessionId: req.user.sessionId } : {};
 
     const [
       totalUnpaid,
@@ -247,17 +244,17 @@ exports.getBillSummary = async (req, res) => {
       todayPayments
     ] = await Promise.all([
       Bill.aggregate([
-        { $match: { schoolId, status: 'UNPAID' } },
+        { $match: { schoolId, status: 'UNPAID', ...sessionMatch } },
         { $group: { _id: null, total: { $sum: '$dueAmount' },
           count: { $sum: 1 } } }
       ]),
       Bill.aggregate([
-        { $match: { schoolId, status: 'PARTIAL' } },
+        { $match: { schoolId, status: 'PARTIAL', ...sessionMatch } },
         { $group: { _id: null, total: { $sum: '$dueAmount' },
           count: { $sum: 1 } } }
       ]),
       Bill.aggregate([
-        { $match: { schoolId, status: 'PAID' } },
+        { $match: { schoolId, status: 'PAID', ...sessionMatch } },
         { $group: { _id: null, total: { $sum: '$totalAmount' },
           count: { $sum: 1 } } }
       ]),
@@ -265,6 +262,7 @@ exports.getBillSummary = async (req, res) => {
         {
           $match: {
             schoolId,
+            ...sessionMatch,
             paymentDate: {
               $gte: new Date(new Date().setHours(0, 0, 0, 0)),
               $lt: new Date(new Date().setHours(23, 59, 59, 999))
@@ -308,7 +306,7 @@ exports.getLedger = async (req, res) => {
       to
     } = req.query;
 
-    const filter = { schoolId };
+    const filter = { schoolId, ...getSessionFilter(req) };
     if (category) filter.category = category;
     if (entryType) filter.entryType = entryType;
     if (from || to) {
@@ -350,7 +348,7 @@ exports.getProfitLoss = async (req, res) => {
     if (from) dateFilter.$gte = new Date(from);
     if (to)   dateFilter.$lte = new Date(to);
 
-    const matchStage = { schoolId };
+    const matchStage = { schoolId, ...(req.user?.sessionId ? { sessionId: req.user.sessionId } : {}) };
     if (from || to) matchStage.entryDate = dateFilter;
 
     const results = await LedgerEntry.aggregate([
@@ -399,7 +397,7 @@ exports.getBillReceipt = async (req, res) => {
     const { receiptNumber } = req.params;
     const { schoolId } = req.user;
 
-    const payment = await Payment.findOne({ receiptNumber, schoolId })
+    const payment = await Payment.findOne({ receiptNumber, schoolId, ...getSessionFilter(req) })
       .populate('billId')
       .populate('collectedBy', 'name')
       .populate('studentId', 'name rollNumber')
@@ -540,7 +538,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
     const School = require('../models/School');
 
     const [bill, school] = await Promise.all([
-      Bill.findOne({ _id: id, schoolId })
+      Bill.findOne({ _id: id, schoolId, ...getSessionFilter(req) })
         .populate({ path: 'studentId', populate: [
           { path: 'classId',   select: 'name' },
           { path: 'sectionId', select: 'name' },
@@ -554,7 +552,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
     }
 
     // All payments for this bill, newest first
-    const payments = await Payment.find({ billId: bill._id })
+    const payments = await Payment.find({ billId: bill._id, ...getSessionFilter(req) })
       .populate('collectedBy', 'name')
       .sort({ paymentDate: -1 })
       .lean();

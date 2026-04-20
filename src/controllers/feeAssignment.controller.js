@@ -1,6 +1,17 @@
 const mongoose = require('mongoose');
 const { generateMonthlyFees } = require('../services/automation.service');
 
+const getSessionFilter = (req, requestedSessionId) => {
+  if (requestedSessionId) return { sessionId: requestedSessionId };
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
+const getSchoolId = (req) => {
+  const sid = req.schoolId || req.user?.schoolId;
+  return sid?._id || sid;
+};
+
 /**
  * POST /api/fee-assignments/generate-monthly
  * Body: { month }  — e.g. '2025-04'
@@ -8,7 +19,8 @@ const { generateMonthlyFees } = require('../services/automation.service');
 exports.generateMonthly = async (req, res) => {
   try {
     const { month } = req.body;
-    const count = await generateMonthlyFees(req.schoolId, month);
+    const schoolId = getSchoolId(req);
+    const count = await generateMonthlyFees(schoolId, month);
     res.json({
       success: true,
       message: `Generated ${count} fee assignment(s)`,
@@ -27,10 +39,14 @@ exports.getStudentAssignments = async (req, res) => {
   try {
     const StudentFeeAssignment = mongoose.model('StudentFeeAssignment');
     const { status, sessionId } = req.query;
+    const schoolId = getSchoolId(req);
 
-    const filter = { studentId: req.params.id, schoolId: req.schoolId };
+    const filter = {
+      studentId: req.params.id,
+      schoolId,
+      ...getSessionFilter(req, sessionId)
+    };
     if (status) filter.status = status;
-    if (sessionId) filter.sessionId = sessionId;
 
     const assignments = await StudentFeeAssignment.find(filter)
       .populate('feeStructureId', 'name feeType amount')
@@ -50,9 +66,10 @@ exports.getStudentAssignments = async (req, res) => {
 exports.waiveAssignment = async (req, res) => {
   try {
     const StudentFeeAssignment = mongoose.model('StudentFeeAssignment');
+    const schoolId = getSchoolId(req);
     const assignment = await StudentFeeAssignment.findOneAndUpdate(
-      { _id: req.params.id, schoolId: req.schoolId },
-      { status: 'WAIVED', assignedBy: req.user._id },
+      { _id: req.params.id, schoolId, ...getSessionFilter(req) },
+      { status: 'WAIVED', assignedBy: req.user._id, sessionId: req.user?.sessionId },
       { new: true }
     );
     if (!assignment) {

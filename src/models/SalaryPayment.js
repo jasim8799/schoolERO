@@ -38,6 +38,11 @@ const SalaryPaymentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'School',
     required: true
+  },
+  sessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicSession',
+    required: false
   }
 }, {
   timestamps: true
@@ -48,5 +53,6 @@ SalaryPaymentSchema.index({ salaryCalculationId: 1 }, { unique: true });
 
 // Index for efficient queries
 SalaryPaymentSchema.index({ staffId: 1, month: 1, schoolId: 1 });
+SalaryPaymentSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('SalaryPayment', SalaryPaymentSchema);

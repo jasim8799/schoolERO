@@ -5,6 +5,11 @@ const Parent    = require('../models/Parent');
 const AcademicSession = require('../models/AcademicSession');
 const { hashPassword } = require('../utils/password');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 // POST /api/admissions
 exports.createAdmission = async (req, res) => {
   try {
@@ -138,7 +143,7 @@ exports.createAdmission = async (req, res) => {
     const admission = await Admission.create({
       studentId,
       schoolId,
-      sessionId:       req.activeSession?._id || null,
+      sessionId:       req.user?.sessionId || req.activeSession?._id || null,
       admissionNumber: admissionNumber || student.admissionNumber || '',
       aadhaarNumber:   aadhaarNumber   || '',
       fees: { admissionFee, discount, finalFee, monthlyFee, dressFee, bookFee, transportFee, hostelFee, totalPayable },
@@ -225,6 +230,7 @@ exports.getAllAdmissions = async (req, res) => {
     const schoolId = req.user.schoolId._id || req.user.schoolId;
     const { studentId } = req.query;
     const filter = { schoolId };
+    Object.assign(filter, getSessionFilter(req));
     if (studentId) filter.studentId = studentId;
 
     const admissions = await Admission.find(filter)
@@ -247,7 +253,7 @@ exports.getAdmissionByStudent = async (req, res) => {
     const schoolId = req.user.schoolId._id || req.user.schoolId;
     const { studentId } = req.params;
 
-    const admissions = await Admission.find({ studentId, schoolId })
+    const admissions = await Admission.find({ studentId, schoolId, ...getSessionFilter(req) })
       .populate('studentId', 'name rollNumber admissionNumber')
       .sort({ createdAt: -1 })
       .lean();
@@ -281,7 +287,7 @@ exports.getDocumentData = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid document type' });
     }
 
-    const admission = await Admission.findOne({ _id: id, schoolId }).select(
+    const admission = await Admission.findOne({ _id: id, schoolId, ...getSessionFilter(req) }).select(
       `+documents.${docType}.dataUrl documents.${docType}.fileName documents.${docType}.uploadedAt`
     );
 
@@ -315,7 +321,7 @@ exports.getStudentPhoto = async (req, res) => {
     const { studentId } = req.params;
     const schoolId = req.user.schoolId._id || req.user.schoolId;
 
-    const admission = await Admission.findOne({ studentId, schoolId }).select(
+    const admission = await Admission.findOne({ studentId, schoolId, ...getSessionFilter(req) }).select(
       '+documents.photo.dataUrl documents.photo.fileName'
     );
 

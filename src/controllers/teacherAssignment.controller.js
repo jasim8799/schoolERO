@@ -4,6 +4,18 @@ const Student = require('../models/Student.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 
+const sessionFilter = (req) => {
+  const sid = req.user?.sessionId;
+  if (!sid) return {};
+  return {
+    $or: [
+      { sessionId: sid },
+      { sessionId: null },
+      { sessionId: { $exists: false } },
+    ],
+  };
+};
+
 // ── POST /api/teacher-assignments ────────────────────────────────────────────
 const createAssignment = async (req, res) => {
   try {
@@ -31,6 +43,7 @@ const createAssignment = async (req, res) => {
       sectionId,
       subjectId,
       schoolId,
+      sessionId,
     });
 
     // 2) Teacher period conflict for same day + period
@@ -39,6 +52,7 @@ const createAssignment = async (req, res) => {
       day,
       periodNumber,
       schoolId,
+      sessionId,
     });
     if (teacherConflict) {
       return res.status(HTTP_STATUS.CONFLICT).json({
@@ -54,6 +68,7 @@ const createAssignment = async (req, res) => {
       day,
       periodNumber,
       schoolId,
+      sessionId,
     });
     if (classConflict) {
       return res.status(HTTP_STATUS.CONFLICT).json({
@@ -105,7 +120,7 @@ const getByTeacher = async (req, res) => {
     if (!teacherId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, message: 'teacherId query param is required' });
     }
-    const assignments = await TeacherAssignment.find({ teacherId, schoolId })
+    const assignments = await TeacherAssignment.find({ teacherId, schoolId, ...sessionFilter(req) })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('subjectId', 'name')
@@ -125,7 +140,7 @@ const getByClass = async (req, res) => {
     if (!classId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, message: 'classId query param is required' });
     }
-    const filter = { classId, schoolId };
+    const filter = { classId, schoolId, ...sessionFilter(req) };
     if (sectionId) filter.sectionId = sectionId;
     const assignments = await TeacherAssignment.find(filter)
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
@@ -145,7 +160,8 @@ const deleteAssignment = async (req, res) => {
   try {
     const { id } = req.params;
     const schoolId = req.user.schoolId;
-    const deleted = await TeacherAssignment.findOneAndDelete({ _id: id, schoolId });
+    const sessionId = req.user.sessionId;
+    const deleted = await TeacherAssignment.findOneAndDelete({ _id: id, schoolId, sessionId });
     if (!deleted) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Assignment not found' });
     }
@@ -160,7 +176,7 @@ const deleteAssignment = async (req, res) => {
 const getAllBySchool = async (req, res) => {
   try {
     const schoolId = req.user.schoolId;
-    const assignments = await TeacherAssignment.find({ schoolId })
+    const assignments = await TeacherAssignment.find({ schoolId, ...sessionFilter(req) })
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
@@ -177,7 +193,11 @@ const getAllBySchool = async (req, res) => {
 const publishTimetable = async (req, res) => {
   try {
     const schoolId = req.user.schoolId;
-    const result = await TeacherAssignment.updateMany({ schoolId }, { $set: { isPublished: true } });
+    const sessionId = req.user.sessionId;
+    const { classId } = req.body || {};
+    const publishFilter = { schoolId, sessionId };
+    if (classId) publishFilter.classId = classId;
+    const result = await TeacherAssignment.updateMany(publishFilter, { $set: { isPublished: true } });
     logger.info(`Timetable published for school ${schoolId}: ${result.modifiedCount} slots updated`);
     return res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -200,7 +220,7 @@ const getMyTimetable = async (req, res) => {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Teacher profile not found' });
     }
 
-    const assignments = await TeacherAssignment.find({ teacherId: teacher._id, schoolId, isPublished: true })
+    const assignments = await TeacherAssignment.find({ teacherId: teacher._id, schoolId, isPublished: true, ...sessionFilter(req) })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('subjectId', 'name')
@@ -219,7 +239,7 @@ const getStudentClassTimetable = async (req, res) => {
     const userId = req.user.userId || req.user._id;
     const schoolId = req.user.schoolId;
 
-    const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE' });
+    const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE', ...sessionFilter(req) });
     if (!student) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student profile not found' });
     }
@@ -228,6 +248,7 @@ const getStudentClassTimetable = async (req, res) => {
       classId: student.classId,
       sectionId: student.sectionId,
       schoolId,
+      ...sessionFilter(req),
       isPublished: true
     })
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })

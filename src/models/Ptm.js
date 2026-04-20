@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const PtmSchema = new mongoose.Schema({
   schoolId:      { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
+  sessionId:     { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicSession', required: false },
   title:         { type: String, required: true },
   description:   { type: String, default: '' },
   date:          { type: Date, required: true },
@@ -25,4 +26,5 @@ const PtmSchema = new mongoose.Schema({
 
 PtmSchema.index({ schoolId: 1, date: -1 });
 PtmSchema.index({ teacherId: 1, schoolId: 1 });
+PtmSchema.index({ schoolId: 1, sessionId: 1 });
 module.exports = mongoose.model('Ptm', PtmSchema);

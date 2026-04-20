@@ -14,6 +14,11 @@ const LedgerEntry = require('../models/LedgerEntry');
 const AcademicSession = require('../models/AcademicSession');
 const { auditLog } = require('../utils/auditLog');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 // Generate unique receipt number
 const generateReceiptNo = (schoolId) => {
   const timestamp = Date.now();
@@ -30,7 +35,7 @@ const payManual = async (req, res) => {
     }
 
     const { studentFeeId, amount, mode } = req.body;
-    const { schoolId, _id: collectedBy } = req.user;
+    const { schoolId, _id: collectedBy, sessionId } = req.user;
 
     // Validate studentFee exists and belongs to same school
     const studentFee = await StudentFee.findOne({ _id: studentFeeId, schoolId });
@@ -62,7 +67,8 @@ const payManual = async (req, res) => {
       date: new Date(),
       collectedBy,
       receiptNo,
-      schoolId
+      schoolId,
+      sessionId
     });
 
     // Update StudentFee
@@ -133,7 +139,7 @@ const getPaymentsByStudent = async (req, res) => {
     const studentFeeIds = studentFees.map(fee => fee._id);
 
     // Get payments for these student fees
-    const payments = await FeePayment.find({ studentFeeId: { $in: studentFeeIds } })
+    const payments = await FeePayment.find({ studentFeeId: { $in: studentFeeIds }, ...getSessionFilter(req) })
       .populate('studentFeeId', 'totalAmount paidAmount dueAmount status')
       .populate('collectedBy', 'name')
       .sort({ createdAt: -1 });
@@ -148,7 +154,7 @@ const getPaymentsByStudent = async (req, res) => {
 const initiateOnlinePayment = async (req, res) => {
   try {
     const { studentFeeId, amount } = req.body;
-    const { schoolId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role, sessionId } = req.user;
 
     // Validate user is a parent
     if (role !== 'PARENT') {
@@ -185,7 +191,8 @@ const initiateOnlinePayment = async (req, res) => {
       amount,
       gatewayRef,
       status: 'Pending',
-      schoolId
+      schoolId,
+      sessionId
     });
 
     res.status(201).json({
@@ -214,7 +221,7 @@ const verifyOnlinePayment = async (req, res) => {
     }
 
     const { gatewayRef, status } = req.body;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
     // Validate status
     if (!['Success', 'Failed'].includes(status)) {
@@ -222,7 +229,7 @@ const verifyOnlinePayment = async (req, res) => {
     }
 
     // Find the online payment
-    const onlinePayment = await OnlinePayment.findOne({ gatewayRef, schoolId });
+    const onlinePayment = await OnlinePayment.findOne({ gatewayRef, schoolId, ...getSessionFilter(req) });
     if (!onlinePayment) {
       return res.status(404).json({ message: 'Online payment not found' });
     }
@@ -263,7 +270,8 @@ const verifyOnlinePayment = async (req, res) => {
         date: new Date(),
         collectedBy: null, // No collector for online payments
         receiptNo,
-        schoolId
+        schoolId,
+        sessionId
       });
 
       // Update StudentFee
@@ -338,7 +346,7 @@ const getMyPayments = async (req, res) => {
     const studentFeeIds = studentFees.map(fee => fee._id);
 
     // Get payments for these student fees
-    const payments = await FeePayment.find({ studentFeeId: { $in: studentFeeIds } })
+    const payments = await FeePayment.find({ studentFeeId: { $in: studentFeeIds }, ...getSessionFilter(req) })
       .populate('studentFeeId', 'totalAmount paidAmount dueAmount status')
       .sort({ createdAt: -1 });
 
@@ -355,7 +363,7 @@ const getReceipt = async (req, res) => {
     const { schoolId, role, _id: userId } = req.user;
 
     // Find the payment by receipt number
-    const payment = await FeePayment.findOne({ receiptNo, schoolId })
+    const payment = await FeePayment.findOne({ receiptNo, schoolId, ...getSessionFilter(req) })
       .populate('studentFeeId')
       .populate('collectedBy', 'name');
     if (!payment) {
@@ -534,7 +542,7 @@ const generateAndPay = async (req, res) => {
     // ── Fetch session + verify student belong to school ───────────────────────
     const [session, student] = await Promise.all([
       AcademicSession.findOne({ schoolId, isActive: true }),
-      Student.findOne({ _id: studentId, schoolId }),
+      Student.findOne({ _id: studentId, schoolId, ...getSessionFilter(req) }),
     ]);
     if (!session)
       return res.status(400).json({ success: false, message: 'No active academic session found' });
@@ -578,7 +586,7 @@ const generateAndPay = async (req, res) => {
       const requestedAmount = parseFloat(amounts[feeType]);
       const description = `${month} ${feeType} Fee`;
 
-      let bill = await Bill.findOne({ studentId, schoolId, billType: feeType, description });
+      let bill = await Bill.findOne({ studentId, schoolId, billType: feeType, description, ...getSessionFilter(req) });
 
       if (!bill) {
         bill = await Bill.create({
@@ -613,7 +621,7 @@ const generateAndPay = async (req, res) => {
 
         const description = `${month} ${extra.name} (Extra)`;
         let bill = await Bill.findOne({
-          studentId, schoolId, billType: 'MISCELLANEOUS', description,
+          studentId, schoolId, billType: 'MISCELLANEOUS', description, ...getSessionFilter(req)
         });
 
         if (!bill) {

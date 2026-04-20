@@ -23,7 +23,7 @@ const PaymentSchema = new mongoose.Schema({
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
-    required: true
+    required: false
   },
   amount: {
     type: Number,
@@ -50,6 +50,7 @@ const PaymentSchema = new mongoose.Schema({
 
 PaymentSchema.index({ billId: 1 });
 PaymentSchema.index({ studentId: 1, schoolId: 1 });
+PaymentSchema.index({ schoolId: 1, sessionId: 1 });
 PaymentSchema.index({ receiptNumber: 1 }, { unique: true });
 PaymentSchema.index({ paymentDate: -1, schoolId: 1 });
 

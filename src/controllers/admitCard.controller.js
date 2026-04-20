@@ -2,6 +2,18 @@ const AdmitCard = require('../models/AdmitCard.js');
 const ExamPayment = require('../models/ExamPayment.js');
 const ExamForm = require('../models/ExamForm.js');
 
+const sessionFilter = (req) => {
+  const sid = req.user?.sessionId;
+  if (!sid) return {};
+  return {
+    $or: [
+      { sessionId: sid },
+      { sessionId: null },
+      { sessionId: { $exists: false } },
+    ],
+  };
+};
+
 const generateAdmitCard = async (req, res) => {
   try {
     const { studentId, examId, rollNumber, examCenter } = req.body;
@@ -45,7 +57,7 @@ const generateAdmitCard = async (req, res) => {
 
 const getMyAdmitCard = async (req, res) => {
   try {
-    const { schoolId, sessionId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role } = req.user;
     const { examId } = req.query;
 
     let studentIds = [];
@@ -53,8 +65,7 @@ const getMyAdmitCard = async (req, res) => {
     if (role === 'STUDENT') {
       // Fetch Student document to get studentId
       const Student = require('../models/Student.js');
-      const studentQuery = { userId, schoolId };
-      if (sessionId) studentQuery.sessionId = sessionId;
+      const studentQuery = { userId, schoolId, ...sessionFilter(req) };
       const student = await Student.findOne(studentQuery);
       if (!student) {
         return res.status(404).json({ message: 'Student profile not found.' });
@@ -73,8 +84,7 @@ const getMyAdmitCard = async (req, res) => {
     }
 
     let admitCard;
-    const filter = { studentId: { $in: studentIds }, schoolId };
-    if (sessionId) filter.sessionId = sessionId;
+    const filter = { studentId: { $in: studentIds }, schoolId, ...sessionFilter(req) };
     if (examId) {
       // If examId is provided, find specific admit card for the student(s)
       admitCard = await AdmitCard.findOne({ ...filter, examId })
@@ -100,7 +110,8 @@ const getMyAdmitCard = async (req, res) => {
 const getAdmitCardPDF = async (req, res) => {
   try {
     const { id } = req.params;
-    const admitCard = await AdmitCard.findById(id)
+    const { schoolId } = req.user;
+    const admitCard = await AdmitCard.findOne({ _id: id, schoolId, ...sessionFilter(req) })
       .populate('studentId', 'name rollNumber')
       .populate('examId', 'name')
       .populate('schoolId', 'name address phone email');
@@ -154,10 +165,9 @@ const getAdmitCardPDF = async (req, res) => {
 const getAdmitCardsByExam = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
 
-    const filter = { examId, schoolId };
-    if (sessionId) filter.sessionId = sessionId;
+    const filter = { examId, schoolId, ...sessionFilter(req) };
 
     const cards = await AdmitCard.find(filter)
       .populate('studentId', 'name rollNumber')
@@ -174,10 +184,10 @@ const getAdmitCardsByExam = async (req, res) => {
 const getMyAdmitCardByExamId = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { schoolId, sessionId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role } = req.user;
 
     const Exam = require('../models/Exam.js');
-    const exam = await Exam.findById(examId);
+    const exam = await Exam.findOne({ _id: examId, schoolId, ...sessionFilter(req) });
     if (!exam) {
       return res.status(404).json({ success: false, message: 'Exam not found' });
     }
@@ -192,8 +202,7 @@ const getMyAdmitCardByExamId = async (req, res) => {
 
     if (role === 'STUDENT') {
       const Student = require('../models/Student.js');
-      const studentQuery = { userId, schoolId };
-      if (sessionId) studentQuery.sessionId = sessionId;
+      const studentQuery = { userId, schoolId, ...sessionFilter(req) };
       const student = await Student.findOne(studentQuery);
       if (!student) {
         return res.status(404).json({ success: false, message: 'Student profile not found.' });
@@ -210,8 +219,7 @@ const getMyAdmitCardByExamId = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
 
-    const filter = { studentId: { $in: studentIds }, examId, schoolId };
-    if (sessionId) filter.sessionId = sessionId;
+    const filter = { studentId: { $in: studentIds }, examId, schoolId, ...sessionFilter(req) };
 
     const card = await AdmitCard.findOne(filter)
       .populate('studentId', 'name rollNumber')

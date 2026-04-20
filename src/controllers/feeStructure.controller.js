@@ -2,6 +2,11 @@ const FeeStructure = require('../models/FeeStructure');
 const Class = require('../models/Class');
 const AcademicSession = require('../models/AcademicSession');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 const createFeeStructure = async (req, res) => {
   try {
     const { name, amount, frequency, classId, isOptional, status } = req.body;
@@ -47,7 +52,7 @@ const getFeeStructures = async (req, res) => {
     const { classId } = req.query;
     const { schoolId } = req.user;
 
-    const filter = { schoolId };
+    const filter = { schoolId, ...getSessionFilter(req) };
     if (classId) filter.classId = classId;
 
     const feeStructures = await FeeStructure.find(filter).populate('classId', 'name');

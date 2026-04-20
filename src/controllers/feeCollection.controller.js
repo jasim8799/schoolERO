@@ -4,6 +4,11 @@ const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 // Generate receipt number
 const generateReceiptNumber = (schoolId) => {
   const ts = Date.now();
@@ -44,6 +49,7 @@ exports.searchStudents = async (req, res) => {
     // 2. Search students directly
     const students = await Student.find({
       schoolId,
+      ...getSessionFilter(req),
       $or: [
         ...(userIds.length > 0 ? [{ userId: { $in: userIds } }] : []),
         { rollNumber: { $regex: search, $options: 'i' } },
@@ -83,6 +89,7 @@ exports.getStudentDues = async (req, res) => {
     const bills = await Bill.find({
       studentId,
       schoolId,
+      ...getSessionFilter(req),
       status: { $in: ['UNPAID', 'PARTIAL'] }
     })
       .populate('sessionId', 'name')
@@ -138,7 +145,7 @@ exports.collectPayment = async (req, res) => {
     const receipts = [];
 
     for (const billId of billIds) {
-      const bill = await Bill.findOne({ _id: billId, schoolId });
+      const bill = await Bill.findOne({ _id: billId, schoolId, ...getSessionFilter(req) });
       if (!bill) continue;
       if (bill.status === 'PAID') continue;
 

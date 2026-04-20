@@ -28,7 +28,7 @@ const admissionSchema = new mongoose.Schema(
   {
     studentId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
     schoolId:        { type: mongoose.Schema.Types.ObjectId, ref: 'School',  required: true },
-    sessionId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Session'  },
+    sessionId:       { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicSession' },
     admissionNumber: { type: String, default: '' },
     aadhaarNumber:   { type: String, default: '' },
     documents: {
@@ -55,5 +55,6 @@ const admissionSchema = new mongoose.Schema(
 
 admissionSchema.index({ studentId: 1 }, { unique: true });
 admissionSchema.index({ schoolId: 1 });
+admissionSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('Admission', admissionSchema);

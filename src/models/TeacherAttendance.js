@@ -31,7 +31,8 @@ const teacherAttendanceSchema = new mongoose.Schema(
     sessionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AcademicSession',
-      required: true,
+      required: false,
+      index: true,
     },
   },
   {
@@ -40,6 +41,7 @@ const teacherAttendanceSchema = new mongoose.Schema(
 );
 
 teacherAttendanceSchema.index({ teacherId: 1, date: 1, schoolId: 1, sessionId: 1 }, { unique: true });
+teacherAttendanceSchema.index({ schoolId: 1, sessionId: 1 });
 teacherAttendanceSchema.index({ schoolId: 1, sessionId: 1, date: 1 });
 
 module.exports = mongoose.model('TeacherAttendance', teacherAttendanceSchema);

@@ -114,7 +114,7 @@ app.use('/api/users', attachSchoolId, checkSubscriptionStatus(), checkModuleAcce
 app.use('/api/classes', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('classes'), classRoutes);
 app.use('/api/sections', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('sections'), sectionRoutes);
 app.use('/api/subjects', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('subjects'), subjectRoutes);
-app.use('/api/teachers', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
+app.use('/api/teachers', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherRoutes);
 app.use('/api/teacher-assignments', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('teachers'), teacherAssignmentRoutes);
 app.use('/api/parents', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('parents'), parentRoutes);
 app.use('/api/attendance', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('attendance'), attendanceRoutes);
@@ -134,6 +134,7 @@ app.use(
   '/api/fees',
   paymentRateLimit,
   attachSchoolId,
+  attachActiveSession,
   checkSubscriptionStatus(true),
   checkModuleAccess('fees'),
   feePaymentRoutes
@@ -142,6 +143,7 @@ app.use(
 app.use(
   '/api/fees/structure',
   attachSchoolId,
+  attachActiveSession,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
   feeStructureRoutes
@@ -150,26 +152,28 @@ app.use(
 app.use(
   '/api/fees/student',
   attachSchoolId,
+  attachActiveSession,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
   studentFeeRoutes
 );
 app.use('/api/expenses', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('expenses'), expenseRoutes);
-app.use('/api/salary', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
+app.use('/api/salary', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('salary'), salaryRoutes);
 app.use('/api/reports', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('reports'), reportsRoutes);
 app.use('/api/tc', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('tc'), tcRoutes);
 app.use('/api/hostels', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelRoutes);
 app.use('/api/hostel-leaves', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelLeaveRoutes);
 app.use('/api/rooms', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), roomRoutes);
 app.use('/api/student-hostel', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), studentHostelRoutes);
-app.use('/api/hostel-fees', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelFeeRoutes);
+app.use('/api/hostel-fees', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('hostel'), hostelFeeRoutes);
 app.use('/api/transport', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportRoutes);
 app.use('/api/student-transport', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), studentTransportRoutes);
-app.use('/api/transport-fees', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('transport'), transportFeeRoutes);
+app.use('/api/transport-fees', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('transport'), transportFeeRoutes);
 app.use(
   '/api/dashboard',
   generalRateLimit,
   attachSchoolId,
+  attachActiveSession,
   checkSubscriptionStatus(true), // allow read-only dashboards during grace period
   dashboardRoutes
 );
@@ -179,23 +183,24 @@ app.use('/api/workflow', attachSchoolId, workflowRoutes);
 app.use('/api/events', attachSchoolId, eventRoutes);
 app.use('/api/automations', attachSchoolId, automationRoutes);
 app.use('/api/lifecycle', attachSchoolId, lifecycleRoutes);
-app.use('/api/fee-assignments', attachSchoolId, feeAssignmentRoutes);
+app.use('/api/fee-assignments', attachSchoolId, attachActiveSession, feeAssignmentRoutes);
 app.use('/api/notifications', attachSchoolId, notificationRoutes);
-app.use('/api/bills', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('fees'), billRoutes);
+app.use('/api/bills', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('fees'), billRoutes);
 app.use(
   '/api/fee-collection',
   paymentRateLimit,
   attachSchoolId,
+  attachActiveSession,
   checkSubscriptionStatus(),
   checkModuleAccess('fees'),
   feeCollectionRoutes
 );
 app.use('/api/videos', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('videos'), videoRoutes);
 app.use('/api/admissions', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), admissionRoutes);
-app.use('/api/questions', attachSchoolId, checkSubscriptionStatus(), questionRoutes);
-app.use('/api/ptm', attachSchoolId, checkSubscriptionStatus(), ptmRoutes);
+app.use('/api/questions', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), questionRoutes);
+app.use('/api/ptm', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), ptmRoutes);
 app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), noticeRoutes);
-app.use('/api/leave', attachSchoolId, checkSubscriptionStatus(), leaveRoutes);
+app.use('/api/leave', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), leaveRoutes);
 
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');

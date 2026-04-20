@@ -22,6 +22,11 @@ const QuestionSchema = new mongoose.Schema(
       ref: 'School',
       required: true,
     },
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AcademicSession',
+      required: false,
+    },
     chapter: { type: String, default: '' },
     topic: { type: String, default: '' },
     questionText: { type: String, default: '' },
@@ -41,5 +46,6 @@ const QuestionSchema = new mongoose.Schema(
 QuestionSchema.index({ studentId: 1, schoolId: 1 });
 QuestionSchema.index({ teacherId: 1, schoolId: 1 });
 QuestionSchema.index({ schoolId: 1, status: 1 });
+QuestionSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('Question', QuestionSchema);

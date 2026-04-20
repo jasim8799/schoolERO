@@ -33,7 +33,7 @@ const createNotice = async (req, res) => {
       eventDate,
       attachments,
     } = req.body;
-    const { schoolId, _id: createdBy, role } = req.user;
+    const { schoolId, _id: createdBy, role, sessionId } = req.user;
 
     if (!title || !message) {
       return res.status(400).json({
@@ -57,6 +57,7 @@ const createNotice = async (req, res) => {
 
     const payload = {
       schoolId,
+      sessionId,
       title: title.trim(),
       message: message.trim(),
       target: target || 'All School',

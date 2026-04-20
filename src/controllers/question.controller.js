@@ -4,10 +4,21 @@ const Student = require('../models/Student.js');
 const Teacher = require('../models/Teacher.js');
 const Subject = require('../models/Subject.js');
 
+const _sessionFilter = (sessionId) =>
+  sessionId
+    ? {
+        $or: [
+          { sessionId },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ],
+      }
+    : {};
+
 const askQuestion = async (req, res) => {
   try {
     const { teacherId, subjectId, chapter, topic, questionText, questionImage } = req.body;
-    const { schoolId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role, sessionId } = req.user;
 
     let studentId;
     if (role === 'STUDENT') {
@@ -32,6 +43,7 @@ const askQuestion = async (req, res) => {
       teacherId,
       subjectId,
       schoolId,
+      sessionId,
       chapter: chapter || '',
       topic: topic || '',
       questionText: questionText || '',
@@ -46,7 +58,7 @@ const askQuestion = async (req, res) => {
 
 const getMyQuestions = async (req, res) => {
   try {
-    const { schoolId, _id: userId, role } = req.user;
+    const { schoolId, _id: userId, role, sessionId } = req.user;
 
     let studentId;
     if (role === 'STUDENT') {
@@ -71,7 +83,7 @@ const getMyQuestions = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
-    const questions = await Question.find({ studentId, schoolId })
+    const questions = await Question.find({ studentId, schoolId, ..._sessionFilter(sessionId) })
       .populate({ path: 'teacherId', select: 'userId', populate: { path: 'userId', select: 'name' } })
       .populate('subjectId', 'name')
       .sort({ createdAt: -1 })
@@ -85,13 +97,13 @@ const getMyQuestions = async (req, res) => {
 
 const getTeacherQuestions = async (req, res) => {
   try {
-    const { schoolId, _id: userId } = req.user;
+    const { schoolId, _id: userId, sessionId } = req.user;
     const { status } = req.query;
 
     const teacher = await Teacher.findOne({ userId, schoolId }).select('_id').lean();
     if (!teacher) return res.json({ success: true, data: [] });
 
-    const filter = { teacherId: teacher._id, schoolId };
+    const filter = { teacherId: teacher._id, schoolId, ..._sessionFilter(sessionId) };
     if (status) filter.status = String(status).toUpperCase();
 
     const questions = await Question.find(filter)
@@ -118,7 +130,7 @@ const answerQuestion = async (req, res) => {
   try {
     const { id } = req.params;
     const { answerText, answerImage } = req.body;
-    const { schoolId, _id: userId } = req.user;
+    const { schoolId, _id: userId, sessionId } = req.user;
 
     const teacher = await Teacher.findOne({ userId, schoolId }).select('_id').lean();
     if (!teacher) return res.status(403).json({ success: false, message: 'Forbidden' });
@@ -128,7 +140,7 @@ const answerQuestion = async (req, res) => {
     }
 
     const question = await Question.findOneAndUpdate(
-      { _id: id, teacherId: teacher._id, schoolId },
+      { _id: id, teacherId: teacher._id, schoolId, ..._sessionFilter(sessionId) },
       {
         answerText: answerText || '',
         answerImage: answerImage || '',
@@ -148,10 +160,10 @@ const answerQuestion = async (req, res) => {
 
 const getAllQuestions = async (req, res) => {
   try {
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
     const { status, subjectId, teacherId, classId, page = 1, limit = 50 } = req.query;
 
-    const filter = { schoolId };
+    const filter = { schoolId, ..._sessionFilter(sessionId) };
     if (status) filter.status = String(status).toUpperCase();
     if (subjectId && mongoose.Types.ObjectId.isValid(subjectId)) {
       filter.subjectId = new mongoose.Types.ObjectId(subjectId);

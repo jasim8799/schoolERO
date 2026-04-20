@@ -43,7 +43,8 @@ const HomeworkSchema = new mongoose.Schema({
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
-    required: true
+    required: false,
+    index: true
   },
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -55,5 +56,7 @@ const HomeworkSchema = new mongoose.Schema({
 });
 
 HomeworkSchema.index({ classId: 1, sessionId: 1, schoolId: 1 });
+HomeworkSchema.index({ schoolId: 1, sessionId: 1 });
+HomeworkSchema.index({ schoolId: 1, sessionId: 1, classId: 1 });
 
 module.exports = mongoose.model('Homework', HomeworkSchema);

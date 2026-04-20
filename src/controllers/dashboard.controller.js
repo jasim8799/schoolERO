@@ -13,13 +13,26 @@ const Result = require('../models/Result');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
 const { USER_ROLES } = require('../config/constants');
 
+function sessionFilter(req) {
+  const sid = req.user?.sessionId;
+  if (!sid) return {};
+  return {
+    $or: [
+      { sessionId: sid },
+      { sessionId: null },
+      { sessionId: { $exists: false } },
+    ],
+  };
+}
+
 // Get Principal dashboard data
 const getPrincipalDashboard = async (req, res) => {
   try {
-    const { schoolId, sessionId } = req.user;
+    const { schoolId } = req.user;
+    const sFilter = sessionFilter(req);
 
     // Total students
-    const totalStudents = await Student.countDocuments({ schoolId, sessionId });
+    const totalStudents = await Student.countDocuments({ schoolId, ...sFilter });
 
     // Total teachers
     const totalTeachers = await User.countDocuments({ schoolId, role: USER_ROLES.TEACHER });
@@ -32,6 +45,7 @@ const getPrincipalDashboard = async (req, res) => {
 
     const todayAttendances = await StudentDailyAttendance.find({
       schoolId,
+      ...sFilter,
       date: { $gte: today, $lt: tomorrow }
     });
 
@@ -39,18 +53,19 @@ const getPrincipalDashboard = async (req, res) => {
     const todayAttendancePercent = todayAttendances.length > 0 ? ((presentCount / todayAttendances.length) * 100).toFixed(1) : 0;
 
     // Fee due amount
-    const feeDues = await StudentFee.find({ schoolId, status: { $in: ['Due', 'Partial'] } });
+    const feeDues = await StudentFee.find({ schoolId, ...sFilter, status: { $in: ['Due', 'Partial'] } });
     const totalFeeDue = feeDues.reduce((sum, fee) => sum + fee.dueAmount, 0);
 
     // Today collection
     const todayPayments = await FeePayment.find({
       schoolId,
+      ...sFilter,
       paymentDate: { $gte: today, $lt: tomorrow }
     });
     const todayCollection = todayPayments.reduce((sum, payment) => sum + payment.amount, 0);
 
     // Pending exam payments
-    const pendingExamPayments = await ExamPayment.countDocuments({ schoolId, status: 'PENDING' });
+    const pendingExamPayments = await ExamPayment.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
     // Hostel occupancy
     const hostelStudents = await StudentHostel.countDocuments({ schoolId, status: 'ACTIVE' });
@@ -85,9 +100,10 @@ const getPrincipalDashboard = async (req, res) => {
 const getOperatorDashboard = async (req, res) => {
   try {
     const { schoolId } = req.user;
+    const sFilter = sessionFilter(req);
 
     // Pending fee dues
-    const pendingFeeDues = await StudentFee.countDocuments({ schoolId, status: { $in: ['Due', 'Partial'] } });
+    const pendingFeeDues = await StudentFee.countDocuments({ schoolId, ...sFilter, status: { $in: ['Due', 'Partial'] } });
 
     // Today payments
     const today = new Date();
@@ -97,22 +113,24 @@ const getOperatorDashboard = async (req, res) => {
 
     const todayPayments = await FeePayment.find({
       schoolId,
+      ...sFilter,
       paymentDate: { $gte: today, $lt: tomorrow }
     });
     const todayPaymentsCount = todayPayments.length;
     const todayPaymentsAmount = todayPayments.reduce((sum, payment) => sum + payment.amount, 0);
 
     // Attendance not marked
-    const classes = await require('../models/Class').find({ schoolId });
+    const classes = await require('../models/Class').find({ schoolId, ...sFilter });
     let attendanceNotMarked = 0;
     for (const cls of classes) {
-      const sections = await require('../models/Section').find({ classId: cls._id });
+      const sections = await require('../models/Section').find({ classId: cls._id, ...sFilter });
       for (const section of sections) {
-        const students = await Student.countDocuments({ classId: cls._id, sectionId: section._id, schoolId });
+        const students = await Student.countDocuments({ classId: cls._id, sectionId: section._id, schoolId, ...sFilter });
         const marked = await StudentDailyAttendance.countDocuments({
           classId: cls._id,
           sectionId: section._id,
           schoolId,
+          ...sFilter,
           date: { $gte: today, $lt: tomorrow }
         });
         if (marked < students) {
@@ -122,7 +140,7 @@ const getOperatorDashboard = async (req, res) => {
     }
 
     // Exam forms pending
-    const pendingExamForms = await ExamForm.countDocuments({ schoolId, status: 'PENDING' });
+    const pendingExamForms = await ExamForm.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
     res.json({
       success: true,
@@ -143,9 +161,10 @@ const getOperatorDashboard = async (req, res) => {
 const getTeacherDashboard = async (req, res) => {
   try {
     const { schoolId, _id: teacherId } = req.user;
+    const sFilter = sessionFilter(req);
 
     // Assigned classes (simplified - count classes teacher has attendance for)
-    const assignedClasses = await StudentDailyAttendance.distinct('classId', { schoolId, markedBy: teacherId });
+    const assignedClasses = await StudentDailyAttendance.distinct('classId', { schoolId, ...sFilter, markedBy: teacherId });
 
     // Today attendance status
     const today = new Date();
@@ -155,11 +174,13 @@ const getTeacherDashboard = async (req, res) => {
 
     const todayAttendance = await TeacherAttendance.findOne({
       teacherId,
+      schoolId,
+      ...sFilter,
       date: { $gte: today, $lt: tomorrow }
     });
 
     // Homework count
-    const homeworkCount = await Homework.countDocuments({ schoolId, createdBy: teacherId });
+    const homeworkCount = await Homework.countDocuments({ schoolId, ...sFilter, createdBy: teacherId });
 
     res.json({
       success: true,
@@ -178,26 +199,36 @@ const getTeacherDashboard = async (req, res) => {
 const getStudentDashboard = async (req, res) => {
   try {
     const { schoolId, _id: userId, role } = req.user;
+    const sFilter = sessionFilter(req);
 
     let studentId;
     if (role === USER_ROLES.STUDENT) {
       // First try by userId (already linked)
-      let student = await Student.findOne({ userId, schoolId });
+      let student = await Student.findOne({ userId, schoolId, ...sFilter });
 
       // Fallback: student created with userId as the same ObjectId value.
       if (!student) {
-        student = await Student.findOne({ _id: userId, schoolId }).catch(() => null);
+        student = await Student.findOne({ _id: userId, schoolId, ...sFilter }).catch(() => null);
       }
 
       // Fallback: try linking by mobile number (first login scenario)
       if (!student) {
         const user = await User.findById(userId).select('mobile');
         if (user?.mobile) {
-          student = await Student.findOne({
-            schoolId,
-            mobile: user.mobile,
-            $or: [{ userId: null }, { userId: { $exists: false } }]
-          });
+          const unlinkedFilter = { $or: [{ userId: null }, { userId: { $exists: false } }] };
+          const mobileQuery = sFilter.$or
+            ? {
+                schoolId,
+                mobile: user.mobile,
+                $and: [unlinkedFilter, sFilter],
+              }
+            : {
+                schoolId,
+                mobile: user.mobile,
+                ...unlinkedFilter,
+              };
+
+          student = await Student.findOne(mobileQuery);
           // Auto-link if found
           if (student) {
             student.userId = userId;
@@ -259,16 +290,16 @@ const getStudentDashboard = async (req, res) => {
     }
 
     // Attendance %
-    const attendances = await StudentDailyAttendance.find({ studentId });
+    const attendances = await StudentDailyAttendance.find({ studentId, schoolId, ...sFilter });
     const presentCount = attendances.filter(a => a.status === 'PRESENT').length;
     const attendancePercent = attendances.length > 0 ? ((presentCount / attendances.length) * 100).toFixed(1) : 0;
 
     // Fee due
-    const fees = await StudentFee.find({ studentId });
+    const fees = await StudentFee.find({ studentId, schoolId, ...sFilter });
     const totalDue = fees.reduce((sum, fee) => sum + fee.dueAmount, 0);
 
     // Exam status
-    const results = await Result.find({ studentId }).populate('examId');
+    const results = await Result.find({ studentId, schoolId, ...sFilter }).populate('examId');
     const passedExams = results.filter(r => r.status === 'PASS').length;
     const totalExams = results.length;
 

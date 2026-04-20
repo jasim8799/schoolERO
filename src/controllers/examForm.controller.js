@@ -1,5 +1,17 @@
 const ExamForm = require('../models/ExamForm.js');
 
+const sessionFilter = (req) => {
+  const sid = req.user?.sessionId;
+  if (!sid) return {};
+  return {
+    $or: [
+      { sessionId: sid },
+      { sessionId: null },
+      { sessionId: { $exists: false } },
+    ],
+  };
+};
+
 // Utility function to close expired exam forms
 const closeExpiredExamForms = async (schoolId, sessionId) => {
   try {
@@ -63,8 +75,7 @@ const getActiveExamForms = async (req, res) => {
     await closeExpiredExamForms(schoolId, sessionId);
 
     // Build query dynamically
-    const query = { schoolId, status: 'ACTIVE' };
-    if (sessionId) query.sessionId = sessionId;
+    const query = { schoolId, status: 'ACTIVE', ...sessionFilter(req) };
     if (classId) {
       query.classId = classId;
     }

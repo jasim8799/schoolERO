@@ -5,7 +5,7 @@ const StudentFeeAssignmentSchema = new mongoose.Schema({
   studentId: { type: ObjectId, ref: 'Student', required: true },
   feeStructureId: { type: ObjectId, ref: 'FeeStructure', required: true },
   schoolId: { type: ObjectId, ref: 'School', required: true },
-  sessionId: { type: ObjectId, ref: 'AcademicSession', required: true },
+  sessionId: { type: ObjectId, ref: 'AcademicSession', required: false },
   totalAmount: { type: Number, required: true },
   paidAmount: { type: Number, default: 0 },
   dueAmount: { type: Number },          // computed: totalAmount - paidAmount
@@ -31,6 +31,7 @@ StudentFeeAssignmentSchema.index(
   { unique: true }
 );
 StudentFeeAssignmentSchema.index({ schoolId: 1, status: 1 });
+StudentFeeAssignmentSchema.index({ schoolId: 1, sessionId: 1 });
 StudentFeeAssignmentSchema.index({ dueDate: 1, status: 1 });
 
 module.exports = mongoose.model('StudentFeeAssignment', StudentFeeAssignmentSchema);
