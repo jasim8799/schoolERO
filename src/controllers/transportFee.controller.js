@@ -32,7 +32,16 @@ const getAllFees = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json({ success: true, data: fees });
+    const enriched = await Promise.all(fees.map(async (fee) => {
+      const bill = await Bill.findOne({
+        sourceType: 'StudentTransport',
+        sourceId: fee._id,
+      }).select('status totalAmount paidAmount dueAmount billNumber').lean();
+
+      return { ...fee, bill };
+    }));
+
+    res.json({ success: true, data: enriched });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

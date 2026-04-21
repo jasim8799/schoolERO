@@ -3,6 +3,7 @@ const Payment = require('../models/Payment');
 const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
+const { syncBillPaymentToSource } = require('../services/feeSync.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
@@ -184,6 +185,9 @@ exports.payBill = async (req, res) => {
     // Update bill
     bill.paidAmount += amount;
     await bill.save(); // pre-save hook updates dueAmount + status
+
+    // Keep source models (TransportFee / StudentHostel / StudentFee) in sync with Bill status
+    await syncBillPaymentToSource(bill);
 
     // Ledger dual-write — never fail the payment
     try {

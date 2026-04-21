@@ -3,6 +3,9 @@ const AcademicHistory = require('../models/AcademicHistory');
 const TC = require('../models/TC');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
+const Payment = require('../models/Payment');
+const Expense = require('../models/Expense');
+const SalaryPayment = require('../models/SalaryPayment');
 
 const getRequestedSessionId = (req) => req.query.sessionId || req.user?.sessionId;
 
@@ -285,6 +288,58 @@ const getHistoryReport = async (req, res) => {
   }
 };
 
+const getFinancialSummary = async (req, res) => {
+  try {
+    const { schoolId, sessionId } = req.user;
+    const { month } = req.query;
+
+    const sessionMatch = sessionId ? { sessionId } : {};
+    let dateMatch = {};
+    if (month) {
+      const [year, m] = month.split('-');
+      dateMatch = {
+        createdAt: {
+          $gte: new Date(Number(year), Number(m) - 1, 1),
+          $lt: new Date(Number(year), Number(m), 1),
+        },
+      };
+    }
+
+    const [feeCollected, totalExpenses, salariesPaid] = await Promise.all([
+      Payment.aggregate([
+        { $match: { schoolId, ...sessionMatch, ...dateMatch } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]),
+      Expense.aggregate([
+        { $match: { schoolId, ...sessionMatch, ...dateMatch } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      SalaryPayment.aggregate([
+        { $match: { schoolId, ...sessionMatch } },
+        { $group: { _id: null, total: { $sum: '$amountPaid' }, count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const totalIncome = feeCollected[0]?.total || 0;
+    const expenseTotal = totalExpenses[0]?.total || 0;
+    const salaryTotal = salariesPaid[0]?.total || 0;
+
+    res.json({
+      success: true,
+      data: {
+        totalFeeCollected: totalIncome,
+        totalExpenses: expenseTotal,
+        totalSalaryPaid: salaryTotal,
+        totalOutflow: expenseTotal + salaryTotal,
+        netIncome: totalIncome - expenseTotal - salaryTotal,
+        paymentsCount: feeCollected[0]?.count || 0,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // Placeholder export functions for promotion and TC reports
 const exportPromotionPDF = (report, res) => {
   const doc = new PDFDocument();
@@ -447,5 +502,6 @@ module.exports = {
   getPromotionReport,
   getRetentionReport,
   getTCReport,
-  getHistoryReport
+  getHistoryReport,
+  getFinancialSummary,
 };

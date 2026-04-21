@@ -2,7 +2,7 @@ const express = require('express');
 const {
   setupSalaryProfile, getSalaryProfile, calculateSalary,
   getMonthlySalaries, paySalary, getSalarySlip, getSalarySlipPdf,
-  getAllStaffList, getStaffSlipAdmin, createAdvance, getAdvances,
+  getAllStaffList, getStaffSlipAdmin, createAdvance, getAdvances, getStaffSalaryHistory,
 } = require('../controllers/salary.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
@@ -22,6 +22,7 @@ router.get('/staff-list', requireRole('PRINCIPAL', 'OPERATOR'), getAllStaffList)
 
 // Get salary profile - Principal, Operator, and staff (with restrictions)
 router.get('/staff/:id', requireRole('PRINCIPAL', 'OPERATOR', 'TEACHER'), getSalaryProfile);
+router.get('/staff/:staffId/history', requireRole('PRINCIPAL', 'OPERATOR'), getStaffSalaryHistory);
 
 // Calculate salary - Only Principal and Operator
 router.post('/calculate', requireRole('PRINCIPAL', 'OPERATOR'), calculateSalary);

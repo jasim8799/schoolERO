@@ -471,10 +471,31 @@ const getSalarySlip = async (req, res) => {
       status: salaryCalculation.status
     };
 
-    res.json({
-      slip,
-      data: slip
-    });
+    res.json({ success: true, data: slip });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getStaffSalaryHistory = async (req, res) => {
+  try {
+    const { staffId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const calculations = await SalaryCalculation.find({
+      staffId,
+      schoolId,
+      ..._sessionFilter(sessionId),
+    })
+      .sort({ month: -1 })
+      .lean();
+
+    const withPayments = await Promise.all(calculations.map(async (calc) => {
+      const payment = await SalaryPayment.findOne({ salaryCalculationId: calc._id }).lean();
+      return { ...calc, payment };
+    }));
+
+    res.json({ success: true, data: withPayments });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -734,6 +755,7 @@ module.exports = {
   paySalary,
   getSalarySlip,
   getSalarySlipPdf,
+  getStaffSalaryHistory,
   getAllStaffList,
   getStaffSlipAdmin,
   createAdvance,

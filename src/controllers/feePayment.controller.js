@@ -13,6 +13,7 @@ const Payment = require('../models/Payment');
 const LedgerEntry = require('../models/LedgerEntry');
 const AcademicSession = require('../models/AcademicSession');
 const { auditLog } = require('../utils/auditLog');
+const { syncBillPaymentToSource } = require('../services/feeSync.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
@@ -86,6 +87,20 @@ const payManual = async (req, res) => {
       dueAmount: newDueAmount,
       status: newStatus
     });
+
+    try {
+      const linkedBill = await Bill.findOne({
+        sourceType: 'StudentFee',
+        sourceId: studentFeeId,
+        schoolId,
+      });
+      if (linkedBill) {
+        linkedBill.paidAmount += amount;
+        await linkedBill.save();
+      }
+    } catch (billSyncErr) {
+      console.error('[payManual] Bill sync failed:', billSyncErr.message);
+    }
 
     // Audit log
     await auditLog({
@@ -694,6 +709,8 @@ const generateAndPay = async (req, res) => {
       // pre-save hook recalculates dueAmount + status
       bill.paidAmount += payAmount;
       await bill.save();
+
+      await syncBillPaymentToSource(bill);
 
       // Ledger entry — never fail the parent payment
       try {

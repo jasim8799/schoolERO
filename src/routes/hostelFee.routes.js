@@ -5,6 +5,7 @@ const { requireRole } = require('../middlewares/role.middleware');
 const Student = require('../models/Student');
 const Parent = require('../models/Parent');
 const Bill = require('../models/Bill');
+const Payment = require('../models/Payment');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
@@ -38,11 +39,25 @@ router.get('/student/me', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), as
 			return res.status(403).json({ success: false, message: 'Forbidden' });
 		}
 
-		const bills = await Bill.find({ studentId, schoolId, billType: 'HOSTEL' })
+		const bills = await Bill.find({
+			studentId,
+			schoolId,
+			billType: 'HOSTEL',
+		})
+			.populate('studentId', 'name rollNumber')
 			.sort({ createdAt: -1 })
 			.lean();
 
-		return res.json({ success: true, data: bills });
+		const billsWithPayments = await Promise.all(bills.map(async (bill) => {
+			const payments = await Payment.find({ billId: bill._id })
+				.select('amount paymentDate paymentMode receiptNumber')
+				.sort({ paymentDate: -1 })
+				.lean();
+
+			return { ...bill, payments, isPaid: bill.status === 'PAID' };
+		}));
+
+		return res.json({ success: true, data: billsWithPayments });
 	} catch (err) {
 		return res.status(500).json({ success: false, message: err.message });
 	}

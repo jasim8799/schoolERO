@@ -151,7 +151,7 @@ exports.createAdmission = async (req, res) => {
       paymentStatus: payLater ? 'PENDING' : 'PAID',
     });
 
-    if (finalFee > 0 && !payLater) {
+    if (!payLater) {
       try {
         const Bill = require('../models/Bill');
         const Payment = require('../models/Payment');
@@ -163,50 +163,85 @@ exports.createAdmission = async (req, res) => {
           return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
         };
 
-        let billNumber;
-        let attempts = 0;
-        do {
-          billNumber = generateBillNumber(schoolId);
-          attempts++;
-        } while (attempts < 10 && await Bill.findOne({ billNumber }));
+        const createPaidBillAndPayment = async ({ amount, billType, description, notes }) => {
+          let billNumber;
+          let attempts = 0;
+          do {
+            billNumber = generateBillNumber(schoolId);
+            attempts++;
+          } while (attempts < 10 && await Bill.findOne({ billNumber }));
 
-        const bill = await Bill.create({
-          billNumber,
-          studentId,
-          schoolId,
-          sessionId: activeSession?._id,
-          billType: 'ADMISSION',
-          sourceType: 'Manual',
-          sourceId: admission._id,
-          description: `Admission Fee — ${student.name}`,
-          totalAmount: finalFee,
-          paidAmount: finalFee,
-          dueAmount: 0,
-          status: 'PAID',
-          createdBy: req.user._id
-        });
+          const bill = await Bill.create({
+            billNumber,
+            studentId,
+            schoolId,
+            sessionId: activeSession?._id,
+            billType,
+            sourceType: 'Manual',
+            sourceId: admission._id,
+            description,
+            totalAmount: amount,
+            paidAmount: amount,
+            dueAmount: 0,
+            status: 'PAID',
+            createdBy: req.user._id,
+          });
 
-        let receiptNumber;
-        attempts = 0;
-        do {
-          const ts = Date.now();
-          const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-          receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
-          attempts++;
-        } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
+          let receiptNumber;
+          attempts = 0;
+          do {
+            const ts = Date.now();
+            const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+            receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+            attempts++;
+          } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
 
-        await Payment.create({
-          receiptNumber,
-          billId: bill._id,
-          studentId,
-          schoolId,
-          sessionId: activeSession?._id,
-          amount: finalFee,
-          paymentMode: 'Cash',
-          paymentDate: new Date(),
-          collectedBy: req.user._id,
-          notes: `Admission fee payment for ${student.name}`
-        });
+          await Payment.create({
+            receiptNumber,
+            billId: bill._id,
+            studentId,
+            schoolId,
+            sessionId: activeSession?._id,
+            amount,
+            paymentMode: 'Cash',
+            paymentDate: new Date(),
+            collectedBy: req.user._id,
+            notes,
+          });
+        };
+
+        if (finalFee > 0) {
+          await createPaidBillAndPayment({
+            amount: finalFee,
+            billType: 'ADMISSION',
+            description: `Admission Fee — ${student.name}`,
+            notes: `Admission fee payment for ${student.name}`,
+          });
+        }
+
+        const feeTypes = [
+          { key: 'monthlyFee', billType: 'TUITION', desc: 'Monthly Fee' },
+          { key: 'dressFee', billType: 'TUITION', desc: 'Dress Fee' },
+          { key: 'bookFee', billType: 'TUITION', desc: 'Book Fee' },
+          { key: 'transportFee', billType: 'TRANSPORT', desc: 'Transport Fee' },
+          { key: 'hostelFee', billType: 'HOSTEL', desc: 'Hostel Fee' },
+        ];
+
+        for (const { key, billType, desc } of feeTypes) {
+          const amt = Number(fees[key]) || 0;
+          if (amt <= 0) continue;
+
+          try {
+            await createPaidBillAndPayment({
+              amount: amt,
+              billType,
+              description: `Admission — ${desc} — ${student.name}`,
+              notes: `Admission ${desc} for ${student.name}`,
+            });
+          } catch (err) {
+            console.error(`Admission ${key} bill dual-write failed:`, err.message);
+          }
+        }
       } catch (billErr) {
         console.error('Admission fee bill dual-write failed:', billErr.message);
       }
