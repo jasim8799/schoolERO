@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const Teacher = require('../models/Teacher.js');
 const Student = require('../models/Student.js');
@@ -237,23 +238,31 @@ const getMyTimetable = async (req, res) => {
 // ── GET /api/teacher-assignments/student/me — student sees published class timetable
 const getStudentClassTimetable = async (req, res) => {
   try {
-    const userId = req.user.userId || req.user._id;
-    const schoolId = req.user.schoolId;
-    const sessionId = req.user.sessionId;
-    const isBrowsingHistory = req.user.isBrowsingHistory === true;
+    const { schoolId, sessionId, isBrowsingHistory } = req.user;
+    const resolvedUserId = req.user.userId || req.user._id;
+
+    const schoolObjectId = mongoose.Types.ObjectId.isValid(schoolId)
+      ? new mongoose.Types.ObjectId(schoolId)
+      : null;
+    if (!schoolObjectId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, message: 'Invalid schoolId' });
+    }
 
     let classId;
     let sectionId;
 
     if (isBrowsingHistory) {
-      const student = await Student.findOne({ userId, schoolId }).select('_id');
+      const student = await Student.findOne({
+        userId: resolvedUserId,
+        schoolId: schoolObjectId,
+      }).select('_id');
       if (!student) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student not found' });
       }
 
       const historyRecord = await AcademicHistory.findOne({
         studentId: student._id,
-        schoolId,
+        schoolId: schoolObjectId,
         sessionId,
       }).select('classId sectionId');
 
@@ -264,7 +273,10 @@ const getStudentClassTimetable = async (req, res) => {
       classId = historyRecord.classId;
       sectionId = historyRecord.sectionId || null;
     } else {
-      const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE' })
+      const student = await Student.findOne({
+        userId: resolvedUserId,
+        schoolId: schoolObjectId,
+      })
         .select('classId sectionId');
       if (!student) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student profile not found' });
@@ -274,13 +286,23 @@ const getStudentClassTimetable = async (req, res) => {
       sectionId = student.sectionId;
     }
 
+    if (!classId) {
+      return res.status(HTTP_STATUS.OK).json({ success: true, data: [] });
+    }
+
     const query = {
-      schoolId,
-      ...sessionFilter(req),
+      schoolId: schoolObjectId,
+      sessionId,
       isPublished: true,
       classId,
     };
-    if (sectionId) query.sectionId = sectionId;
+    if (sectionId) {
+      query.$or = [
+        { sectionId },
+        { sectionId: null },
+        { sectionId: { $exists: false } },
+      ];
+    }
 
     const assignments = await TeacherAssignment.find(query)
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
