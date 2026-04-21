@@ -799,7 +799,7 @@ const getStudentSelfAttendance = async (req, res) => {
       responseClassName = history.classId?.name || '';
       responseSectionName = history.sectionId?.name || '';
     } else {
-      student = await Student.findOne({ userId: resolvedUserId, schoolId: normalizedSchoolId, ...sessionFilter(req) })
+      student = await Student.findOne({ userId: resolvedUserId, schoolId: normalizedSchoolId })
         .populate('classId', 'name')
         .populate('sectionId', 'name');
 

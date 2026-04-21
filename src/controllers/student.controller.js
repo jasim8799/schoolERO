@@ -641,56 +641,11 @@ const getMyStudentProfile = async (req, res) => {
     const schoolId = req.user.schoolId?._id || req.user.schoolId;
     const sessionId = req.user.sessionId;
     const isBrowsingHistory = req.user.isBrowsingHistory === true;
-    let student;
-
-    if (isBrowsingHistory && sessionId) {
-      student = await Student.findOne({ userId, schoolId, sessionId })
-        .populate('classId', 'name order')
-        .populate('sectionId', 'name')
-        .populate('schoolId', 'name code address contact')
-        .populate('sessionId', 'name startDate endDate');
-
-      if (!student) {
-        const user = await User.findById(userId).select('name');
-        const history = await AcademicHistory.findOne({ userId, schoolId, sessionId })
-          .populate('classId', 'name')
-          .populate('sectionId', 'name')
-          .populate('sessionId', 'name startDate endDate');
-
-        if (!history) {
-          return res.status(404).json({
-            success: false,
-            message: 'Student profile not found for selected academic year.'
-          });
-        }
-
-        return res.json({
-          success: true,
-          data: {
-            _id: history.studentId || history._id,
-            userId,
-            schoolId,
-            sessionId: history.sessionId,
-            classId: history.classId,
-            sectionId: history.sectionId,
-            rollNumber: history.rollNumber,
-            status: history.status,
-            name: user?.name,
-          }
-        });
-      }
-
-      return res.json({
-        success: true,
-        data: student
-      });
-    }
-
-    student = await Student.findOne({ userId: req.user.userId });
+    let student = await Student.findOne({ userId, schoolId });
 
     // Failsafe: attempt auto-link if not found
     if (!student) {
-      const user = await User.findById(req.user.userId);
+      const user = await User.findById(userId);
       if (user) {
         const query = { schoolId: user.schoolId };
         const orClauses = [];
@@ -714,23 +669,58 @@ const getMyStudentProfile = async (req, res) => {
       });
     }
 
-    // Re-fetch with full population now that we have the record
-    student = await Student.findById(student._id)
+    // Re-fetch with full population now that we have the record.
+    const populatedStudent = await Student.findById(student._id)
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('schoolId', 'name code address contact')
       .populate('sessionId', 'name startDate endDate');
 
-    if (!student) {
+    if (!populatedStudent) {
       return res.status(404).json({
         success: false,
         message: 'Student profile not linked to this account. Please contact admin.'
       });
     }
 
+    if (isBrowsingHistory && sessionId) {
+      const history = await AcademicHistory.findOne({
+        studentId: student._id,
+        schoolId,
+        sessionId,
+      })
+        .populate('classId', 'name order')
+        .populate('sectionId', 'name')
+        .populate('sessionId', 'name startDate endDate');
+
+      if (!history) {
+        return res.json({
+          success: true,
+          data: {
+            ...populatedStudent.toObject(),
+            sessionId,
+            _browsingHistoricalYear: true,
+          },
+        });
+      }
+
+      const studentObj = populatedStudent.toObject();
+      return res.json({
+        success: true,
+        data: {
+          ...studentObj,
+          classId: history.classId || studentObj.classId,
+          sectionId: history.sectionId || studentObj.sectionId,
+          rollNumber: history.rollNumber || studentObj.rollNumber,
+          sessionId: history.sessionId || sessionId,
+          _browsingHistoricalYear: true,
+        }
+      });
+    }
+
     res.json({
       success: true,
-      data: student
+      data: populatedStudent
     });
   } catch (err) {
     res.status(500).json({

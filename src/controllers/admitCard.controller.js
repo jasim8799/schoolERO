@@ -65,7 +65,7 @@ const getMyAdmitCard = async (req, res) => {
     if (role === 'STUDENT') {
       // Fetch Student document to get studentId
       const Student = require('../models/Student.js');
-      const studentQuery = { userId, schoolId, ...sessionFilter(req) };
+      const studentQuery = { userId, schoolId };
       const student = await Student.findOne(studentQuery);
       if (!student) {
         return res.status(404).json({ message: 'Student profile not found.' });
@@ -202,7 +202,7 @@ const getMyAdmitCardByExamId = async (req, res) => {
 
     if (role === 'STUDENT') {
       const Student = require('../models/Student.js');
-      const studentQuery = { userId, schoolId, ...sessionFilter(req) };
+      const studentQuery = { userId, schoolId };
       const student = await Student.findOne(studentQuery);
       if (!student) {
         return res.status(404).json({ success: false, message: 'Student profile not found.' });

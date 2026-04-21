@@ -286,7 +286,6 @@ const getHomeworkForStudent = async (req, res) => {
         const student = await Student.findOne({
           userId: resolvedUserId,
           schoolId: schoolObjectId,
-          ...sessionFilter(req),
         }).select('classId sectionId');
 
         if (!student) {

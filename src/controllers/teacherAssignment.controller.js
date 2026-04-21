@@ -264,7 +264,7 @@ const getStudentClassTimetable = async (req, res) => {
       classId = historyRecord.classId;
       sectionId = historyRecord.sectionId || null;
     } else {
-      const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE', ...sessionFilter(req) })
+      const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE' })
         .select('classId sectionId');
       if (!student) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student profile not found' });
