@@ -8,6 +8,7 @@ const Parent = require('../models/Parent.js');
 const Subject = require('../models/Subject.js');
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicSession = require('../models/AcademicSession.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
 const { auditLog } = require('../utils/auditLog.js');
 
 // Utility
@@ -738,7 +739,8 @@ const getAttendanceForParent = async (req, res) => {
 
 const getStudentSelfAttendance = async (req, res) => {
   try {
-    const { userId, schoolId } = req.user;
+    const resolvedUserId = req.user.userId || req.user._id;
+    const { schoolId, sessionId, isBrowsingHistory } = req.user;
     const { startDate, endDate } = req.query;
     const normalizedSchoolId = schoolId?._id || schoolId;
 
@@ -754,12 +756,60 @@ const getStudentSelfAttendance = async (req, res) => {
       });
     }
 
-    const student = await Student.findOne({ userId, schoolId: normalizedSchoolId, ...sessionFilter(req) })
-      .populate('classId', 'name')
-      .populate('sectionId', 'name');
+    let student;
+    let responseClassName = '';
+    let responseSectionName = '';
+    let responseRollNumber = '';
 
-    if (!student) {
-      return res.status(404).json({ success: false, message: 'Student record not found' });
+    if (isBrowsingHistory) {
+      const baseStudent = await Student.findOne({
+        userId: resolvedUserId,
+        schoolId: normalizedSchoolId,
+      }).select('_id name rollNumber');
+
+      if (!baseStudent) {
+        return res.status(404).json({ success: false, message: 'Student not found' });
+      }
+
+      const history = await AcademicHistory.findOne({
+        studentId: baseStudent._id,
+        schoolId: normalizedSchoolId,
+        sessionId,
+      })
+        .populate('classId', 'name')
+        .populate('sectionId', 'name')
+        .select('classId sectionId rollNumber');
+
+      if (!history) {
+        return res.status(200).json({
+          success: true,
+          student: {
+            name: baseStudent.name,
+            rollNumber: baseStudent.rollNumber,
+            class: '',
+            section: '',
+          },
+          data: [],
+          attendance: [],
+        });
+      }
+
+      student = { _id: baseStudent._id, name: baseStudent.name };
+      responseRollNumber = history.rollNumber || baseStudent.rollNumber || '';
+      responseClassName = history.classId?.name || '';
+      responseSectionName = history.sectionId?.name || '';
+    } else {
+      student = await Student.findOne({ userId: resolvedUserId, schoolId: normalizedSchoolId, ...sessionFilter(req) })
+        .populate('classId', 'name')
+        .populate('sectionId', 'name');
+
+      if (!student) {
+        return res.status(404).json({ success: false, message: 'Student record not found' });
+      }
+
+      responseRollNumber = student.rollNumber || '';
+      responseClassName = student.classId?.name || '';
+      responseSectionName = student.sectionId?.name || '';
     }
 
     const filter = {
@@ -786,9 +836,9 @@ const getStudentSelfAttendance = async (req, res) => {
       success: true,
       student: {
         name: student.name,
-        rollNumber: student.rollNumber,
-        class: student.classId.name,
-        section: student.sectionId.name
+        rollNumber: responseRollNumber,
+        class: responseClassName,
+        section: responseSectionName
       },
       data: records,
       attendance: records,

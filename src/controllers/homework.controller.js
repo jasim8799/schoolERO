@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Homework = require('../models/Homework.js');
 const Student = require('../models/Student.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
 const Parent = require('../models/Parent.js');
 const Class = require('../models/Class.js');
 const Section = require('../models/Section.js');
@@ -237,7 +238,8 @@ const getHomeworkByClass = async (req, res) => {
 // Get Homework for Student/Parent
 const getHomeworkForStudent = async (req, res) => {
   try {
-    const { role, userId, schoolId } = req.user;
+    const { role, schoolId, sessionId, isBrowsingHistory } = req.user;
+    const resolvedUserId = req.user.userId || req.user._id;
 
     const schoolObjectId = mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : null;
     if (!schoolObjectId) {
@@ -248,24 +250,69 @@ const getHomeworkForStudent = async (req, res) => {
     }
 
     if (role === USER_ROLES.STUDENT) {
-      // Find student by userId
-      const student = await Student.findOne({ userId, schoolId: schoolObjectId, ...sessionFilter(req) });
-      if (!student) {
-        return res.status(HTTP_STATUS.NOT_FOUND).json({
-          success: false,
-          message: 'Student profile not found'
-        });
+      let classId;
+      let sectionId;
+
+      if (isBrowsingHistory) {
+        const student = await Student.findOne({
+          userId: resolvedUserId,
+          schoolId: schoolObjectId,
+        }).select('_id classId sectionId');
+
+        if (!student) {
+          return res.status(HTTP_STATUS.NOT_FOUND).json({
+            success: false,
+            message: 'Student not found'
+          });
+        }
+
+        const historyRecord = await AcademicHistory.findOne({
+          studentId: student._id,
+          schoolId: schoolObjectId,
+          sessionId,
+        }).select('classId sectionId');
+
+        if (!historyRecord?.classId) {
+          return res.status(HTTP_STATUS.OK).json({
+            success: true,
+            count: 0,
+            data: [],
+          });
+        }
+
+        classId = historyRecord.classId;
+        sectionId = historyRecord.sectionId || null;
+      } else {
+        const student = await Student.findOne({
+          userId: resolvedUserId,
+          schoolId: schoolObjectId,
+          ...sessionFilter(req),
+        }).select('classId sectionId');
+
+        if (!student) {
+          return res.status(HTTP_STATUS.NOT_FOUND).json({
+            success: false,
+            message: 'Student profile not found'
+          });
+        }
+
+        classId = student.classId;
+        sectionId = student.sectionId;
+      }
+
+      const sectionClauses = [
+        { sectionId: null },
+        { sectionId: { $exists: false } },
+      ];
+      if (sectionId) {
+        sectionClauses.push({ sectionId });
       }
 
       // Find homework for the student's class with section filtering
       const homework = await Homework.find(applySessionFilter(req, {
-        classId: student.classId,
+        classId,
         schoolId: schoolObjectId,
-        $or: [
-          { sectionId: null },
-          { sectionId: { $exists: false } },
-          { sectionId: student.sectionId }
-        ]
+        $or: sectionClauses,
       }))
         .populate('classId', 'name')
         .populate('sectionId', 'name')
@@ -279,7 +326,7 @@ const getHomeworkForStudent = async (req, res) => {
       });
     } else if (role === USER_ROLES.PARENT) {
       // Find parent by userId
-      const parent = await Parent.findOne({ userId, schoolId: schoolObjectId })
+      const parent = await Parent.findOne({ userId: resolvedUserId, schoolId: schoolObjectId })
         .populate('children', '_id name classId sectionId');
       if (!parent || !parent.children.length) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({

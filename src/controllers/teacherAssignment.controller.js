@@ -1,6 +1,7 @@
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const Teacher = require('../models/Teacher.js');
 const Student = require('../models/Student.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 
@@ -238,19 +239,50 @@ const getStudentClassTimetable = async (req, res) => {
   try {
     const userId = req.user.userId || req.user._id;
     const schoolId = req.user.schoolId;
+    const sessionId = req.user.sessionId;
+    const isBrowsingHistory = req.user.isBrowsingHistory === true;
 
-    const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE', ...sessionFilter(req) });
-    if (!student) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student profile not found' });
+    let classId;
+    let sectionId;
+
+    if (isBrowsingHistory) {
+      const student = await Student.findOne({ userId, schoolId }).select('_id');
+      if (!student) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student not found' });
+      }
+
+      const historyRecord = await AcademicHistory.findOne({
+        studentId: student._id,
+        schoolId,
+        sessionId,
+      }).select('classId sectionId');
+
+      if (!historyRecord?.classId) {
+        return res.status(HTTP_STATUS.OK).json({ success: true, data: [] });
+      }
+
+      classId = historyRecord.classId;
+      sectionId = historyRecord.sectionId || null;
+    } else {
+      const student = await Student.findOne({ userId, schoolId, status: 'ACTIVE', ...sessionFilter(req) })
+        .select('classId sectionId');
+      if (!student) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Student profile not found' });
+      }
+
+      classId = student.classId;
+      sectionId = student.sectionId;
     }
 
-    const assignments = await TeacherAssignment.find({
-      classId: student.classId,
-      sectionId: student.sectionId,
+    const query = {
       schoolId,
       ...sessionFilter(req),
-      isPublished: true
-    })
+      isPublished: true,
+      classId,
+    };
+    if (sectionId) query.sectionId = sectionId;
+
+    const assignments = await TeacherAssignment.find(query)
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
