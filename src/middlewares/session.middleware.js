@@ -23,6 +23,30 @@ const attachActiveSession = async (req, res, next) => {
       });
     }
 
+    // Allow student/parent read-only historical browsing via query override.
+    const viewSessionId = req.query.viewSessionId;
+    const role = req.user?.role;
+    const isBrowsableRole = role === 'STUDENT' || role === 'PARENT';
+    const isReadOnly = req.method === 'GET';
+
+    if (viewSessionId && isBrowsableRole && isReadOnly) {
+      try {
+        const browseSession = await AcademicSession.findOne({
+          _id: new mongoose.Types.ObjectId(viewSessionId),
+          schoolId: querySchoolId,
+        });
+
+        if (browseSession) {
+          req.activeSession = browseSession;
+          req.user.sessionId = browseSession._id;
+          req.user.isBrowsingHistory = true;
+          return next();
+        }
+      } catch (_) {
+        // Ignore invalid override and fall back to active session.
+      }
+    }
+
     const activeSession = await AcademicSession.findOne({
       schoolId: querySchoolId,
       isActive: true

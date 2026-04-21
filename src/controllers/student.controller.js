@@ -5,6 +5,7 @@ const Class = require('../models/Class.js');
 const Section = require('../models/Section.js');
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicSession = require('../models/AcademicSession.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
@@ -636,7 +637,56 @@ const moveStudentToActiveSession = async (req, res) => {
 // Get logged-in student's own profile
 const getMyStudentProfile = async (req, res) => {
   try {
-    let student = await Student.findOne({ userId: req.user.userId });
+    const userId = req.user.userId || req.user._id;
+    const schoolId = req.user.schoolId?._id || req.user.schoolId;
+    const sessionId = req.user.sessionId;
+    const isBrowsingHistory = req.user.isBrowsingHistory === true;
+    let student;
+
+    if (isBrowsingHistory && sessionId) {
+      student = await Student.findOne({ userId, schoolId, sessionId })
+        .populate('classId', 'name order')
+        .populate('sectionId', 'name')
+        .populate('schoolId', 'name code address contact')
+        .populate('sessionId', 'name startDate endDate');
+
+      if (!student) {
+        const user = await User.findById(userId).select('name');
+        const history = await AcademicHistory.findOne({ userId, schoolId, sessionId })
+          .populate('classId', 'name')
+          .populate('sectionId', 'name')
+          .populate('sessionId', 'name startDate endDate');
+
+        if (!history) {
+          return res.status(404).json({
+            success: false,
+            message: 'Student profile not found for selected academic year.'
+          });
+        }
+
+        return res.json({
+          success: true,
+          data: {
+            _id: history.studentId || history._id,
+            userId,
+            schoolId,
+            sessionId: history.sessionId,
+            classId: history.classId,
+            sectionId: history.sectionId,
+            rollNumber: history.rollNumber,
+            status: history.status,
+            name: user?.name,
+          }
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: student
+      });
+    }
+
+    student = await Student.findOne({ userId: req.user.userId });
 
     // Failsafe: attempt auto-link if not found
     if (!student) {
