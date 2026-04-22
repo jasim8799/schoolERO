@@ -87,17 +87,80 @@ const payFee = async (req, res) => {
       });
 
       if (!feeRecord) {
-        feeRecord = await TransportFee.create({
+        try {
+          feeRecord = await TransportFee.create({
+            studentId: studentObjId,
+            routeId: routeObjId,
+            vehicleId: vehicleObjId,
+            schoolId: schoolObjId,
+            sessionId: activeSession._id,
+            amount,
+            month,
+            year,
+            status: 'PENDING',
+          });
+        } catch (createErr) {
+          if (createErr?.code === 11000) {
+            feeRecord = await TransportFee.findOne({
+              studentId: studentObjId,
+              routeId: routeObjId,
+              schoolId: schoolObjId,
+              month,
+              year,
+              ..._sessionFilter(sessionId),
+            });
+          } else {
+            throw createErr;
+          }
+        }
+      }
+
+      if (!feeRecord) {
+        throw new Error(`Unable to create or load transport fee record for ${month}/${year}`);
+      }
+
+      if (feeRecord.status === 'PAID') {
+        const existingPaidBill = await Bill.findOne({
           studentId: studentObjId,
-          routeId: routeObjId,
-          vehicleId: vehicleObjId,
           schoolId: schoolObjId,
-          sessionId: activeSession._id,
-          amount,
+          billType: 'TRANSPORT',
+          sourceType: 'StudentTransport',
+          sourceId: feeRecord._id,
+          status: 'PAID',
+        }).lean();
+
+        if (existingPaidBill) {
+          console.log(`Transport fee already paid for student ${studentId} month ${month}/${year}`);
+          results.push({
+            month,
+            year,
+            billNumber: existingPaidBill.billNumber,
+            receiptNumber: 'ALREADY_PAID',
+            amount: feeRecord.amount,
+          });
+          continue;
+        }
+      }
+
+      const existingBill = await Bill.findOne({
+        studentId: studentObjId,
+        schoolId: schoolObjId,
+        billType: 'TRANSPORT',
+        sourceType: 'StudentTransport',
+        sourceId: feeRecord._id,
+      }).lean();
+
+      if (existingBill && existingBill.status === 'PAID') {
+        console.log(`Skipping duplicate transport bill for feeRecord ${feeRecord._id}`);
+        results.push({
           month,
           year,
-          status: 'PENDING',
+          billNumber: existingBill.billNumber,
+          receiptNumber: 'ALREADY_PAID',
+          amount: existingBill.totalAmount,
+          description: existingBill.description,
         });
+        continue;
       }
 
       const generateBillNumber = (sid) => {

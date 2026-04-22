@@ -62,6 +62,10 @@ const TransportFeeSchema = new mongoose.Schema({
 });
 
 TransportFeeSchema.index({ studentId: 1, month: 1, year: 1, schoolId: 1 });
+TransportFeeSchema.index(
+  { studentId: 1, routeId: 1, month: 1, year: 1, schoolId: 1 },
+  { unique: true }
+);
 TransportFeeSchema.index({ schoolId: 1, sessionId: 1 });
 
 module.exports = mongoose.model('TransportFee', TransportFeeSchema);

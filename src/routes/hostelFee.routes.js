@@ -43,6 +43,7 @@ router.get('/student/me', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), as
 			studentId,
 			schoolId,
 			billType: 'HOSTEL',
+			sourceType: 'StudentHostel',
 		})
 			.populate('studentId', 'name rollNumber')
 			.sort({ createdAt: -1 })

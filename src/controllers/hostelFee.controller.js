@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const StudentHostel = require('../models/StudentHostel');
 const Bill = require('../models/Bill');
 const Payment = require('../models/Payment');
@@ -28,7 +29,6 @@ const payHostelFee = async (req, res) => {
     const studentObjId = new mongoose.Types.ObjectId(studentId);
     const hostelObjId  = new mongoose.Types.ObjectId(hostelId);
     const schoolObjId  = new mongoose.Types.ObjectId(schoolId);
-    const roomObjId    = roomId ? new mongoose.Types.ObjectId(roomId) : null;
 
     const activeSession = await AcademicSession.findOne({ schoolId: schoolObjId, isActive: true });
     if (!activeSession) {
@@ -57,13 +57,43 @@ const payHostelFee = async (req, res) => {
       const amount = Number(m.amount || 0);
       if (!month || !year || month < 1 || month > 12) continue;
 
+      const monthDesc = `Hostel Fee — ${monthNames[month]} ${year}`;
+      const monthlySourceIdHex = crypto
+        .createHash('md5')
+        .update(`${assignment._id.toString()}-${month}-${year}`)
+        .digest('hex')
+        .slice(0, 24);
+      const monthlySourceId = new mongoose.Types.ObjectId(monthlySourceIdHex);
+
+      const existingBill = await Bill.findOne({
+        studentId: studentObjId,
+        schoolId: schoolObjId,
+        billType: 'HOSTEL',
+        sourceType: 'StudentHostel',
+        sourceId: monthlySourceId,
+        status: 'PAID',
+      }).lean();
+
+      if (existingBill) {
+        console.log(`Skipping duplicate hostel bill: ${monthDesc} for student ${studentId}`);
+        results.push({
+          month,
+          year,
+          billNumber: existingBill.billNumber,
+          receiptNumber: 'ALREADY_PAID',
+          amount: existingBill.totalAmount,
+          description: existingBill.description,
+        });
+        continue;
+      }
+
       let billNumber, attempts = 0;
       do {
         billNumber = generateBillNumber(schoolId);
         attempts++;
       } while (attempts < 10 && await Bill.findOne({ billNumber }));
 
-      const description = `Hostel Fee — ${monthNames[month]} ${year}`;
+      const description = monthDesc;
 
       const bill = await Bill.create({
         billNumber,
@@ -72,7 +102,7 @@ const payHostelFee = async (req, res) => {
         sessionId:   activeSession._id,
         billType:    'HOSTEL',
         sourceType:  'StudentHostel',
-        sourceId:    roomObjId || assignment._id,
+        sourceId:    monthlySourceId,
         description,
         totalAmount: amount,
         paidAmount:  amount,

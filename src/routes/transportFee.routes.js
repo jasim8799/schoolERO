@@ -35,7 +35,12 @@ router.get('/student/me', authenticate, enforceSchoolIsolation,
         return res.status(403).json({ success: false, message: 'Forbidden' });
       }
 
-      const bills = await Bill.find({ studentId, schoolId, billType: 'TRANSPORT' })
+      const bills = await Bill.find({
+        studentId,
+        schoolId,
+        billType: 'TRANSPORT',
+        sourceType: 'StudentTransport',
+      })
         .sort({ createdAt: -1 })
         .lean();
 

@@ -48,44 +48,59 @@ const assignHostel = async (req, res) => {
       });
 
       if (activeSession) {
-        const generateBillNumber = (sid) => {
-          const ts = Date.now();
-          const r = Math.floor(Math.random() * 1000)
-            .toString().padStart(3, '0');
-          return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
-        };
-
-        let billNumber;
-        let attempts = 0;
-        do {
-          billNumber = generateBillNumber(schoolId);
-          attempts++;
-        } while (attempts < 10 && await Bill.findOne({ billNumber }));
-
-        const Hostel = require('../models/Hostel');
-        const hostelDoc = await Hostel.findById(hostelId)
-          .select('name monthlyFee').lean();
-
-        const monthlyFee = hostelDoc?.monthlyFee || 0;
-        const description = hostelDoc?.name
-          ? `Hostel Fee — ${hostelDoc.name} Room ${bedNumber}`
-          : `Hostel Fee — Room ${bedNumber}`;
-
-        await Bill.create({
-          billNumber,
+        const admissionHostelBill = await Bill.findOne({
           studentId,
           schoolId,
-          sessionId: activeSession._id,
           billType: 'HOSTEL',
-          sourceType: 'StudentHostel',
-          sourceId: hostel._id,
-          description,
-          totalAmount: monthlyFee,
-          paidAmount: 0,
-          dueAmount: monthlyFee,
-          status: 'UNPAID',
-          createdBy: req.user._id
-        });
+          sourceType: 'Manual',
+          status: 'PAID',
+          description: { $regex: 'admission', $options: 'i' },
+        }).lean();
+
+        if (admissionHostelBill) {
+          console.log(
+            `Skipping auto-bill creation for hostel assignment - student ${studentId} already paid admission hostel fee`
+          );
+        } else {
+          const generateBillNumber = (sid) => {
+            const ts = Date.now();
+            const r = Math.floor(Math.random() * 1000)
+              .toString().padStart(3, '0');
+            return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
+          };
+
+          let billNumber;
+          let attempts = 0;
+          do {
+            billNumber = generateBillNumber(schoolId);
+            attempts++;
+          } while (attempts < 10 && await Bill.findOne({ billNumber }));
+
+          const Hostel = require('../models/Hostel');
+          const hostelDoc = await Hostel.findById(hostelId)
+            .select('name monthlyFee').lean();
+
+          const monthlyFee = hostelDoc?.monthlyFee || 0;
+          const description = hostelDoc?.name
+            ? `Hostel Fee — ${hostelDoc.name} Room ${bedNumber}`
+            : `Hostel Fee — Room ${bedNumber}`;
+
+          await Bill.create({
+            billNumber,
+            studentId,
+            schoolId,
+            sessionId: activeSession._id,
+            billType: 'HOSTEL',
+            sourceType: 'StudentHostel',
+            sourceId: hostel._id,
+            description,
+            totalAmount: monthlyFee,
+            paidAmount: 0,
+            dueAmount: monthlyFee,
+            status: 'UNPAID',
+            createdBy: req.user._id
+          });
+        }
       }
     } catch (billErr) {
       console.error('Hostel bill dual-write failed:', billErr.message);
