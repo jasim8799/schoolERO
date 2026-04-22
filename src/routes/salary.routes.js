@@ -3,6 +3,7 @@ const {
   setupSalaryProfile, getSalaryProfile, calculateSalary,
   getMonthlySalaries, paySalary, getSalarySlip, getSalarySlipPdf,
   getAllStaffList, getStaffSlipAdmin, createAdvance, getAdvances, getStaffSalaryHistory,
+  payAdvance, clearAdvance,
 } = require('../controllers/salary.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
@@ -36,6 +37,8 @@ router.post('/pay', requireRole('PRINCIPAL', 'OPERATOR'), paySalary);
 // Advances
 router.post('/advance', requireRole('PRINCIPAL', 'OPERATOR'), createAdvance);
 router.get('/advances', requireRole('PRINCIPAL', 'OPERATOR'), getAdvances);
+router.post('/advance/pay',   requireRole('PRINCIPAL', 'OPERATOR'), payAdvance);
+router.post('/advance/clear', requireRole('PRINCIPAL', 'OPERATOR'), clearAdvance);
 
 // Admin view any staff slip
 router.get('/slip/:staffId/:month', requireRole('PRINCIPAL', 'OPERATOR'), getStaffSlipAdmin);

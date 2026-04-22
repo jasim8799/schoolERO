@@ -53,26 +53,30 @@ const setupSalaryProfile = async (req, res) => {
       return res.status(400).json({ message: 'Salary profile can only be created for staff members' });
     }
 
-    // Check if salary profile already exists
-    const existingProfile = await SalaryProfile.findOne({ userId, schoolId });
-    if (existingProfile) {
-      return res.status(409).json({ message: 'Salary profile already exists for this staff member' });
+    // Upsert: update if exists, create if not
+    let salaryProfile = await SalaryProfile.findOne({ userId, schoolId });
+    let isNew = false;
+    if (salaryProfile) {
+      salaryProfile.baseSalary = parseFloat(baseSalary);
+      salaryProfile.allowances = allowances || [];
+      salaryProfile.deductions = deductions || [];
+      await salaryProfile.save();
+    } else {
+      salaryProfile = await SalaryProfile.create({
+        userId,
+        baseSalary: parseFloat(baseSalary),
+        allowances: allowances || [],
+        deductions: deductions || [],
+        schoolId
+      });
+      isNew = true;
     }
-
-    // Create salary profile
-    const salaryProfile = await SalaryProfile.create({
-      userId,
-      baseSalary: parseFloat(baseSalary),
-      allowances: allowances || [],
-      deductions: deductions || [],
-      schoolId
-    });
 
     // Populate user details
     await salaryProfile.populate('userId', 'name email mobile role');
 
-    res.status(201).json({
-      message: 'Salary profile created successfully',
+    res.status(isNew ? 201 : 200).json({
+      message: isNew ? 'Salary profile created successfully' : 'Salary profile updated successfully',
       salaryProfile
     });
   } catch (err) {
@@ -112,7 +116,8 @@ const getSalaryProfile = async (req, res) => {
 };
 
 // ── Shared helper: calculate and persist salary for one staff member ──────────
-const _calcForStaff = async ({ staffId, month, schoolId }) => {
+const _calcForStaff = async ({ staffId, month, schoolId,
+    manualPresentDays = null, manualBonus = 0 }) => {
   const [year, monthNum] = month.split('-');
   const workingDays = new Date(year, monthNum, 0).getDate();
 
@@ -120,11 +125,14 @@ const _calcForStaff = async ({ staffId, month, schoolId }) => {
   const endDate   = new Date(startDate);
   endDate.setMonth(endDate.getMonth() + 1);
 
-  const attendanceDays = await TeacherAttendance.countDocuments({
-    teacherId: staffId, schoolId,
-    date: { $gte: startDate, $lt: endDate },
-    status: 'PRESENT',
-  });
+  // Use manual input if provided, else count from attendance records
+  const attendanceDays = manualPresentDays !== null
+    ? Number(manualPresentDays)
+    : await TeacherAttendance.countDocuments({
+        teacherId: staffId, schoolId,
+        date: { $gte: startDate, $lt: endDate },
+        status: 'PRESENT',
+      });
 
   const salaryProfile = await SalaryProfile.findOne({ userId: staffId, schoolId });
   if (!salaryProfile) return null; // no profile — skip
@@ -132,7 +140,8 @@ const _calcForStaff = async ({ staffId, month, schoolId }) => {
   const perDay          = salaryProfile.baseSalary / workingDays;
   const earned          = perDay * attendanceDays;
   const allowancesTotal = salaryProfile.allowances.reduce((s, a) => s + a.amount, 0);
-  const grossSalary     = earned + allowancesTotal;
+  const bonusAmount     = Number(manualBonus) || 0;
+  const grossSalary     = earned + allowancesTotal + bonusAmount;
   const deductionsTotal = salaryProfile.deductions.reduce((s, d) => s + d.amount, 0);
   const netPayable      = Math.max(0, grossSalary - deductionsTotal);
 
@@ -142,10 +151,11 @@ const _calcForStaff = async ({ staffId, month, schoolId }) => {
     baseSalary: salaryProfile.baseSalary,
     attendanceDays,
     workingDays,
-    leaveDays: 0,
+    leaveDays: workingDays - attendanceDays,
     grossSalary,
     deductions: deductionsTotal,
     netPayable,
+    bonusAmount,
   });
 
   return salaryCalculation;
@@ -154,7 +164,7 @@ const _calcForStaff = async ({ staffId, month, schoolId }) => {
 // Calculate salary — single staff (staffId provided) or bulk (staffId omitted)
 const calculateSalary = async (req, res) => {
   try {
-    const { staffId, month } = req.body;
+    const { staffId, month, presentDays: manualPresentDays, bonus: manualBonus } = req.body;
     const { schoolId, sessionId } = req.user;
 
     if (!month) {
@@ -190,7 +200,11 @@ const calculateSalary = async (req, res) => {
         return res.status(409).json({ message: 'Salary calculation already exists for this staff and month' });
       }
 
-      const salaryCalculation = await _calcForStaff({ staffId, month, schoolId });
+      const salaryCalculation = await _calcForStaff({
+        staffId, month, schoolId,
+        manualPresentDays: manualPresentDays ?? null,
+        manualBonus: manualBonus ?? 0,
+      });
       if (!salaryCalculation) {
         return res.status(404).json({ message: 'Salary profile not found for this staff member' });
       }
@@ -704,7 +718,7 @@ const getStaffSlipAdmin = async (req, res) => {
 // Create advance
 const createAdvance = async (req, res) => {
   try {
-    const { staffId, amount, date, reason } = req.body;
+    const { staffId, amount, date, reason, month } = req.body;
     const { schoolId, _id: givenBy } = req.user;
 
     if (!staffId || !amount) {
@@ -712,6 +726,9 @@ const createAdvance = async (req, res) => {
     }
     if (amount <= 0) {
       return res.status(400).json({ message: 'Amount must be positive' });
+    }
+    if (!month) {
+      return res.status(400).json({ message: 'month is required (format: YYYY-MM)' });
     }
 
     const staff = await User.findOne({ _id: staffId, schoolId });
@@ -721,13 +738,61 @@ const createAdvance = async (req, res) => {
       staffId,
       schoolId,
       amount,
+      month,
       date: date ? new Date(date) : new Date(),
-      reason,
+      reason: reason || '',
       givenBy,
     });
 
     await advance.populate('staffId', 'name role');
     res.status(201).json({ message: 'Advance created', data: advance });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Pay an advance
+const payAdvance = async (req, res) => {
+  try {
+    const { advanceId, paymentMode } = req.body;
+    const { schoolId, _id: paidBy } = req.user;
+    if (!advanceId || !paymentMode) {
+      return res.status(400).json({ message: 'advanceId and paymentMode are required' });
+    }
+    const normalizedMode = paymentMode.toLowerCase();
+    if (!['cash', 'bank'].includes(normalizedMode)) {
+      return res.status(400).json({ message: 'paymentMode must be cash or bank' });
+    }
+    const advance = await StaffAdvance.findOne({ _id: advanceId, schoolId });
+    if (!advance) return res.status(404).json({ message: 'Advance not found' });
+    if (advance.paymentStatus === 'PAID') {
+      return res.status(409).json({ message: 'Advance already paid' });
+    }
+    advance.paymentStatus = 'PAID';
+    advance.paidAt = new Date();
+    advance.paidBy = paidBy;
+    advance.paymentMode = normalizedMode;
+    await advance.save();
+    await advance.populate('staffId', 'name role');
+    res.json({ message: 'Advance paid successfully', data: advance });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Clear (write-off) an advance — marks it as cleared/recovered
+const clearAdvance = async (req, res) => {
+  try {
+    const { advanceId, clearedNote } = req.body;
+    const { schoolId } = req.user;
+    const advance = await StaffAdvance.findOne({ _id: advanceId, schoolId });
+    if (!advance) return res.status(404).json({ message: 'Advance not found' });
+    advance.paymentStatus = 'CLEARED';
+    advance.clearedAt = new Date();
+    advance.clearedNote = clearedNote || 'Advance cleared/recovered';
+    await advance.save();
+    await advance.populate('staffId', 'name role');
+    res.json({ message: 'Advance marked as cleared', data: advance });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -760,4 +825,6 @@ module.exports = {
   getStaffSlipAdmin,
   createAdvance,
   getAdvances,
+  payAdvance,
+  clearAdvance,
 };

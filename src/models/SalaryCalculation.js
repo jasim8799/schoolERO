@@ -47,6 +47,11 @@ const SalaryCalculationSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  bonusAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   status: {
     type: String,
     enum: ['Calculated', 'Paid'],
