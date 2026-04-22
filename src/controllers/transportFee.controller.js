@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const TransportFee = require('../models/TransportFee.js');
+const StudentTransport = require('../models/StudentTransport.js');
 const Bill = require('../models/Bill.js');
 const Payment = require('../models/Payment.js');
 const AcademicSession = require('../models/AcademicSession.js');
@@ -161,6 +162,66 @@ const payFee = async (req, res) => {
           description: existingBill.description,
         });
         continue;
+      }
+
+      const transportAssignment = await StudentTransport.findOne({
+        studentId: studentObjId,
+        routeId: routeObjId,
+        schoolId: schoolObjId,
+        status: 'ACTIVE',
+      }).lean();
+
+      if (transportAssignment) {
+        const unpaidAssignmentBill = await Bill.findOne({
+          studentId: studentObjId,
+          schoolId: schoolObjId,
+          billType: 'TRANSPORT',
+          sourceType: 'StudentTransport',
+          sourceId: transportAssignment._id,
+          status: 'UNPAID',
+        });
+
+        if (unpaidAssignmentBill) {
+          unpaidAssignmentBill.paidAmount = amount;
+          await unpaidAssignmentBill.save();
+
+          let receiptNumber;
+          let rAttempts = 0;
+          do {
+            const ts = Date.now();
+            const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+            receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+            rAttempts++;
+          } while (rAttempts < 10 && await Payment.findOne({ receiptNumber }));
+
+          await Payment.create({
+            receiptNumber,
+            billId: unpaidAssignmentBill._id,
+            studentId: studentObjId,
+            schoolId: schoolObjId,
+            sessionId: activeSession._id,
+            amount,
+            paymentMode: paymentMethod === 'ONLINE' ? 'Online' : paymentMethod === 'CHEQUE' ? 'Cheque' : 'Cash',
+            paymentDate: new Date(),
+            collectedBy: paidBy,
+          });
+
+          await TransportFee.findByIdAndUpdate(feeRecord._id, {
+            status: 'PAID',
+            paymentDate: new Date(),
+            paymentMethod: paymentMethod || 'CASH',
+            paidBy,
+          });
+
+          results.push({
+            month,
+            year,
+            billNumber: unpaidAssignmentBill.billNumber,
+            receiptNumber,
+            amount,
+          });
+          continue;
+        }
       }
 
       const generateBillNumber = (sid) => {

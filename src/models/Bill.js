@@ -95,13 +95,12 @@ BillSchema.index({ schoolId: 1, billType: 1 });
 BillSchema.index({ schoolId: 1, sessionId: 1 });
 BillSchema.index({ billNumber: 1 }, { unique: true });
 BillSchema.index(
-  { studentId: 1, billType: 1, sourceId: 1, sourceType: 1 },
+  { studentId: 1, billType: 1, sourceId: 1, sourceType: 1, description: 1 },
   {
     unique: true,
     sparse: true,
     partialFilterExpression: {
       sourceId: { $exists: true, $ne: null },
-      sourceType: { $ne: 'StudentHostel' },
     },
   }
 );

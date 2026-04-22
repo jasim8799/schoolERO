@@ -56,24 +56,72 @@ const payHostelFee = async (req, res) => {
       const amount = Number(m.amount || 0);
       if (!month || !year || month < 1 || month > 12) continue;
 
-      const monthDesc = `Hostel Fee — ${monthNames[month]} ${year}`;
-      const existingBill = await Bill.findOne({
+      const description = `Hostel Fee — ${monthNames[month]} ${year}`;
+
+      // Pay pre-created assignment bill instead of creating a duplicate paid bill.
+      const unpaidAssignmentBill = await Bill.findOne({
         studentId: studentObjId,
         schoolId: schoolObjId,
         billType: 'HOSTEL',
         sourceType: 'StudentHostel',
-        description: monthDesc,
-      }).lean();
+        sourceId: assignment._id,
+        status: 'UNPAID',
+      });
 
-      if (existingBill) {
-        console.log(`Skipping duplicate hostel bill: ${monthDesc} for student ${studentId}`);
+      if (unpaidAssignmentBill) {
+        unpaidAssignmentBill.paidAmount = amount;
+        await unpaidAssignmentBill.save();
+
+        let receiptNumber, rAttempts = 0;
+        do {
+          const ts = Date.now();
+          const r  = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+          receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
+          rAttempts++;
+        } while (rAttempts < 10 && await Payment.findOne({ receiptNumber }));
+
+        await Payment.create({
+          receiptNumber,
+          billId: unpaidAssignmentBill._id,
+          studentId: studentObjId,
+          schoolId: schoolObjId,
+          sessionId: activeSession._id,
+          amount,
+          paymentMode: paymentMethod === 'ONLINE' ? 'Online' : paymentMethod === 'CHEQUE' ? 'Cheque' : 'Cash',
+          paymentDate: new Date(),
+          collectedBy: paidBy,
+        });
+
         results.push({
           month,
           year,
-          billNumber: existingBill.billNumber,
+          billNumber: unpaidAssignmentBill.billNumber,
+          receiptNumber,
+          amount,
+          description: unpaidAssignmentBill.description,
+        });
+        continue;
+      }
+
+      const existingPaidBill = await Bill.findOne({
+        studentId: studentObjId,
+        schoolId: schoolObjId,
+        billType: 'HOSTEL',
+        sourceType: 'StudentHostel',
+        sourceId: assignment._id,
+        description,
+        status: 'PAID',
+      }).lean();
+
+      if (existingPaidBill) {
+        console.log(`Skipping duplicate hostel bill: ${description} for student ${studentId}`);
+        results.push({
+          month,
+          year,
+          billNumber: existingPaidBill.billNumber,
           receiptNumber: 'ALREADY_PAID',
-          amount: existingBill.totalAmount,
-          description: existingBill.description,
+          amount: existingPaidBill.totalAmount,
+          description: existingPaidBill.description,
         });
         continue;
       }
@@ -83,8 +131,6 @@ const payHostelFee = async (req, res) => {
         billNumber = generateBillNumber(schoolId);
         attempts++;
       } while (attempts < 10 && await Bill.findOne({ billNumber }));
-
-      const description = monthDesc;
 
       const bill = await Bill.create({
         billNumber,
