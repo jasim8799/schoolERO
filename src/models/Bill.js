@@ -34,7 +34,7 @@ const BillSchema = new mongoose.Schema({
     type: String,
     enum: [
       'StudentFee', 'ExamPayment', 'StudentHostel',
-      'StudentTransport', 'Manual'
+      'StudentTransport', 'Manual', 'Admission'
     ],
     required: true
   },
@@ -99,7 +99,10 @@ BillSchema.index(
   {
     unique: true,
     sparse: true,
-    partialFilterExpression: { sourceId: { $exists: true, $ne: null } },
+    partialFilterExpression: {
+      sourceId: { $exists: true, $ne: null },
+      sourceType: { $ne: 'StudentHostel' },
+    },
   }
 );
 

@@ -52,9 +52,8 @@ const assignHostel = async (req, res) => {
           studentId,
           schoolId,
           billType: 'HOSTEL',
-          sourceType: 'Manual',
+          sourceType: 'Admission',
           status: 'PAID',
-          description: { $regex: 'admission', $options: 'i' },
         }).lean();
 
         if (admissionHostelBill) {

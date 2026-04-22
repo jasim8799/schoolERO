@@ -39,7 +39,7 @@ router.get('/student/me', authenticate, enforceSchoolIsolation,
         studentId,
         schoolId,
         billType: 'TRANSPORT',
-        sourceType: 'StudentTransport',
+        sourceType: { $ne: 'Admission' },
       })
         .sort({ createdAt: -1 })
         .lean();

@@ -47,9 +47,8 @@ const assignTransport = async (req, res) => {
           studentId,
           schoolId,
           billType: 'TRANSPORT',
-          sourceType: 'Manual',
+          sourceType: 'Admission',
           status: 'PAID',
-          description: { $regex: 'admission', $options: 'i' },
         }).lean();
 
         if (admissionTransportBill) {

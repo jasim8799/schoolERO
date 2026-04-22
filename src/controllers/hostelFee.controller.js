@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 const StudentHostel = require('../models/StudentHostel');
 const Bill = require('../models/Bill');
 const Payment = require('../models/Payment');
@@ -58,20 +57,12 @@ const payHostelFee = async (req, res) => {
       if (!month || !year || month < 1 || month > 12) continue;
 
       const monthDesc = `Hostel Fee — ${monthNames[month]} ${year}`;
-      const monthlySourceIdHex = crypto
-        .createHash('md5')
-        .update(`${assignment._id.toString()}-${month}-${year}`)
-        .digest('hex')
-        .slice(0, 24);
-      const monthlySourceId = new mongoose.Types.ObjectId(monthlySourceIdHex);
-
       const existingBill = await Bill.findOne({
         studentId: studentObjId,
         schoolId: schoolObjId,
         billType: 'HOSTEL',
         sourceType: 'StudentHostel',
-        sourceId: monthlySourceId,
-        status: 'PAID',
+        description: monthDesc,
       }).lean();
 
       if (existingBill) {
@@ -102,7 +93,7 @@ const payHostelFee = async (req, res) => {
         sessionId:   activeSession._id,
         billType:    'HOSTEL',
         sourceType:  'StudentHostel',
-        sourceId:    monthlySourceId,
+        sourceId:    assignment._id,
         description,
         totalAmount: amount,
         paidAmount:  amount,
