@@ -816,6 +816,24 @@ const getAdvances = async (req, res) => {
   }
 };
 
+// Get advances for the currently logged-in staff member
+const getMyAdvances = async (req, res) => {
+  try {
+    const { schoolId, _id: userId } = req.user;
+
+    const advances = await StaffAdvance.find({
+      staffId: userId,
+      schoolId,
+    })
+      .populate('givenBy', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json({ data: advances });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   setupSalaryProfile,
   getSalaryProfile,
@@ -829,6 +847,7 @@ module.exports = {
   getStaffSlipAdmin,
   createAdvance,
   getAdvances,
+  getMyAdvances,
   payAdvance,
   clearAdvance,
 };

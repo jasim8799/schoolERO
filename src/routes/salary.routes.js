@@ -2,7 +2,7 @@ const express = require('express');
 const {
   setupSalaryProfile, getSalaryProfile, calculateSalary,
   getMonthlySalaries, paySalary, getSalarySlip, getSalarySlipPdf,
-  getAllStaffList, getStaffSlipAdmin, createAdvance, getAdvances, getStaffSalaryHistory,
+  getAllStaffList, getStaffSlipAdmin, createAdvance, getAdvances, getMyAdvances, getStaffSalaryHistory,
   payAdvance, clearAdvance,
 } = require('../controllers/salary.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
@@ -35,6 +35,7 @@ router.get('/monthly', requireRole('PRINCIPAL', 'OPERATOR'), getMonthlySalaries)
 router.post('/pay', requireRole('PRINCIPAL', 'OPERATOR'), paySalary);
 
 // Advances
+router.get('/my-advances', getMyAdvances);
 router.post('/advance', requireRole('PRINCIPAL', 'OPERATOR'), createAdvance);
 router.get('/advances', requireRole('PRINCIPAL', 'OPERATOR'), getAdvances);
 router.post('/advance/pay',   requireRole('PRINCIPAL', 'OPERATOR'), payAdvance);
