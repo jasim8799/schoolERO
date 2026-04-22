@@ -25,7 +25,8 @@ const BillSchema = new mongoose.Schema({
     type: String,
     enum: [
       'TUITION', 'HOSTEL', 'TRANSPORT', 'EXAM',
-      'ADMISSION', 'LIBRARY', 'SPORTS', 'MISCELLANEOUS'
+      'ADMISSION', 'LIBRARY', 'SPORTS', 'MISCELLANEOUS',
+      'DRESS', 'BOOKS'
     ],
     required: true
   },

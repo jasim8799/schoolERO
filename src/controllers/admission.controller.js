@@ -164,17 +164,18 @@ exports.createAdmission = async (req, res) => {
         };
 
         const createPaidBillAndPayment = async ({ amount, billType, description, notes }) => {
-          // Idempotency guard: prevent duplicate bills for same admission + bill type.
+          // Include description because multiple admission line items can share billType.
           const existingBill = await Bill.findOne({
             studentId,
             schoolId,
             billType,
             sourceType: 'Admission',
             sourceId: admission._id,
+            description,
           });
           if (existingBill) {
             console.log(
-              `Skipping duplicate ${billType} bill for admission ${admission._id}`
+              `Skipping duplicate ${billType}/${description} bill for admission ${admission._id}`
             );
             return existingBill;
           }
@@ -238,8 +239,8 @@ exports.createAdmission = async (req, res) => {
 
         const feeTypes = [
           { key: 'monthlyFee', billType: 'TUITION', desc: 'Monthly Fee' },
-          { key: 'dressFee', billType: 'TUITION', desc: 'Dress Fee' },
-          { key: 'bookFee', billType: 'TUITION', desc: 'Book Fee' },
+          { key: 'dressFee', billType: 'DRESS', desc: 'Dress Fee' },
+          { key: 'bookFee', billType: 'BOOKS', desc: 'Book Fee' },
           { key: 'transportFee', billType: 'TRANSPORT', desc: 'Transport Fee' },
           { key: 'hostelFee', billType: 'HOSTEL', desc: 'Hostel Fee' },
         ];
