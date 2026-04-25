@@ -180,7 +180,7 @@ const answerQuestion = async (req, res) => {
   }
 };
 
-const getTeacherQuestions = async (req, res) => {
+const getAllQuestions = async (req, res) => {
   try {
     const { schoolId, sessionId } = req.user;
     const { status, subjectId, teacherId, classId, page = 1, limit = 50 } = req.query;
