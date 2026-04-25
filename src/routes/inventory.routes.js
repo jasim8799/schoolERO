@@ -7,7 +7,7 @@ const router = express.Router();
 // All inventory routes require authentication
 router.use(authenticate);
 
-// Export inventory as Excel (Principal only)
+// Export inventory data (Principal/Operator)
 router.get('/export', exportInventoryController);
 
 module.exports = router;
