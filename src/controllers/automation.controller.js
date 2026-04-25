@@ -45,7 +45,8 @@ exports.createAutomation = async (req, res) => {
       name,
       trigger,
       condition,
-      action
+      action,
+      expiryHours: req.body.expiryHours ?? 24,
     });
     res.status(201).json({ success: true, data: rule });
   } catch (err) {
@@ -65,7 +66,7 @@ exports.updateAutomation = async (req, res) => {
 
     const AutomationRule = mongoose.model('AutomationRule');
     const { id } = req.params;
-    const allowed = ['name', 'isActive', 'condition', 'action'];
+    const allowed = ['name', 'isActive', 'condition', 'action', 'expiryHours'];
     const updates = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -126,6 +127,42 @@ exports.runAutomations = async (req, res) => {
       rulesRun: result.rulesRun,
       notificationsCreated: result.notificationsCreated,
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * GET /api/automations/active-notifications
+ * Returns recently dispatched active automation rules that haven't expired.
+ * Used by dashboard ticker and related screens.
+ */
+exports.getActiveNotifications = async (req, res) => {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId) {
+      return res.status(400).json({ success: false, message: 'No school context' });
+    }
+    const AutomationRule = mongoose.model('AutomationRule');
+    const now = new Date();
+
+    // Get rules that were dispatched and haven't expired yet
+    const rules = await AutomationRule.find({
+      schoolId,
+      isActive: true,
+      lastDispatchedAt: { $ne: null },
+    }).lean();
+
+    // Filter: only include rules where (now - lastDispatchedAt) < expiryHours
+    const active = rules.filter(r => {
+      if (!r.lastDispatchedAt) return false;
+      if (r.expiryHours === 0) return true; // never expires
+      const ageMs = now - new Date(r.lastDispatchedAt);
+      const ageHours = ageMs / (1000 * 60 * 60);
+      return ageHours < (r.expiryHours || 24);
+    });
+
+    res.json({ success: true, data: active });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

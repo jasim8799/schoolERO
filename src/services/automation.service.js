@@ -16,7 +16,11 @@ function getTriggerTitle(trigger) {
     FEE_OVERDUE: 'Fee Overdue Alert',
     EXAM_PUBLISHED: 'New Exam Published',
     RESULT_PUBLISHED: 'Results Published',
-    ATTENDANCE_ABSENT: 'Attendance Alert',
+    ADMIT_CARD_PUBLISHED: 'Admit Card Ready',
+    HOMEWORK_ASSIGNED: 'Homework Assigned',
+    PTM_SCHEDULED: 'PTM Scheduled',
+    LOW_ATTENDANCE: 'Low Attendance Alert',
+    TC_ISSUED: 'Transfer Certificate Issued',
   };
   return map[trigger] || trigger.replaceAll('_', ' ');
 }
@@ -84,8 +88,16 @@ function buildDefaultMessage(rule, trigger, context = {}) {
       return context.message || `A new exam has been published${context.examName ? `: ${context.examName}` : ''}.`;
     case 'RESULT_PUBLISHED':
       return context.message || `Results have been published${context.examName ? ` for ${context.examName}` : ''}.`;
-    case 'ATTENDANCE_ABSENT':
-      return context.message || `Attendance marked absent${context.studentName ? ` for ${context.studentName}` : ''}.`;
+    case 'ADMIT_CARD_PUBLISHED':
+      return context.message || `Admit card${context.examName ? ` for ${context.examName}` : ''} is ready to download.`;
+    case 'HOMEWORK_ASSIGNED':
+      return context.message || `New homework has been assigned.`;
+    case 'PTM_SCHEDULED':
+      return context.message || `A Parent-Teacher Meeting has been scheduled.`;
+    case 'LOW_ATTENDANCE':
+      return context.message || `Your attendance has dropped below the required threshold.`;
+    case 'TC_ISSUED':
+      return context.message || `A Transfer Certificate has been issued.`;
     default:
       return `${getTriggerTitle(trigger)} - ${rule.name}`;
   }
@@ -158,7 +170,13 @@ async function dispatchAutomationTrigger(schoolId, trigger, context = {}) {
 
       await AutomationRule.updateOne(
         { _id: rule._id },
-        { $inc: { runCount: 1 }, $set: { lastRunAt: new Date() } }
+        {
+          $inc: { runCount: 1 },
+          $set: {
+            lastRunAt: new Date(),
+            lastDispatchedAt: new Date(),
+          }
+        }
       );
       rulesRun += 1;
     } catch (err) {

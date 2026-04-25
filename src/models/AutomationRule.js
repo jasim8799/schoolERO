@@ -12,7 +12,11 @@ const AutomationRuleSchema = new mongoose.Schema({
       'FEE_OVERDUE',
       'EXAM_PUBLISHED',
       'RESULT_PUBLISHED',
-      'ATTENDANCE_ABSENT'
+      'ADMIT_CARD_PUBLISHED',
+      'HOMEWORK_ASSIGNED',
+      'PTM_SCHEDULED',
+      'LOW_ATTENDANCE',
+      'TC_ISSUED',
     ],
     required: true
   },
@@ -39,6 +43,17 @@ const AutomationRuleSchema = new mongoose.Schema({
     message: { type: String },
     template: { type: String },
   },
+  // How long the notification stays active in the ticker/screens (hours)
+  // 0 = no expiry. Min: 0, Max: 720 (30 days)
+  expiryHours: {
+    type: Number,
+    default: 24,
+    min: 0,
+    max: 720,
+  },
+  // When the last notification was dispatched
+  // Used to compute if ticker should still show it
+  lastDispatchedAt: { type: Date },
   lastRunAt: { type: Date },
   runCount: { type: Number, default: 0 }
 }, { timestamps: true });
