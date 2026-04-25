@@ -2,6 +2,25 @@ const Exam = require('../models/Exam.js');
 const ExamSubject = require('../models/ExamSubject.js');
 const ExamQuestionPaper = require('../models/ExamQuestionPaper.js');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const createExam = async (req, res) => {
   try {
     const { _id: userId, schoolId, sessionId } = req.user;
@@ -20,9 +39,9 @@ const createExam = async (req, res) => {
       createdBy: userId
     });
 
+    _audit('EXAM_CREATED', 'EXAM', exam._id,
+      `Exam "${exam.name}" created`, {}, req);
     res.status(201).json(exam);
-
-
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -165,6 +184,8 @@ const publishExam = async (req, res) => {
       console.error('[automation] EXAM_PUBLISHED dispatch failed:', automationErr.message);
     }
 
+    _audit('EXAM_PUBLISHED', 'EXAM', updatedExam._id,
+      `Exam "${updatedExam.name}" published`, {}, req);
     res.json(updatedExam);
   } catch (err) {
     res.status(500).json({ message: err.message });

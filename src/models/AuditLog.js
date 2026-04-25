@@ -127,7 +127,87 @@ const AuditLogSchema = new mongoose.Schema({
       'MAINTENANCE_MODE_ENABLED',
       'MAINTENANCE_MODE_DISABLED',
       'PASSWORD_RESET',
-      'STUDENT_USER_LINKED'
+      'STUDENT_USER_LINKED',
+
+      // Admission
+      'ADMISSION_CREATED',
+      'ADMISSION_UPDATED',
+      'ADMISSION_APPROVED',
+      'ADMISSION_REJECTED',
+
+      // Attendance (expanded)
+      'STAFF_ATTENDANCE_MARKED',
+      'ATTENDANCE_UPDATED',
+      'ATTENDANCE_DELETED',
+
+      // Homework
+      'HOMEWORK_CREATED',
+      'HOMEWORK_UPDATED',
+      'HOMEWORK_DELETED',
+      'HOMEWORK_SUBMITTED',
+
+      // Exam (expanded)
+      'EXAM_PUBLISHED',
+      'EXAM_SUBJECT_ADDED',
+      'EXAM_SUBJECT_UPDATED',
+      'ADMIT_CARD_RELEASED',
+      'RESULT_PUBLISHED',
+      'SEATING_CREATED',
+      'QUESTION_PAPER_SUBMITTED',
+
+      // PTM
+      'PTM_CREATED',
+      'PTM_UPDATED',
+      'PTM_BOOKED',
+      'PTM_CANCELLED',
+      'PTM_ATTENDED',
+
+      // Notice
+      'NOTICE_CREATED',
+      'NOTICE_UPDATED',
+      'NOTICE_DELETED',
+
+      // TC / Promotion
+      'PROMOTION_EXECUTED',
+      'TC_ISSUED',
+      'TC_REQUESTED',
+
+      // Video
+      'VIDEO_UPLOADED',
+      'VIDEO_DELETED',
+      'VIDEO_VIEWED',
+
+      // Q&A
+      'QUESTION_ASKED',
+      'QUESTION_ANSWERED',
+
+      // Automation
+      'AUTOMATION_CREATED',
+      'AUTOMATION_UPDATED',
+      'AUTOMATION_DELETED',
+      'AUTOMATION_TRIGGERED',
+
+      // Leave
+      'LEAVE_APPLIED',
+      'LEAVE_APPROVED',
+      'LEAVE_REJECTED',
+
+      // Hostel / Transport
+      'HOSTEL_ASSIGNED',
+      'TRANSPORT_ASSIGNED',
+      'ROOM_CREATED',
+      'ROOM_UPDATED',
+
+      // Bill
+      'BILL_CREATED',
+      'BILL_PAID',
+      'BILL_CANCELLED',
+
+      // Error logs
+      'ERROR_OCCURRED',
+      'VALIDATION_FAILED',
+      'UNAUTHORIZED_ACCESS',
+      'SERVER_ERROR'
     ]
   },
   entityType: {
@@ -161,7 +241,26 @@ const AuditLogSchema = new mongoose.Schema({
       'ANNOUNCEMENT',
       'WORKFLOW',
       'NOTIFICATION',
-      'FEE_ASSIGNMENT'
+      'FEE_ASSIGNMENT',
+      'ADMISSION',
+      'HOMEWORK',
+      'PTM',
+      'NOTICE',
+      'VIDEO',
+      'QUESTION',
+      'AUTOMATION',
+      'LEAVE',
+      'HOSTEL',
+      'TRANSPORT',
+      'BILL',
+      'TC',
+      'PROMOTION',
+      'SEATING',
+      'QUESTION_PAPER',
+      'ERROR',
+      'LOGIN_SESSION',
+      'ATTENDANCE_DAILY',
+      'ATTENDANCE_SUBJECT'
     ]
   },
   entityId: {

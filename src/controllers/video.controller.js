@@ -1,6 +1,25 @@
 const Video = require('../models/Video');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 // ── POST /api/videos ────────────────────────────────────────────
 const createVideo = async (req, res) => {
   try {
@@ -56,6 +75,8 @@ const createVideo = async (req, res) => {
       data: video,
       message: 'Video uploaded successfully',
     });
+    _audit('VIDEO_UPLOADED', 'VIDEO', video._id,
+      `Video "${video.title}" uploaded`, {}, req);
   } catch (error) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
@@ -148,6 +169,8 @@ const deleteVideo = async (req, res) => {
     }
 
     await video.deleteOne();
+    _audit('VIDEO_DELETED', 'VIDEO', id,
+      `Video deleted`, {}, req);
     res.json({ success: true, message: 'Video deleted successfully' });
   } catch (error) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({

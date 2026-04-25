@@ -1,5 +1,21 @@
-const errorHandler = (err, req, res, next) => {
+const errorHandler = async (err, req, res, next) => {
   console.error('Global error:', err);
+
+  // Log to AuditLog (async, non-blocking)
+  try {
+    if (req?.user) { // Only log authenticated request errors
+      const { logError } = require('../utils/auditLog');
+      const statusCode = err.status || err.statusCode || 500;
+      if (statusCode >= 400) { // Log 4xx and 5xx
+        await logError({
+          req,
+          error: err,
+          entityType: 'ERROR',
+          context: `HTTP ${statusCode} ${req.method} ${req.originalUrl}`,
+        });
+      }
+    }
+  } catch (_) {}
 
   // Mongoose duplicate key
   if (err.code === 11000) {

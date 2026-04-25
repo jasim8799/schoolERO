@@ -4,6 +4,25 @@ const Student    = require('../models/Student');
 const Parent     = require('../models/Parent');
 const Teacher    = require('../models/Teacher');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const _sessionFilter = (sessionId) =>
   sessionId
     ? {
@@ -48,6 +67,8 @@ const createPtm = async (req, res) => {
       createdBy,
       agendaPoints: Array.isArray(agendaPoints) ? agendaPoints : [],
     });
+    _audit('PTM_CREATED', 'PTM', ptm._id,
+      `PTM "${ptm.title}" scheduled`, {}, req);
     return res.status(201).json({ success: true, data: ptm });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -169,6 +190,8 @@ const bookPtm = async (req, res) => {
       schoolId, bookedBy: userId,
       notes: notes || '',
     });
+    _audit('PTM_BOOKED', 'PTM', ptmId,
+      `PTM booking created`, {}, req);
     return res.status(201).json({ success: true, data: booking });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -251,6 +274,8 @@ const cancelBooking = async (req, res) => {
       { _id: id, schoolId }, { status: 'CANCELLED' }, { new: true });
     if (!booking) return res.status(404).json({
       success: false, message: 'Booking not found' });
+    _audit('PTM_CANCELLED', 'PTM', id,
+      `PTM booking cancelled`, {}, req);
     return res.json({ success: true, data: booking });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

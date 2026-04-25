@@ -1,9 +1,17 @@
 const { getAuditLogs } = require('../utils/auditLog');
 const { USER_ROLES } = require('../config/constants');
 
+// Error-level actions for level=error filter
+const ERROR_ACTIONS = [
+  'ERROR_OCCURRED', 'VALIDATION_FAILED', 'UNAUTHORIZED_ACCESS',
+  'SERVER_ERROR', 'BACKUP_FAILED', 'RESTORE_EXECUTION_FAILED',
+  'FEE_PAYMENT_ONLINE_FAILED', 'OPERATOR_CREATION_FAILED'
+];
+
 /**
  * Get audit logs with role-based filtering
  * - Principal: Can view only their school's logs
+ * - Operator: Can view only their school's logs
  * - Super Admin: Can view all logs
  * - Others: Access denied
  */
@@ -13,6 +21,8 @@ const getAuditLogsController = async (req, res) => {
     const {
       action,
       entityType,
+      userId,
+      level,
       startDate,
       endDate,
       limit = 50,
@@ -20,7 +30,8 @@ const getAuditLogsController = async (req, res) => {
     } = req.query;
 
     // Role-based access control
-    if (role !== USER_ROLES.PRINCIPAL && role !== USER_ROLES.SUPER_ADMIN) {
+    const allowedRoles = [USER_ROLES.PRINCIPAL, USER_ROLES.SUPER_ADMIN, USER_ROLES.OPERATOR];
+    if (!allowedRoles.includes(role)) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Insufficient permissions.'
@@ -29,16 +40,23 @@ const getAuditLogsController = async (req, res) => {
 
     // Build filters based on role
     const filters = {
-      action: action || undefined,
       entityType: entityType || undefined,
+      userId: userId || undefined,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       limit: parseInt(limit),
       skip: parseInt(skip)
     };
 
-    // Principal can only see their school's logs
-    if (role === USER_ROLES.PRINCIPAL) {
+    // Error-only level filter overrides action filter
+    if (level === 'error') {
+      filters.action = { $in: ERROR_ACTIONS };
+    } else if (action) {
+      filters.action = action;
+    }
+
+    // Principal AND Operator see only their school's logs
+    if (role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR) {
       filters.schoolId = schoolId;
     }
     // Super Admin can see all logs (no schoolId filter)

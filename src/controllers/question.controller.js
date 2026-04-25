@@ -4,6 +4,25 @@ const Student = require('../models/Student.js');
 const Teacher = require('../models/Teacher.js');
 const Subject = require('../models/Subject.js');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const _sessionFilter = (sessionId) =>
   sessionId
     ? {
@@ -50,6 +69,8 @@ const askQuestion = async (req, res) => {
       questionImage: questionImage || '',
     });
 
+    _audit('QUESTION_ASKED', 'QUESTION', question._id,
+      `Question asked: "${question.topic || question.chapter || 'Q&A'}"`, {}, req);
     return res.status(201).json({ success: true, data: question });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -151,14 +172,15 @@ const answerQuestion = async (req, res) => {
     );
 
     if (!question) return res.status(404).json({ success: false, message: 'Question not found' });
-
+    _audit('QUESTION_ANSWERED', 'QUESTION', question._id,
+      `Question answered`, {}, req);
     return res.json({ success: true, data: question });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-const getAllQuestions = async (req, res) => {
+const getTeacherQuestions = async (req, res) => {
   try {
     const { schoolId, sessionId } = req.user;
     const { status, subjectId, teacherId, classId, page = 1, limit = 50 } = req.query;

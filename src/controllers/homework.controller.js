@@ -8,6 +8,25 @@ const Section = require('../models/Section.js');
 const Subject = require('../models/Subject.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const sessionFilter = (req) => {
   const sid = req.user?.sessionId;
   if (!sid) return {};
@@ -147,6 +166,8 @@ const createHomework = async (req, res) => {
       schoolId
     });
 
+    _audit('HOMEWORK_CREATED', 'HOMEWORK', homework._id,
+      `Homework "${homework.title}" assigned`, {}, req);
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'Homework created successfully',

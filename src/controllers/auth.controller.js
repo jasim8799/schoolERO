@@ -199,12 +199,13 @@ const login = async (req, res) => {
       action: 'LOGIN',
       userId: user._id,
       role: user.role,
-      entityType: 'USER',
+      entityType: 'LOGIN_SESSION',
       entityId: user._id,
-      description: `User ${user.name} logged in`,
+      description: `${user.name} (${user.role}) logged in`,
       schoolId: user.schoolId?._id || null,
-      details: { email, mobile },
-      req
+      details: { role: user.role, email: user.email || user.mobile },
+      ipAddress: req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+        || req.socket?.remoteAddress || req.ip || '0.0.0.0',
     });
 
     // Remove password from response

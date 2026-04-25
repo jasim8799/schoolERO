@@ -79,7 +79,10 @@ const getAuditLogs = async (filters = {}) => {
     const query = {};
     if (userId) query.userId = userId;
     if (schoolId) query.schoolId = schoolId;
-    if (action) query.action = action;
+    if (action) {
+      // Support MongoDB $in queries (e.g. for level=error filter)
+      query.action = (typeof action === 'object' && action.$in) ? action : action;
+    }
     if (entityType) query.entityType = entityType;
     if (startDate || endDate) {
       query.createdAt = {};
@@ -102,7 +105,35 @@ const getAuditLogs = async (filters = {}) => {
   }
 };
 
+/**
+ * Log an error to the AuditLog (non-blocking, never throws)
+ */
+const logError = async ({ req, error, entityType = 'ERROR', context = '' }) => {
+  try {
+    const ip = req?.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+      || req?.socket?.remoteAddress
+      || req?.ip
+      || '0.0.0.0';
+    await AuditLog.create({
+      userId: req?.user?._id || req?.user?.userId || null,
+      role: req?.user?.role || 'SYSTEM',
+      action: 'ERROR_OCCURRED',
+      entityType,
+      description: `Error: ${error?.message || String(error)}`,
+      details: {
+        stack: error?.stack?.substring(0, 500),
+        context,
+        url: req?.originalUrl,
+        method: req?.method,
+      },
+      ipAddress: ip,
+      schoolId: req?.user?.schoolId || null,
+    });
+  } catch (_) {} // Never throw from error logger
+};
+
 module.exports = {
   auditLog,
-  getAuditLogs
+  getAuditLogs,
+  logError
 };

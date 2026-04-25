@@ -5,6 +5,24 @@ const Student = require('../models/Student.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { auditLog } = require('../utils/auditLog.js');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id || req.user?.userId,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
   return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
@@ -75,13 +93,14 @@ const applyLeave = async (req, res) => {
       leaveType: leaveType || 'CASUAL_LEAVE',
     });
 
+    _audit('LEAVE_APPLIED', 'LEAVE', application._id,
+      `Leave application submitted`, {}, req);
     return res.status(201).json({ success: true, data: application });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /api/leave/my - Get own applications
 const getMyLeaveApplications = async (req, res) => {
   try {
     const { userId, schoolId } = req.user;
@@ -240,11 +259,15 @@ const reviewLeaveApplication = async (req, res) => {
     }
 
     await auditLog({
-      action: 'LEAVE_APPLICATION_REVIEWED',
+      action: status === 'APPROVED' ? 'LEAVE_APPROVED' : 'LEAVE_REJECTED',
       userId: req.user.userId,
+      role: req.user?.role || 'SYSTEM',
+      entityType: 'LEAVE',
+      entityId: application._id,
       schoolId,
+      description: `Leave ${status.toLowerCase()}`,
       details: { applicationId: id, status, reviewNote },
-      req,
+      ipAddress: _ip(req),
     });
 
     return res.json({ success: true, data: application });

@@ -2,6 +2,25 @@ const Notice = require('../models/Notice');
 const Student = require('../models/Student');
 const Parent = require('../models/Parent');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 function _activeExpiryFilter() {
   return {
     $or: [
@@ -71,6 +90,8 @@ const createNotice = async (req, res) => {
     };
 
     const notice = await Notice.create(payload);
+    _audit('NOTICE_CREATED', 'NOTICE', notice._id,
+      `Notice "${notice.title}" created`, {}, req);
     return res.status(201).json({ success: true, data: notice });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -196,7 +217,8 @@ const deleteNotice = async (req, res) => {
     if (!notice) {
       return res.status(404).json({ success: false, message: 'Notice not found' });
     }
-
+    _audit('NOTICE_DELETED', 'NOTICE', id,
+      `Notice deleted`, {}, req);
     return res.json({ success: true, message: 'Notice deleted' });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

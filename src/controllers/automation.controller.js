@@ -1,6 +1,25 @@
 const mongoose = require('mongoose');
 const { runAutomations } = require('../services/automation.service');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 function normalizeSchoolId(schoolId) {
   if (!schoolId) return null;
   if (schoolId instanceof mongoose.Types.ObjectId) return schoolId;
@@ -119,8 +138,9 @@ exports.createAutomation = async (req, res) => {
     });
 
     res.status(201).json({ success: true, data: rule });
+    _audit('AUTOMATION_CREATED', 'AUTOMATION', rule._id,
+      `Automation rule "${rule.name}" created`, { trigger: rule.trigger }, req);
   } catch (err) {
-    console.error('[createAutomation] ERROR:', err.message);
     if (err.name === 'ValidationError') {
       const errors = Object.values(err.errors).map((e) => e.message);
       console.error('[createAutomation] Validation errors:', errors);
@@ -179,6 +199,8 @@ exports.deleteAutomation = async (req, res) => {
     const { id } = req.params;
     const rule = await AutomationRule.findOneAndDelete({ _id: id, schoolId: schoolObjId });
     if (!rule) return res.status(404).json({ success: false, message: 'Rule not found' });
+    _audit('AUTOMATION_DELETED', 'AUTOMATION', id,
+      `Automation rule deleted`, {}, req);
     res.json({ success: true, message: 'Automation rule deleted' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -201,6 +223,9 @@ exports.runAutomations = async (req, res) => {
     if (!trigger) return res.status(400).json({ success: false, message: 'trigger is required' });
 
     const result = await runAutomations(schoolObjId, trigger);
+    _audit('AUTOMATION_TRIGGERED', 'AUTOMATION', null,
+      `Automation triggered for "${trigger}"`,
+      { trigger, rulesRun: result.rulesRun }, req);
     res.json({
       success: true,
       message: result.rulesRun > 0

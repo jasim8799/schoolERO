@@ -5,6 +5,25 @@ const Parent = require('../models/Parent.js');
 const School = require('../models/School.js');
 const PDFDocument = require('pdfkit');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const issueTC = async (req, res) => {
   try {
     const { studentId, reason, issueDate } = req.body;
@@ -50,6 +69,8 @@ const issueTC = async (req, res) => {
       schoolId
     });
 
+    _audit('TC_ISSUED', 'TC', student._id,
+      `TC issued for student ${student.name}`, {}, req);
     res.status(201).json({ success: true, data: tc });
   } catch (err) {
     res.status(500).json({ message: err.message });

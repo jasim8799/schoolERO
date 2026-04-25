@@ -2,6 +2,25 @@ const AdmitCard = require('../models/AdmitCard.js');
 const ExamPayment = require('../models/ExamPayment.js');
 const ExamForm = require('../models/ExamForm.js');
 
+const _ip = (req) =>
+  req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+
+const _audit = async (action, entityType, entityId, desc, details, req) => {
+  try {
+    const { auditLog } = require('../utils/auditLog');
+    await auditLog({
+      action, entityType, entityId,
+      userId: req.user?._id,
+      schoolId: req.user?.schoolId,
+      description: desc,
+      details,
+      ipAddress: _ip(req),
+      role: req.user?.role || 'SYSTEM',
+    });
+  } catch (_) {}
+};
+
 const sessionFilter = (req) => {
   const sid = req.user?.sessionId;
   if (!sid) return {};
@@ -46,6 +65,8 @@ const generateAdmitCard = async (req, res) => {
       schoolId,
       createdBy: userId,
     });
+    _audit('ADMIT_CARD_GENERATED', 'ADMIT_CARD', admitCard._id,
+      `Admit card generated`, { examId }, req);
     res.status(201).json(admitCard);
   } catch (err) {
     if (err.code === 11000) {
