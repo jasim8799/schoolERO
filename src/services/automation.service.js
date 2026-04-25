@@ -1,112 +1,234 @@
 const mongoose = require('mongoose');
-const { emitEvent } = require('./event.service');
+const { USER_STATUS } = require('../config/constants');
+
+const ROLE_MAP = {
+  STUDENT: ['STUDENT'],
+  PARENT: ['PARENT'],
+  TEACHER: ['TEACHER'],
+  OPERATOR: ['OPERATOR'],
+  PRINCIPAL: ['PRINCIPAL'],
+  ALL: ['STUDENT', 'PARENT', 'TEACHER', 'OPERATOR', 'PRINCIPAL'],
+};
+
+function getTriggerTitle(trigger) {
+  const map = {
+    FEE_DUE: 'Fee Payment Reminder',
+    FEE_OVERDUE: 'Fee Overdue Alert',
+    EXAM_PUBLISHED: 'New Exam Published',
+    RESULT_PUBLISHED: 'Results Published',
+    ATTENDANCE_ABSENT: 'Attendance Alert',
+  };
+  return map[trigger] || trigger.replaceAll('_', ' ');
+}
+
+function evaluateCondition(condition, context = {}) {
+  if (!condition?.field || condition.value === undefined || !condition.operator) {
+    return true;
+  }
+
+  const left = context[condition.field];
+  const right = condition.value;
+
+  switch (condition.operator) {
+    case 'gt':
+      return left > right;
+    case 'lt':
+      return left < right;
+    case 'eq':
+      return left === right;
+    case 'gte':
+      return left >= right;
+    case 'lte':
+      return left <= right;
+    default:
+      return true;
+  }
+}
+
+async function resolveFeeContext(schoolId) {
+  const Bill = mongoose.model('Bill');
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+
+  const [feeDueCount, feeOverdueCount] = await Promise.all([
+    Bill.countDocuments({
+      schoolId,
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 },
+      dueDate: { $gte: startOfToday, $lt: endOfToday },
+    }),
+    Bill.countDocuments({
+      schoolId,
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 },
+      dueDate: { $lt: startOfToday },
+    }),
+  ]);
+
+  return { feeDueCount, feeOverdueCount };
+}
+
+function buildDefaultMessage(rule, trigger, context = {}) {
+  if (rule.action?.message) {
+    return rule.action.message;
+  }
+
+  switch (trigger) {
+    case 'FEE_DUE':
+      return context.message || 'Fee payment is due. Please pay on time to avoid penalties.';
+    case 'FEE_OVERDUE':
+      return context.message || 'Fee payment is overdue. Please clear the pending amount immediately.';
+    case 'EXAM_PUBLISHED':
+      return context.message || `A new exam has been published${context.examName ? `: ${context.examName}` : ''}.`;
+    case 'RESULT_PUBLISHED':
+      return context.message || `Results have been published${context.examName ? ` for ${context.examName}` : ''}.`;
+    case 'ATTENDANCE_ABSENT':
+      return context.message || `Attendance marked absent${context.studentName ? ` for ${context.studentName}` : ''}.`;
+    default:
+      return `${getTriggerTitle(trigger)} - ${rule.name}`;
+  }
+}
+
+async function queueNotifications(schoolId, trigger, rule, context = {}) {
+  const NotificationQueue = mongoose.model('NotificationQueue');
+  const User = mongoose.model('User');
+  const roles = ROLE_MAP[rule.action?.target] || [];
+
+  if (!roles.length) {
+    return 0;
+  }
+
+  const users = await User.find({
+    schoolId,
+    role: { $in: roles },
+    status: USER_STATUS.ACTIVE,
+  }).select('_id role').lean();
+
+  if (!users.length) {
+    return 0;
+  }
+
+  const title = getTriggerTitle(trigger);
+  const body = buildDefaultMessage(rule, trigger, context);
+  const notifications = users.map((user) => ({
+    schoolId,
+    recipientId: user._id,
+    recipientRole: user.role,
+    type: trigger === 'RESULT_PUBLISHED'
+        ? 'RESULT_READY'
+        : trigger === 'ATTENDANCE_ABSENT'
+            ? 'ABSENT_ALERT'
+            : trigger.startsWith('FEE_')
+                ? 'FEE_REMINDER'
+                : trigger === 'EXAM_PUBLISHED'
+                    ? 'EXAM_ALERT'
+                    : 'GENERAL',
+    title,
+    body,
+    relatedEntityId: context.entityId || null,
+    relatedEntityType: context.entityType || 'AutomationRule',
+  }));
+
+  await NotificationQueue.insertMany(notifications, { ordered: false });
+  return notifications.length;
+}
+
+async function dispatchAutomationTrigger(schoolId, trigger, context = {}) {
+  const AutomationRule = mongoose.model('AutomationRule');
+  const rules = await AutomationRule.find({ schoolId, trigger, isActive: true }).lean();
+
+  if (!rules.length) {
+    return { rulesRun: 0, notificationsCreated: 0 };
+  }
+
+  let rulesRun = 0;
+  let notificationsCreated = 0;
+
+  for (const rule of rules) {
+    if (!evaluateCondition(rule.condition, context)) {
+      continue;
+    }
+
+    try {
+      if (rule.action?.type === 'SEND_NOTIFICATION' || !rule.action?.type) {
+        notificationsCreated += await queueNotifications(schoolId, trigger, rule, context);
+      }
+
+      await AutomationRule.updateOne(
+        { _id: rule._id },
+        { $inc: { runCount: 1 }, $set: { lastRunAt: new Date() } }
+      );
+      rulesRun += 1;
+    } catch (err) {
+      console.error(`[AutomationService] Rule "${rule.name}" failed:`, err.message);
+    }
+  }
+
+  return { rulesRun, notificationsCreated };
+}
 
 /**
  * Run all active AutomationRules for a given school and trigger type.
  * Called by the nightly scheduler.
  */
 async function runAutomations(schoolId, trigger) {
-  const AutomationRule = mongoose.model('AutomationRule');
-  const rules = await AutomationRule.find({ schoolId, trigger, isActive: true }).lean();
+  let context = {};
 
-  for (const rule of rules) {
-    try {
-      await _executeRule(rule);
-      await AutomationRule.findByIdAndUpdate(rule._id, {
-        $inc: { runCount: 1 },
-        lastRunAt: new Date()
-      });
-    } catch (err) {
-      console.error(`[AutomationService] Rule "${rule.name}" failed:`, err.message);
+  if (trigger === 'FEE_DUE' || trigger === 'FEE_OVERDUE') {
+    context = await resolveFeeContext(schoolId);
+
+    if (trigger === 'FEE_DUE' && context.feeDueCount <= 0) {
+      return { rulesRun: 0, notificationsCreated: 0 };
+    }
+
+    if (trigger === 'FEE_OVERDUE' && context.feeOverdueCount <= 0) {
+      return { rulesRun: 0, notificationsCreated: 0 };
     }
   }
-}
 
-async function _executeRule(rule) {
-  switch (rule.trigger) {
-    case 'FEE_DUE':
-      return checkFeesDue(rule.schoolId, rule.condition, rule.action);
-    case 'STUDENT_ABSENT':
-      return checkAbsentStudents(rule.schoolId, rule.condition, rule.action);
-    case 'ATTENDANCE_NOT_MARKED':
-      return checkAttendanceNotMarked(rule.schoolId, rule.condition, rule.action);
-    default:
-      break;
-  }
+  return dispatchAutomationTrigger(schoolId, trigger, context);
 }
 
 /**
- * Check overdue fee assignments and queue reminders.
+ * Return counts for fee-due and fee-overdue states.
  */
-async function checkFeesDue(schoolId, condition = {}, action = {}) {
-  const StudentFeeAssignment = mongoose.model('StudentFeeAssignment');
-  const NotificationQueue = mongoose.model('NotificationQueue');
-  const Student = mongoose.model('Student');
+async function checkFeesDue(schoolId) {
+  return resolveFeeContext(schoolId);
+}
 
-  const dueBefore = new Date();
-  const overdueAssignments = await StudentFeeAssignment.find({
+/**
+ * Trigger attendance-absent automations for a specific absent record or for all absentees today.
+ */
+async function checkAbsentStudents(schoolId, context = {}) {
+  const Attendance = mongoose.model('StudentDailyAttendance');
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(startOfDay);
+  endOfDay.setDate(endOfDay.getDate() + 1);
+
+  const query = {
     schoolId,
-    status: { $in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-    dueDate: { $lt: dueBefore }
-  })
-    .populate({ path: 'studentId', select: 'name parentId userId' })
+    status: 'ABSENT',
+    date: { $gte: startOfDay, $lt: endOfDay },
+  };
+
+  if (context.studentId) {
+    query.studentId = context.studentId;
+  }
+
+  const records = await Attendance.find(query)
+    .populate('studentId', 'name')
     .lean();
 
-  // Mark them overdue
-  const ids = overdueAssignments.map(a => a._id);
-  if (ids.length) {
-    await StudentFeeAssignment.updateMany(
-      { _id: { $in: ids } },
-      { status: 'OVERDUE' }
-    );
-  }
-
-  // Queue a notification per assignment
-  const notifications = overdueAssignments
-    .filter(a => a.studentId?.parentId)
-    .map(a => ({
-      schoolId,
-      recipientId: a.studentId.parentId,
-      recipientRole: 'PARENT',
-      type: 'FEE_REMINDER',
-      title: 'Fee Due Reminder',
-      body: `Fee of ₹${a.totalAmount - a.paidAmount} for ${a.studentId.name} is overdue.`,
-      relatedEntityId: a._id,
-      relatedEntityType: 'StudentFeeAssignment'
-    }));
-
-  if (notifications.length) {
-    await NotificationQueue.insertMany(notifications);
-  }
-
-  return overdueAssignments.length;
-}
-
-/**
- * Check for students who were absent yesterday and emit events.
- */
-async function checkAbsentStudents(schoolId, condition = {}, action = {}) {
-  const Attendance = mongoose.model('StudentDailyAttendance');
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  yesterday.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(yesterday);
-  dayEnd.setHours(23, 59, 59, 999);
-
-  const records = await Attendance.find({
-    schoolId,
-    date: { $gte: yesterday, $lte: dayEnd },
-    status: 'ABSENT'
-  }).lean();
-
   for (const rec of records) {
-    await emitEvent({
-      schoolId,
-      event: 'STUDENT_ABSENT',
-      entityId: rec.studentId,
+    await dispatchAutomationTrigger(schoolId, 'ATTENDANCE_ABSENT', {
+      entityId: rec.studentId?._id || rec.studentId,
       entityType: 'Student',
-      triggeredBy: null,
-      payload: { studentId: rec.studentId, date: yesterday.toISOString().split('T')[0] }
+      studentId: rec.studentId?._id || rec.studentId,
+      studentName: rec.studentId?.name,
+      date: startOfDay.toISOString().split('T')[0],
     });
   }
 
@@ -220,6 +342,8 @@ async function generateMonthlyFees(schoolId, month) {
 }
 
 module.exports = {
+  getTriggerTitle,
+  dispatchAutomationTrigger,
   runAutomations,
   checkFeesDue,
   checkAbsentStudents,

@@ -2,6 +2,7 @@ const StudentFee = require('../models/StudentFee');
 const Student = require('../models/Student');
 const FeeStructure = require('../models/FeeStructure');
 const AcademicSession = require('../models/AcademicSession');
+const { dispatchAutomationTrigger } = require('../services/automation.service');
 
 const assignFee = async (req, res) => {
   try {
@@ -80,6 +81,17 @@ const assignFee = async (req, res) => {
       // Bill creation failure should NOT fail the fee assignment
       console.error('Bill dual-write failed:', billErr.message);
     }
+
+    await dispatchAutomationTrigger(schoolId, 'FEE_DUE', {
+      entityId: studentFee._id,
+      entityType: 'StudentFee',
+      studentId,
+      feeStructureId,
+      dueAmount,
+      totalAmount,
+      feeName: feeStructure.name,
+      message: `${feeStructure.name} fee has been assigned and is now due.`,
+    });
 
     res.status(201).json({
       success: true,

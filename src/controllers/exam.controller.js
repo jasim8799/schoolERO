@@ -133,6 +133,8 @@ const updateExam = async (req, res) => {
   }
 };
 
+const { dispatchAutomationTrigger } = require('../services/automation.service');
+
 const publishExam = async (req, res) => {
   try {
     const { examId } = req.params;
@@ -149,6 +151,14 @@ const publishExam = async (req, res) => {
     }
 
     const updatedExam = await Exam.findByIdAndUpdate(examId, { status: 'Published' }, { new: true });
+    await dispatchAutomationTrigger(schoolId, 'EXAM_PUBLISHED', {
+      entityId: updatedExam._id,
+      entityType: 'Exam',
+      examId: updatedExam._id,
+      examName: updatedExam.name,
+      classId: exam.classId?._id,
+      message: `${updatedExam.name} exam has been published. Check the exam schedule.`,
+    });
     res.json(updatedExam);
   } catch (err) {
     res.status(500).json({ message: err.message });

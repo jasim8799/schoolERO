@@ -3,36 +3,41 @@ const ObjectId = mongoose.Schema.Types.ObjectId;
 
 const AutomationRuleSchema = new mongoose.Schema({
   schoolId: { type: ObjectId, ref: 'School', required: true },
-  name: { type: String, required: true },
+  name: { type: String, required: true, trim: true },
   isActive: { type: Boolean, default: true },
   trigger: {
     type: String,
     enum: [
       'FEE_DUE',
-      'STUDENT_ABSENT',
-      'EXAM_DATE_NEAR',
+      'FEE_OVERDUE',
+      'EXAM_PUBLISHED',
       'RESULT_PUBLISHED',
-      'SALARY_DUE',
-      'ATTENDANCE_NOT_MARKED'
+      'ATTENDANCE_ABSENT'
     ],
     required: true
   },
   condition: {
-    field: { type: String },      // e.g. 'daysOverdue'
-    operator: { type: String },   // 'gt', 'lt', 'eq'
+    field: { type: String },
+    operator: { type: String, enum: ['gt', 'lt', 'eq', 'gte', 'lte'] },
     value: { type: mongoose.Schema.Types.Mixed }
   },
   action: {
     type: {
       type: String,
-      enum: ['SEND_NOTIFICATION', 'SEND_SMS', 'FLAG_RECORD', 'GENERATE_REPORT']
+      enum: [
+        'SEND_NOTIFICATION',
+        'SEND_EMAIL',
+        'SEND_SMS',
+        'ASSIGN_FEE',
+        'UPDATE_STATUS'
+      ]
     },
     target: {
       type: String,
-      enum: ['PARENT', 'STUDENT', 'TEACHER', 'PRINCIPAL', 'OPERATOR']
+      enum: ['STUDENT', 'PARENT', 'TEACHER', 'OPERATOR', 'PRINCIPAL', 'ALL']
     },
+    message: { type: String },
     template: { type: String },
-    templateVars: [{ type: String }]
   },
   lastRunAt: { type: Date },
   runCount: { type: Number, default: 0 }

@@ -44,8 +44,8 @@ cron.schedule('0 2 * * *', async () => {
   await runForAllSchools('runAutomations', async (schoolId) => {
     const triggers = [
       'FEE_DUE',
-      'STUDENT_ABSENT',
-      'ATTENDANCE_NOT_MARKED'
+      'FEE_OVERDUE',
+      'ATTENDANCE_ABSENT'
     ];
     for (const trigger of triggers) {
       await runAutomations(schoolId, trigger);

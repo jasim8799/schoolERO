@@ -10,6 +10,7 @@ const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const AcademicHistory = require('../models/AcademicHistory.js');
 const { auditLog } = require('../utils/auditLog.js');
+const { dispatchAutomationTrigger } = require('../services/automation.service');
 
 // Utility
 const normalizeDate = (d) => {
@@ -104,6 +105,22 @@ const markStudentDailyAttendance = async (req, res) => {
     });
 
     const result = await StudentDailyAttendance.bulkWrite(bulkOps);
+
+    const absentRecordsForAutomation = records.filter(
+      (record) => record.status === 'ABSENT'
+    );
+    for (const record of absentRecordsForAutomation) {
+      const student = studentMap.get(record.studentId.toString());
+      await dispatchAutomationTrigger(normalizedSchoolId, 'ATTENDANCE_ABSENT', {
+        entityId: record.studentId,
+        entityType: 'Student',
+        studentId: record.studentId,
+        studentName: student?.name,
+        classId: record.classId,
+        sectionId: record.sectionId,
+        date: record.date,
+      });
+    }
 
     try {
       const Notice = require('../models/Notice.js');

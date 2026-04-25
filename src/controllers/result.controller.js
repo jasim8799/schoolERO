@@ -3,6 +3,7 @@ const ExamSubject = require('../models/ExamSubject.js');
 const Exam = require('../models/Exam.js');
 const Student = require('../models/Student.js');
 const Parent = require('../models/Parent.js');
+const { dispatchAutomationTrigger } = require('../services/automation.service');
 
 const sessionFilter = (req) => {
   const sid = req.user?.sessionId;
@@ -164,6 +165,19 @@ const publishResult = async (req, res) => {
 
     result.status = 'Published';
     await result.save();
+
+    const exam = await Exam.findOne({ _id: examId, schoolId, sessionId }).select('name classId').lean();
+    await dispatchAutomationTrigger(schoolId, 'RESULT_PUBLISHED', {
+      entityId: result._id,
+      entityType: 'Result',
+      examId,
+      examName: exam?.name,
+      classId: exam?.classId,
+      studentId,
+      message: exam?.name != null
+          ? `Results for ${exam.name} have been published. Check your result now.`
+          : 'Results have been published. Check your result now.',
+    });
 
     // Calculate ranks for all results in this exam
     // TODO: Recalculate ranks for all published results in this exam

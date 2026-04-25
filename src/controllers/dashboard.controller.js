@@ -9,7 +9,9 @@ const StudentHostel = require('../models/StudentHostel');
 const StudentTransport = require('../models/StudentTransport');
 const ExamForm = require('../models/ExamForm');
 const Homework = require('../models/Homework');
+const Exam = require('../models/Exam');
 const Result = require('../models/Result');
+const Bill = require('../models/Bill');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
 const { USER_ROLES } = require('../config/constants');
 
@@ -67,6 +69,24 @@ const getPrincipalDashboard = async (req, res) => {
     // Pending exam payments
     const pendingExamPayments = await ExamPayment.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
+    const [publishedExamsCount, publishedResultExamIds, feeOverdueCount, absentToday] = await Promise.all([
+      Exam.countDocuments({ schoolId, ...sFilter, status: 'Published' }),
+      Result.distinct('examId', { schoolId, ...sFilter, status: 'Published' }),
+      Bill.countDocuments({
+        schoolId,
+        ...sFilter,
+        status: { $in: ['UNPAID', 'PARTIAL'] },
+        dueAmount: { $gt: 0 },
+        dueDate: { $lt: today },
+      }),
+      StudentDailyAttendance.countDocuments({
+        schoolId,
+        ...sFilter,
+        date: { $gte: today, $lt: tomorrow },
+        status: 'ABSENT',
+      }),
+    ]);
+
     // Hostel occupancy
     const hostelStudents = await StudentHostel.countDocuments({ schoolId, status: 'ACTIVE' });
     const totalHostelCapacity = await require('../models/Room').aggregate([
@@ -85,8 +105,13 @@ const getPrincipalDashboard = async (req, res) => {
         totalTeachers,
         todayAttendancePercent,
         totalFeeDue,
+        feeDueCount: feeDues.length,
+        feeOverdueCount,
         todayCollection,
         pendingExamPayments,
+        publishedExamsCount,
+        publishedResultsCount: publishedResultExamIds.length,
+        absentToday,
         hostelOccupancy,
         transportStudents
       }
@@ -142,14 +167,37 @@ const getOperatorDashboard = async (req, res) => {
     // Exam forms pending
     const pendingExamForms = await ExamForm.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
+    const [publishedExamsCount, publishedResultExamIds, feeOverdueCount, absentToday] = await Promise.all([
+      Exam.countDocuments({ schoolId, ...sFilter, status: 'Published' }),
+      Result.distinct('examId', { schoolId, ...sFilter, status: 'Published' }),
+      Bill.countDocuments({
+        schoolId,
+        ...sFilter,
+        status: { $in: ['UNPAID', 'PARTIAL'] },
+        dueAmount: { $gt: 0 },
+        dueDate: { $lt: today },
+      }),
+      StudentDailyAttendance.countDocuments({
+        schoolId,
+        ...sFilter,
+        date: { $gte: today, $lt: tomorrow },
+        status: 'ABSENT',
+      }),
+    ]);
+
     res.json({
       success: true,
       data: {
         pendingFeeDues,
+        feeDueCount: pendingFeeDues,
+        feeOverdueCount,
         todayPaymentsCount,
         todayPaymentsAmount,
         attendanceNotMarked,
-        pendingExamForms
+        pendingExamForms,
+        publishedExamsCount,
+        publishedResultsCount: publishedResultExamIds.length,
+        absentToday,
       }
     });
   } catch (err) {
