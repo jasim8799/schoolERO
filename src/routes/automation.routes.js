@@ -20,10 +20,8 @@ router.get('/my-notifications', getMyNotifications);
 router.get('/active-notifications', requireMinRole(USER_ROLES.OPERATOR), getActiveNotifications);
 router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAutomations);
 router.post('/', requireMinRole(USER_ROLES.PRINCIPAL), createAutomation);
+router.post('/run', requireMinRole(USER_ROLES.PRINCIPAL), runAutomations);
 router.patch('/:id', requireMinRole(USER_ROLES.PRINCIPAL), updateAutomation);
 router.delete('/:id', requireMinRole(USER_ROLES.PRINCIPAL), deleteAutomation);
-
-// Manually trigger rules for a specific trigger type
-router.post('/run', requireMinRole(USER_ROLES.PRINCIPAL), runAutomations);
 
 module.exports = router;
