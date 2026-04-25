@@ -16,18 +16,49 @@ function normalizeSchoolId(schoolId) {
  */
 exports.getAutomations = async (req, res) => {
   try {
+    console.log('[getAutomations] req.user:', JSON.stringify({
+      userId: req.user?.userId,
+      role: req.user?.role,
+      schoolId: req.user?.schoolId,
+      schoolIdType: typeof req.user?.schoolId,
+    }));
+
     const schoolId = req.user?.schoolId;
     if (!schoolId) {
-      return res.status(400).json({ success: false, message: 'No school context' });
+      console.error('[getAutomations] NO schoolId in req.user!');
+      return res.status(400).json({
+        success: false,
+        message: 'No school context - schoolId missing from token'
+      });
     }
+
     const schoolObjId = normalizeSchoolId(schoolId);
+    console.log('[getAutomations] schoolObjId:', schoolObjId, 'type:', typeof schoolObjId);
 
     const AutomationRule = mongoose.model('AutomationRule');
-    const rules = await AutomationRule.find({ schoolId: schoolObjId }).sort({ createdAt: -1 }).lean();
-    console.log(`[getAutomations] schoolId=${schoolId} found ${rules.length} rules`);
+    const rulesById = await AutomationRule.find({
+      schoolId: schoolObjId
+    }).sort({ createdAt: -1 }).lean();
+    console.log('[getAutomations] rules found by ObjectId:', rulesById.length);
+
+    const allRules = await AutomationRule.find({}).limit(10).sort({ createdAt: -1 }).lean();
+    console.log('[getAutomations] total rules in DB (sample):', allRules.length);
+    if (allRules.length > 0) {
+      console.log('[getAutomations] sample rule schoolId:',
+        allRules[0].schoolId, 'type:', typeof allRules[0].schoolId);
+      console.log('[getAutomations] match test:',
+        allRules[0].schoolId?.toString() === schoolId?.toString());
+    }
+
+    const rules = rulesById.length > 0
+      ? rulesById
+      : allRules.filter((r) => r.schoolId?.toString() === schoolId?.toString());
+
+    console.log('[getAutomations] final rules count:', rules.length);
+
     res.json({ success: true, data: rules });
   } catch (err) {
-    console.error('[getAutomations] error:', err.message);
+    console.error('[getAutomations] ERROR:', err.message, err.stack);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -38,16 +69,33 @@ exports.getAutomations = async (req, res) => {
  */
 exports.createAutomation = async (req, res) => {
   try {
+    console.log('[createAutomation] req.user:', JSON.stringify({
+      userId: req.user?.userId,
+      role: req.user?.role,
+      schoolId: req.user?.schoolId,
+    }));
+    console.log('[createAutomation] req.body:', JSON.stringify(req.body));
+
     const schoolId = req.user?.schoolId;
     if (!schoolId) {
-      return res.status(400).json({ success: false, message: 'No school context' });
+      return res.status(400).json({
+        success: false,
+        message: 'No school context'
+      });
     }
+
     const schoolObjId = normalizeSchoolId(schoolId);
 
     const AutomationRule = mongoose.model('AutomationRule');
     const { name, trigger, condition, action } = req.body;
 
     if (!name || !trigger || !action?.type || !action?.target) {
+      console.error('[createAutomation] Missing fields:', {
+        name: !!name,
+        trigger: !!trigger,
+        actionType: !!action?.type,
+        actionTarget: !!action?.target
+      });
       return res.status(400).json({
         success: false,
         message: 'name, trigger, action.type and action.target are required'
@@ -62,10 +110,25 @@ exports.createAutomation = async (req, res) => {
       action,
       expiryHours: Number(req.body.expiryHours ?? 24),
     });
-    console.log(`[createAutomation] created rule: ${rule._id} for school: ${schoolId}`);
+
+    console.log('[createAutomation] SUCCESS:', {
+      ruleId: rule._id,
+      schoolId: rule.schoolId,
+      trigger: rule.trigger,
+      name: rule.name,
+    });
+
     res.status(201).json({ success: true, data: rule });
   } catch (err) {
-    console.error('[createAutomation] error:', err.message);
+    console.error('[createAutomation] ERROR:', err.message);
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map((e) => e.message);
+      console.error('[createAutomation] Validation errors:', errors);
+      return res.status(400).json({
+        success: false,
+        message: `Validation failed: ${errors.join(', ')}`
+      });
+    }
     res.status(400).json({ success: false, message: err.message });
   }
 };

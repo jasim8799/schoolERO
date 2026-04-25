@@ -16,11 +16,16 @@ const router = express.Router();
 
 router.use(authenticate);
 
+// Static routes - must be before /:id routes
 router.get('/my-notifications', getMyNotifications);
 router.get('/active-notifications', requireMinRole(USER_ROLES.OPERATOR), getActiveNotifications);
+router.post('/run', requireMinRole(USER_ROLES.PRINCIPAL), runAutomations);
+
+// Collection routes
 router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAutomations);
 router.post('/', requireMinRole(USER_ROLES.PRINCIPAL), createAutomation);
-router.post('/run', requireMinRole(USER_ROLES.PRINCIPAL), runAutomations);
+
+// Dynamic id routes - must be last
 router.patch('/:id', requireMinRole(USER_ROLES.PRINCIPAL), updateAutomation);
 router.delete('/:id', requireMinRole(USER_ROLES.PRINCIPAL), deleteAutomation);
 
