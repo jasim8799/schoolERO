@@ -1,6 +1,16 @@
 const mongoose = require('mongoose');
 const { runAutomations } = require('../services/automation.service');
 
+function normalizeSchoolId(schoolId) {
+  if (!schoolId) return null;
+  if (schoolId instanceof mongoose.Types.ObjectId) return schoolId;
+  try {
+    return new mongoose.Types.ObjectId(schoolId);
+  } catch (_) {
+    return schoolId;
+  }
+}
+
 /**
  * GET /api/automations
  */
@@ -10,9 +20,10 @@ exports.getAutomations = async (req, res) => {
     if (!schoolId) {
       return res.status(400).json({ success: false, message: 'No school context' });
     }
+    const schoolObjId = normalizeSchoolId(schoolId);
 
     const AutomationRule = mongoose.model('AutomationRule');
-    const rules = await AutomationRule.find({ schoolId }).sort({ createdAt: -1 }).lean();
+    const rules = await AutomationRule.find({ schoolId: schoolObjId }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: rules });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -29,6 +40,7 @@ exports.createAutomation = async (req, res) => {
     if (!schoolId) {
       return res.status(400).json({ success: false, message: 'No school context' });
     }
+    const schoolObjId = normalizeSchoolId(schoolId);
 
     const AutomationRule = mongoose.model('AutomationRule');
     const { name, trigger, condition, action } = req.body;
@@ -41,7 +53,7 @@ exports.createAutomation = async (req, res) => {
     }
 
     const rule = await AutomationRule.create({
-      schoolId,
+      schoolId: schoolObjId,
       name,
       trigger,
       condition,
@@ -63,6 +75,7 @@ exports.updateAutomation = async (req, res) => {
     if (!schoolId) {
       return res.status(400).json({ success: false, message: 'No school context' });
     }
+    const schoolObjId = normalizeSchoolId(schoolId);
 
     const AutomationRule = mongoose.model('AutomationRule');
     const { id } = req.params;
@@ -73,7 +86,7 @@ exports.updateAutomation = async (req, res) => {
     }
 
     const rule = await AutomationRule.findOneAndUpdate(
-      { _id: id, schoolId },
+      { _id: id, schoolId: schoolObjId },
       updates,
       { new: true }
     );
@@ -93,10 +106,11 @@ exports.deleteAutomation = async (req, res) => {
     if (!schoolId) {
       return res.status(400).json({ success: false, message: 'No school context' });
     }
+    const schoolObjId = normalizeSchoolId(schoolId);
 
     const AutomationRule = mongoose.model('AutomationRule');
     const { id } = req.params;
-    const rule = await AutomationRule.findOneAndDelete({ _id: id, schoolId });
+    const rule = await AutomationRule.findOneAndDelete({ _id: id, schoolId: schoolObjId });
     if (!rule) return res.status(404).json({ success: false, message: 'Rule not found' });
     res.json({ success: true, message: 'Automation rule deleted' });
   } catch (err) {
@@ -114,11 +128,12 @@ exports.runAutomations = async (req, res) => {
     if (!schoolId) {
       return res.status(400).json({ success: false, message: 'No school context' });
     }
+    const schoolObjId = normalizeSchoolId(schoolId);
 
     const { trigger } = req.body;
     if (!trigger) return res.status(400).json({ success: false, message: 'trigger is required' });
 
-    const result = await runAutomations(schoolId, trigger);
+    const result = await runAutomations(schoolObjId, trigger);
     res.json({
       success: true,
       message: result.rulesRun > 0
@@ -143,12 +158,13 @@ exports.getActiveNotifications = async (req, res) => {
     if (!schoolId) {
       return res.status(400).json({ success: false, message: 'No school context' });
     }
+    const schoolObjId = normalizeSchoolId(schoolId);
     const AutomationRule = mongoose.model('AutomationRule');
     const now = new Date();
 
     // Get rules that were dispatched and haven't expired yet
     const rules = await AutomationRule.find({
-      schoolId,
+      schoolId: schoolObjId,
       isActive: true,
       lastDispatchedAt: { $ne: null },
     }).lean();
@@ -163,6 +179,48 @@ exports.getActiveNotifications = async (req, res) => {
     });
 
     res.json({ success: true, data: active });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * GET /api/automations/my-notifications
+ * Returns active automation notifications for the current user's school and role.
+ */
+exports.getMyNotifications = async (req, res) => {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId) {
+      return res.status(400).json({ success: false, message: 'No school context' });
+    }
+
+    const schoolObjId = normalizeSchoolId(schoolId);
+    const userRole = req.user?.role?.toUpperCase();
+    const AutomationRule = mongoose.model('AutomationRule');
+    const now = new Date();
+
+    const rules = await AutomationRule.find({
+      schoolId: schoolObjId,
+      isActive: true,
+      lastDispatchedAt: { $ne: null },
+    }).lean();
+
+    const active = rules.filter((rule) => {
+      if (!rule.lastDispatchedAt) return false;
+      if (rule.expiryHours === 0) return true;
+      const ageMs = now - new Date(rule.lastDispatchedAt);
+      const ageHours = ageMs / (1000 * 60 * 60);
+      return ageHours < (rule.expiryHours || 24);
+    });
+
+    const filtered = active.filter((rule) => {
+      const target = rule.action?.target?.toUpperCase();
+      if (!target) return false;
+      return target === 'ALL' || target === userRole;
+    });
+
+    res.json({ success: true, data: filtered });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

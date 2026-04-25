@@ -167,17 +167,21 @@ const publishResult = async (req, res) => {
     await result.save();
 
     const exam = await Exam.findOne({ _id: examId, schoolId, sessionId }).select('name classId').lean();
-    await dispatchAutomationTrigger(schoolId, 'RESULT_PUBLISHED', {
-      entityId: result._id,
-      entityType: 'Result',
-      examId,
-      examName: exam?.name,
-      classId: exam?.classId,
-      studentId,
-      message: exam?.name != null
-          ? `Results for ${exam.name} have been published. Check your result now.`
-          : 'Results have been published. Check your result now.',
-    });
+    try {
+      await dispatchAutomationTrigger(schoolId, 'RESULT_PUBLISHED', {
+        entityId: result._id,
+        entityType: 'Result',
+        examId,
+        examName: exam?.name,
+        classId: exam?.classId,
+        studentId,
+        message: exam?.name != null
+            ? `Results for ${exam.name} have been published. Check your result now.`
+            : 'Results have been published. Check your result now.',
+      });
+    } catch (automationErr) {
+      console.error('[automation] RESULT_PUBLISHED dispatch failed:', automationErr.message);
+    }
 
     // Calculate ranks for all results in this exam
     // TODO: Recalculate ranks for all published results in this exam
@@ -525,6 +529,18 @@ const publishAllResults = async (req, res) => {
       { examId, schoolId, sessionId, status: 'Draft' },
       { $set: { status: 'Published' } }
     );
+
+    try {
+      const exam = await Exam.findOne({ _id: examId, schoolId, sessionId }).select('name').lean();
+      await dispatchAutomationTrigger(schoolId, 'RESULT_PUBLISHED', {
+        entityId: examId,
+        entityType: 'Exam',
+        examId,
+        examName: exam?.name,
+      });
+    } catch (automationErr) {
+      console.error('[automation] RESULT_PUBLISHED dispatch failed:', automationErr.message);
+    }
 
     // Recalculate ranks after bulk publish
     await calculateExamRanks(examId, schoolId, sessionId);

@@ -1,6 +1,16 @@
 const mongoose = require('mongoose');
 const { USER_STATUS } = require('../config/constants');
 
+function normalizeSchoolId(schoolId) {
+  if (!schoolId) return schoolId;
+  if (schoolId instanceof mongoose.Types.ObjectId) return schoolId;
+  try {
+    return new mongoose.Types.ObjectId(schoolId);
+  } catch (_) {
+    return schoolId;
+  }
+}
+
 const ROLE_MAP = {
   STUDENT: ['STUDENT'],
   PARENT: ['PARENT'],
@@ -51,6 +61,7 @@ function evaluateCondition(condition, context = {}) {
 
 async function resolveFeeContext(schoolId) {
   const Bill = mongoose.model('Bill');
+  const schoolObjId = normalizeSchoolId(schoolId);
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date(startOfToday);
@@ -58,13 +69,13 @@ async function resolveFeeContext(schoolId) {
 
   const [feeDueCount, feeOverdueCount] = await Promise.all([
     Bill.countDocuments({
-      schoolId,
+      schoolId: schoolObjId,
       status: { $in: ['UNPAID', 'PARTIAL'] },
       dueAmount: { $gt: 0 },
       dueDate: { $gte: startOfToday, $lt: endOfToday },
     }),
     Bill.countDocuments({
-      schoolId,
+      schoolId: schoolObjId,
       status: { $in: ['UNPAID', 'PARTIAL'] },
       dueAmount: { $gt: 0 },
       dueDate: { $lt: startOfToday },
@@ -149,7 +160,8 @@ async function queueNotifications(schoolId, trigger, rule, context = {}) {
 
 async function dispatchAutomationTrigger(schoolId, trigger, context = {}) {
   const AutomationRule = mongoose.model('AutomationRule');
-  const rules = await AutomationRule.find({ schoolId, trigger, isActive: true }).lean();
+  const schoolObjId = normalizeSchoolId(schoolId);
+  const rules = await AutomationRule.find({ schoolId: schoolObjId, trigger, isActive: true }).lean();
 
   if (!rules.length) {
     return { rulesRun: 0, notificationsCreated: 0 };
@@ -165,7 +177,7 @@ async function dispatchAutomationTrigger(schoolId, trigger, context = {}) {
 
     try {
       if (rule.action?.type === 'SEND_NOTIFICATION' || !rule.action?.type) {
-        notificationsCreated += await queueNotifications(schoolId, trigger, rule, context);
+        notificationsCreated += await queueNotifications(schoolObjId, trigger, rule, context);
       }
 
       await AutomationRule.updateOne(

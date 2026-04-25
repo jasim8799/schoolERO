@@ -6,6 +6,7 @@ const {
   deleteAutomation,
   runAutomations,
   getActiveNotifications,
+  getMyNotifications,
 } = require('../controllers/automation.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireMinRole } = require('../middlewares/role.middleware');
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.use(authenticate);
 
+router.get('/my-notifications', getMyNotifications);
 router.get('/active-notifications', requireMinRole(USER_ROLES.OPERATOR), getActiveNotifications);
 router.get('/', requireMinRole(USER_ROLES.OPERATOR), getAutomations);
 router.post('/', requireMinRole(USER_ROLES.PRINCIPAL), createAutomation);

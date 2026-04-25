@@ -151,14 +151,20 @@ const publishExam = async (req, res) => {
     }
 
     const updatedExam = await Exam.findByIdAndUpdate(examId, { status: 'Published' }, { new: true });
-    await dispatchAutomationTrigger(schoolId, 'EXAM_PUBLISHED', {
-      entityId: updatedExam._id,
-      entityType: 'Exam',
-      examId: updatedExam._id,
-      examName: updatedExam.name,
-      classId: exam.classId?._id,
-      message: `${updatedExam.name} exam has been published. Check the exam schedule.`,
-    });
+
+    try {
+      await dispatchAutomationTrigger(schoolId, 'EXAM_PUBLISHED', {
+        entityId: updatedExam._id,
+        entityType: 'Exam',
+        examId: updatedExam._id,
+        examName: updatedExam.name,
+        classId: exam.classId?._id,
+        message: `${updatedExam.name} exam has been published. Check the exam schedule.`,
+      });
+    } catch (automationErr) {
+      console.error('[automation] EXAM_PUBLISHED dispatch failed:', automationErr.message);
+    }
+
     res.json(updatedExam);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -190,6 +196,18 @@ const publishAdmitCards = async (req, res) => {
       { isAdmitCardPublished: true, admitCardPublishedAt: new Date() },
       { new: true }
     );
+
+    try {
+      await dispatchAutomationTrigger(schoolId, 'ADMIT_CARD_PUBLISHED', {
+        entityId: updated._id,
+        entityType: 'Exam',
+        examId: updated._id,
+        examName: updated.name,
+        message: `${updated.name} admit cards are now available.`,
+      });
+    } catch (automationErr) {
+      console.error('[automation] ADMIT_CARD_PUBLISHED dispatch failed:', automationErr.message);
+    }
 
     res.json({ success: true, message: 'Admit cards published successfully', data: updated });
   } catch (err) {
