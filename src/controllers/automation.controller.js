@@ -24,8 +24,10 @@ exports.getAutomations = async (req, res) => {
 
     const AutomationRule = mongoose.model('AutomationRule');
     const rules = await AutomationRule.find({ schoolId: schoolObjId }).sort({ createdAt: -1 }).lean();
+    console.log(`[getAutomations] schoolId=${schoolId} found ${rules.length} rules`);
     res.json({ success: true, data: rules });
   } catch (err) {
+    console.error('[getAutomations] error:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -58,10 +60,12 @@ exports.createAutomation = async (req, res) => {
       trigger,
       condition,
       action,
-      expiryHours: req.body.expiryHours ?? 24,
+      expiryHours: Number(req.body.expiryHours ?? 24),
     });
+    console.log(`[createAutomation] created rule: ${rule._id} for school: ${schoolId}`);
     res.status(201).json({ success: true, data: rule });
   } catch (err) {
+    console.error('[createAutomation] error:', err.message);
     res.status(400).json({ success: false, message: err.message });
   }
 };
