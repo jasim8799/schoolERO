@@ -9,7 +9,16 @@ const mongoose = require('mongoose');
 
 const exportInventoryController = async (req, res) => {
   try {
-    const { role, schoolId } = req.user;
+    const { role } = req.user;
+
+    // schoolId can come from req.user.schoolId (string from JWT)
+    // OR req.schoolId (set by attachSchoolId middleware)
+    // Use whichever is available
+    const rawSchoolId = req.user.schoolId || req.schoolId;
+
+    console.log('[INVENTORY] role:', role);
+    console.log('[INVENTORY] rawSchoolId:', rawSchoolId);
+    console.log('[INVENTORY] req.user:', JSON.stringify(req.user));
 
     if (![USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR].includes(role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
@@ -18,61 +27,103 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    const schoolObjId = new mongoose.Types.ObjectId(schoolId);
+    if (!rawSchoolId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'School ID missing from your session. Please log out and log in again.'
+      });
+    }
 
-    // ── BUG 1 FIX: Parent has no name/mobile fields — those are on User.
-    // Populate parentId → get userId from Parent → then get User fields.
-    // Solution: populate parentId (gets userId), then get parent Users separately.
+    // Safe ObjectId conversion — handles string, ObjectId, or invalid value
+    let schoolObjId;
+    try {
+      schoolObjId = new mongoose.Types.ObjectId(rawSchoolId.toString());
+    } catch (e) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: `Invalid school ID format: ${rawSchoolId}`,
+      });
+    }
 
-    const students = await Student.find({ schoolId: schoolObjId })
-      .populate('classId', 'name')
-      .populate('sectionId', 'name')
-      .populate({
-        path: 'parentId',
-        select: 'userId status',           // Parent only has userId
-        populate: {
-          path: 'userId',                  // Nested populate to get User fields
-          select: 'name email mobile gender address occupation'
-        }
+    console.log('[INVENTORY] schoolObjId:', schoolObjId);
+
+    // ── Fetch students ──────────────────────────────────────────────
+    let students = [];
+    try {
+      students = await Student.find({ schoolId: schoolObjId })
+        .populate('classId', 'name')
+        .populate('sectionId', 'name')
+        .populate({
+          path: 'parentId',
+          select: 'userId status',
+          populate: {
+            path: 'userId',
+            select: 'name email mobile gender address'
+          }
+        })
+        .populate('userId', 'mobile email')
+        .lean();
+      console.log('[INVENTORY] students found:', students.length);
+    } catch (e) {
+      console.error('[INVENTORY] student query error:', e.message);
+      // Don't crash — continue with empty students
+    }
+
+    // ── Fetch staff ─────────────────────────────────────────────────
+    let staff = [];
+    try {
+      staff = await User.find({
+        schoolId: schoolObjId,
+        role: {
+          $in: [
+            USER_ROLES.TEACHER,
+            USER_ROLES.OPERATOR,
+            USER_ROLES.PRINCIPAL,
+          ]
+        },
+        status: 'active',
       })
-      .populate('userId', 'mobile email')  // Student's own User record
+      .select('-password -documents')
       .lean();
+      console.log('[INVENTORY] staff found:', staff.length);
+    } catch (e) {
+      console.error('[INVENTORY] staff query error:', e.message);
+    }
 
-    // ── BUG 2 FIX: USER_STATUS.ACTIVE = 'active' (lowercase)
-    // Staff query must use 'active' not 'ACTIVE'
-    const staff = await User.find({
-      schoolId: schoolObjId,
-      role: { $in: [
-        USER_ROLES.TEACHER,    // 'TEACHER'
-        USER_ROLES.OPERATOR,   // 'OPERATOR'
-        USER_ROLES.PRINCIPAL,  // 'PRINCIPAL'
-      ]},
-      status: 'active',        // ← FIX: was wrong casing before
-    })
-    .select('-password -documents')
-    .lean();
+    // ── Fetch physical inventory ─────────────────────────────────────
+    let inventoryItems = [];
+    try {
+      inventoryItems = await Inventory.find({
+        schoolId: schoolObjId
+      }).lean();
+      console.log('[INVENTORY] inventory items:', inventoryItems.length);
+    } catch (e) {
+      console.error('[INVENTORY] inventory query error:', e.message);
+    }
 
-    // ── BUG 3 FIX: Also export physical Inventory items (they exist in DB)
-    // Even if empty now, include so the CSV has the sheet ready
-    const inventoryItems = await Inventory.find({ schoolId: schoolObjId }).lean();
-
-    await auditLog({
-      action: 'INVENTORY_EXPORTED',
-      entityType: 'INVENTORY',
-      userId: req.user.userId || req.user._id,
-      role,
-      schoolId,
-      details: {
-        students: students.length,
-        staff: staff.length,
-        inventoryItems: inventoryItems.length,
-      },
-      req,
-    });
+    // ── Audit log (non-blocking) ─────────────────────────────────────
+    try {
+      await auditLog({
+        action: 'INVENTORY_EXPORTED',
+        entityType: 'INVENTORY',
+        userId: req.user.userId || req.user._id,
+        role,
+        schoolId: rawSchoolId,
+        details: {
+          students: students.length,
+          staff: staff.length,
+          inventoryItems: inventoryItems.length,
+        },
+        req,
+      });
+    } catch (e) {
+      console.error('[INVENTORY] audit log error:', e.message);
+      // Never block export due to audit failure
+    }
 
     logger.success(
-      `School export: ${students.length} students, ` +
-      `${staff.length} staff, ${inventoryItems.length} inventory items`
+      `School export OK: ${students.length} students, ` +
+      `${staff.length} staff, ${inventoryItems.length} items`
     );
 
     return res.status(HTTP_STATUS.OK).json({
@@ -95,14 +146,11 @@ const exportInventoryController = async (req, res) => {
     });
 
   } catch (error) {
-    // Log full error server-side so you can see it in Render logs
-    logger.error('Export inventory error:', error.message);
-    console.error('[INVENTORY EXPORT] Full error:', error);
+    console.error('[INVENTORY EXPORT] Unexpected error:', error);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Error exporting school data',
-      error: error.message,        // ← now visible in Flutter snackbar
-      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
+      error: error.message,
     });
   }
 };

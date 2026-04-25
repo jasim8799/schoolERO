@@ -103,7 +103,7 @@ app.use('/api', authenticate, checkMaintenanceMode);
 app.use('/api/backup', backupRoutes);
 
 // Inventory routes (authenticated, Principal only)
-app.use('/api/inventory', inventoryRoutes);
+app.use('/api/inventory', attachSchoolId, inventoryRoutes);
 
 // Audit routes (require authentication and role checking)
 app.use('/api/audit', auditRoutes);
