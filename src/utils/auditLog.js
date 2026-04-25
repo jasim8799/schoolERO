@@ -14,6 +14,7 @@ const { logger } = require('./logger');
  * @param {string} options.sessionId - Session ID (optional)
  * @param {Object} options.details - Additional details (optional)
  * @param {Object} options.req - Express request object (optional)
+ * @param {string} options.ipAddress - Direct IP address override (optional)
  */
 const auditLog = async (options) => {
   try {
@@ -27,7 +28,8 @@ const auditLog = async (options) => {
       schoolId,
       sessionId,
       details,
-      req
+      req,
+      ipAddress
     } = options;
 
     const auditData = {
@@ -39,7 +41,11 @@ const auditLog = async (options) => {
       description: description || action,
       schoolId: schoolId || null,
       sessionId: sessionId || null,
-      ipAddress: req?.ip || req?.connection?.remoteAddress || 'SYSTEM',
+      ipAddress: ipAddress
+        || req?.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+        || req?.ip
+        || req?.connection?.remoteAddress
+        || 'SYSTEM',
       details: details || {}
     };
 
