@@ -63,63 +63,84 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] student error:', e.message);
     }
 
-    // -- 2. Staff - EXACT same query as getAllUsers controller ----
-    // getAllUsers: User.find({ schoolId: schoolId, role: role })
-    // where schoolId is a STRING from req.query
-    // We use schoolIdStr (string) to match exactly
+    // -- 2. Staff - call same logic as getAllUsers exactly ----------
     let staff = [];
     try {
-      // Step 1: fetch all staff using STRING schoolId
-      // This is IDENTICAL to what getAllUsers does
-      const allStaff = await User.find({
-        schoolId: schoolIdStr,
-        role: { $in: ['TEACHER', 'OPERATOR', 'PRINCIPAL'] }
-      })
-      .select('-password -documents')
-      .lean();
+      // Mirror EXACTLY what getAllUsers does:
+      // GET /api/users?schoolId=X&role=TEACHER
+      // filterBySchool sets req.query.schoolId from req.user.schoolId
+      // getAllUsers: User.find({ schoolId: req.query.schoolId, role: role })
+      //
+      // The key: filterBySchool uses req.user.schoolId which comes from
+      // authenticate middleware: user.schoolId.toString()
+      // This is already set in req.user.schoolId as a string
+      //
+      // Mongoose auto-casts string to ObjectId for ObjectId fields
+      // So User.find({ schoolId: '67abc...' }) works fine
 
-      console.log('[INVENTORY] staff (string schoolId):', allStaff.length);
+      const roles = ['TEACHER', 'OPERATOR', 'PRINCIPAL'];
 
-      // Step 2: if string didn't work, try ObjectId
+      // Fetch each role separately - EXACT same as staff screen does
+      // staff_management_screen: GET /api/users?schoolId=X&role=TEACHER
+      //                           GET /api/users?schoolId=X&role=OPERATOR
+      const allStaffArrays = await Promise.all(
+        roles.map(r =>
+          User.find({ schoolId: schoolIdStr, role: r })
+            .select('-password -documents')
+            .lean()
+        )
+      );
+
+      const allStaff = allStaffArrays.flat();
+      console.log('[INVENTORY] staff per role:',
+        roles.map((r, i) => `${r}:${allStaffArrays[i].length}`).join(', '));
+      console.log('[INVENTORY] total allStaff:', allStaff.length);
+
+      // If string didn't work, try ObjectId
       if (allStaff.length === 0) {
-        console.log('[INVENTORY] trying ObjectId schoolId...');
+        console.log('[INVENTORY] string query got 0 - trying ObjectId...');
         const allStaff2 = await User.find({
           schoolId: schoolObjId,
-          role: { $in: ['TEACHER', 'OPERATOR', 'PRINCIPAL'] }
-        })
-        .select('-password -documents')
-        .lean();
-        console.log('[INVENTORY] staff (ObjectId schoolId):', allStaff2.length);
-        allStaff.push(...allStaff2);
+          role: { $in: roles }
+        }).select('-password -documents').lean();
+        console.log('[INVENTORY] ObjectId query result:', allStaff2.length);
+
+        if (allStaff2.length === 0) {
+          // Last resort: check if ANY user exists for this school
+          const anyUser = await User.findOne({ schoolId: schoolObjId })
+            .select('name role status schoolId').lean();
+          console.log('[INVENTORY] any user for school:', JSON.stringify(anyUser));
+
+          const anyTeacher = await User.findOne({ role: 'TEACHER' })
+            .select('name schoolId').lean();
+          console.log('[INVENTORY] any TEACHER in entire DB:',
+            JSON.stringify(anyTeacher ? {
+              name: anyTeacher.name,
+              schoolId: anyTeacher.schoolId?.toString(),
+              ourSchoolId: schoolIdStr,
+              match: anyTeacher.schoolId?.toString() === schoolIdStr
+            } : null));
+        } else {
+          allStaff.push(...allStaff2);
+        }
       }
 
-      // Step 3: if still 0, try without schoolId to see if ANY staff exist
-      if (allStaff.length === 0) {
-        const anyTeacher = await User.findOne({ role: 'TEACHER' })
-          .select('name schoolId status').lean();
-        console.log('[INVENTORY] any teacher in DB:', JSON.stringify(anyTeacher));
-
-        const anyBySchool = await User.findOne({ schoolId: schoolObjId })
-          .select('name role status').lean();
-        console.log('[INVENTORY] any user by schoolId:', JSON.stringify(anyBySchool));
-      }
-
-      // Step 4: get Teacher docs for class map lookup
+      // Get Teacher docs for class map (_teacherId lookup)
       if (allStaff.length > 0) {
         const teacherUserIds = allStaff
           .filter(u => u.role === 'TEACHER')
           .map(u => u._id);
 
-        let teacherDocMap = {};
+        const teacherDocMap = {};
         if (teacherUserIds.length > 0) {
           const teacherDocs = await Teacher.find({
             userId: { $in: teacherUserIds }
           }).select('_id userId').lean();
-
           teacherDocs.forEach(t => {
             teacherDocMap[t.userId.toString()] = t._id.toString();
           });
-          console.log('[INVENTORY] teacher docs found:', teacherDocs.length);
+          console.log('[INVENTORY] Teacher docs for class map:',
+            teacherDocs.length);
         }
 
         staff = allStaff.map(u => ({
