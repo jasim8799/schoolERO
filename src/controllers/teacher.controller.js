@@ -3,6 +3,7 @@ const User = require('../models/User.js');
 const Class = require('../models/Class.js');
 const Subject = require('../models/Subject.js');
 const School = require('../models/School.js');
+const mongoose = require('mongoose');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
@@ -23,7 +24,11 @@ const createTeacher = async (req, res) => {
     }
 
     // Verify user exists, is a TEACHER, and belongs to the school
-    const user = await User.findOne({ _id: userId, role: USER_ROLES.TEACHER, schoolId });
+    const user = await User.findOne({
+      _id: userId,
+      role: USER_ROLES.TEACHER,
+      schoolId: new mongoose.Types.ObjectId(schoolId.toString())
+    });
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,

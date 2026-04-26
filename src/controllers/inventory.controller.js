@@ -64,16 +64,20 @@ const exportInventoryController = async (req, res) => {
       console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
 
       if (teacherDocs.length > 0) {
-        // Collect all userIds from Teacher docs
-        const userIds = teacherDocs
-          .map(t => t.userId)
+        // Normalize userIds: ObjectId/string -> string -> ObjectId
+        const userIdStrings = teacherDocs
+          .map(t => t.userId?.toString())
           .filter(Boolean);
 
-        console.log('[INVENTORY] Teacher userIds to fetch:', userIds.length);
+        const userIdObjs = userIdStrings.map(id =>
+          new mongoose.Types.ObjectId(id)
+        );
+
+        console.log('[INVENTORY] Teacher userIds to fetch:', userIdObjs.length);
 
         // Fetch ALL those users in ONE query — no loop
         const teacherUsers = await User.find({
-          _id: { $in: userIds }
+          _id: { $in: userIdObjs }
         })
         .select('-password -documents')
         .lean();
