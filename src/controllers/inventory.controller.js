@@ -53,83 +53,81 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] student error:', e.message);
     }
 
-    // ── 2. Staff — use MongoDB aggregate to join Teacher + User ──
-    // This bypasses ALL the schoolId/ObjectId matching issues
+    // ── 2. Staff ─────────────────────────────────────────────────
     let staff = [];
     try {
-      // Get all Teacher docs for this school
       const teacherDocs = await Teacher.find({
         schoolId: schoolObjId
       }).lean();
       console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
 
-      if (teacherDocs.length > 0) {
-        // Normalize userIds: ObjectId/string -> string -> ObjectId
-        const userIdStrings = teacherDocs
-          .map(t => t.userId?.toString())
-          .filter(Boolean);
-
-        const userIdObjs = userIdStrings.map(id =>
-          new mongoose.Types.ObjectId(id)
-        );
-
-        console.log('[INVENTORY] Teacher userIds to fetch:', userIdObjs.length);
-
-        // Fetch ALL those users in ONE query — no loop
-        const teacherUsers = await User.find({
-          _id: { $in: userIdObjs }
+      // Convert userIds to ObjectIds explicitly
+      const userIdObjs = teacherDocs
+        .map(t => {
+          try {
+            return t.userId
+              ? new mongoose.Types.ObjectId(t.userId.toString())
+              : null;
+          } catch (e) { return null; }
         })
-        .select('-password -documents')
-        .lean();
+        .filter(Boolean);
 
-        console.log('[INVENTORY] Teacher users found:', teacherUsers.length);
+      console.log('[INVENTORY] userIds to find:', userIdObjs.length);
 
-        // Build userId → Teacher doc map
-        const userIdToTeacher = {};
-        teacherDocs.forEach(t => {
-          if (t.userId) {
-            userIdToTeacher[t.userId.toString()] = t;
-          }
+      // Fetch matching User docs
+      const teacherUsers = userIdObjs.length > 0
+        ? await User.find({ _id: { $in: userIdObjs } })
+            .select('-password -documents')
+            .lean()
+        : [];
+
+      console.log('[INVENTORY] Teacher users found:', teacherUsers.length);
+
+      // Build userId string → User doc map
+      const userMap = {};
+      teacherUsers.forEach(u => {
+        userMap[u._id.toString()] = u;
+      });
+
+      // Build staff from Teacher docs — use User data if available,
+      // fall back to Teacher data only if User not found
+      teacherDocs.forEach(t => {
+        const u = t.userId ? userMap[t.userId.toString()] : null;
+
+        // Use User data if found, otherwise use placeholder
+        staff.push({
+          _id:        (u?._id || t.userId || t._id).toString(),
+          _teacherId: t._id.toString(),
+          name:       u?.name       || `Teacher (${t._id.toString().slice(-4)})`,
+          email:      u?.email      || '',
+          mobile:     u?.mobile     || '',
+          whatsappNumber:  u?.whatsappNumber  || '',
+          gender:          u?.gender          || '',
+          dateOfBirth:     u?.dateOfBirth     || null,
+          bloodGroup:      u?.bloodGroup      || '',
+          address:         u?.address         || '',
+          city:            u?.city            || '',
+          state:           u?.state           || '',
+          pincode:         u?.pincode         || '',
+          employeeId:      u?.employeeId      || '',
+          designation:     t.designation  || u?.designation  || '',
+          department:      u?.department      || '',
+          qualification:   t.qualification || u?.qualification || '',
+          experienceYears: u?.experienceYears || 0,
+          monthlySalary:   u?.monthlySalary   || 0,
+          subjects:        u?.subjects        || [],
+          emergencyContactName:     u?.emergencyContactName     || '',
+          emergencyContactRelation: u?.emergencyContactRelation || '',
+          emergencyContactPhone:    u?.emergencyContactPhone    || '',
+          dateOfJoining: t.joiningDate || u?.dateOfJoining || null,
+          status:        t.status || 'active',
+          role:          'TEACHER',
         });
+      });
 
-        // Build staff array from matched users
-        teacherUsers.forEach(u => {
-          const t = userIdToTeacher[u._id.toString()];
-          if (!t) return;
-          staff.push({
-            _id:        u._id.toString(),
-            _teacherId: t._id.toString(),
-            name:       u.name || '',
-            email:      u.email || '',
-            mobile:     u.mobile || '',
-            whatsappNumber:  u.whatsappNumber || '',
-            gender:          u.gender || '',
-            dateOfBirth:     u.dateOfBirth || null,
-            bloodGroup:      u.bloodGroup || '',
-            address:         u.address || '',
-            city:            u.city || '',
-            state:           u.state || '',
-            pincode:         u.pincode || '',
-            employeeId:      u.employeeId || '',
-            designation:     t.designation || u.designation || '',
-            department:      u.department || '',
-            qualification:   t.qualification || u.qualification || '',
-            experienceYears: u.experienceYears || 0,
-            monthlySalary:   u.monthlySalary || 0,
-            subjects:        u.subjects || [],
-            emergencyContactName:     u.emergencyContactName || '',
-            emergencyContactRelation: u.emergencyContactRelation || '',
-            emergencyContactPhone:    u.emergencyContactPhone || '',
-            dateOfJoining: t.joiningDate || u.dateOfJoining || null,
-            status:        t.status || 'active',
-            role:          'TEACHER',
-          });
-        });
+      console.log('[INVENTORY] teacher staff built:', staff.length);
 
-        console.log('[INVENTORY] teacher staff built:', staff.length);
-      }
-
-      // Also get OPERATOR and PRINCIPAL from User model directly
+      // Operators and Principals from User model
       const otherStaff = await User.find({
         schoolId: schoolObjId,
         role: { $in: ['OPERATOR', 'PRINCIPAL'] }
@@ -146,31 +144,32 @@ const exportInventoryController = async (req, res) => {
           name:       u.name || '',
           email:      u.email || '',
           mobile:     u.mobile || '',
-          whatsappNumber:  u.whatsappNumber || '',
-          gender:          u.gender || '',
-          dateOfBirth:     u.dateOfBirth || null,
-          bloodGroup:      u.bloodGroup || '',
-          address:         u.address || '',
-          city:            u.city || '',
-          state:           u.state || '',
-          pincode:         u.pincode || '',
-          employeeId:      u.employeeId || '',
-          designation:     u.designation || '',
-          department:      u.department || '',
-          qualification:   u.qualification || '',
+          whatsappNumber:  u.whatsappNumber  || '',
+          gender:          u.gender          || '',
+          dateOfBirth:     u.dateOfBirth     || null,
+          bloodGroup:      u.bloodGroup      || '',
+          address:         u.address         || '',
+          city:            u.city            || '',
+          state:           u.state           || '',
+          pincode:         u.pincode         || '',
+          employeeId:      u.employeeId      || '',
+          designation:     u.designation     || '',
+          department:      u.department      || '',
+          qualification:   u.qualification   || '',
           experienceYears: u.experienceYears || 0,
-          monthlySalary:   u.monthlySalary || 0,
-          subjects:        u.subjects || [],
-          emergencyContactName:     u.emergencyContactName || '',
+          monthlySalary:   u.monthlySalary   || 0,
+          subjects:        u.subjects        || [],
+          emergencyContactName:     u.emergencyContactName     || '',
           emergencyContactRelation: u.emergencyContactRelation || '',
-          emergencyContactPhone:    u.emergencyContactPhone || '',
+          emergencyContactPhone:    u.emergencyContactPhone    || '',
           dateOfJoining: u.dateOfJoining || null,
           status:        u.status || 'active',
-          role:          u.role || '',
+          role:          u.role   || '',
         });
       });
 
       console.log('[INVENTORY] FINAL staff:', staff.length);
+
     } catch (e) {
       console.error('[INVENTORY] staff error:', e.message);
       console.error('[INVENTORY] staff stack:', e.stack);
