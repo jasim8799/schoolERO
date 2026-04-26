@@ -67,6 +67,23 @@ const exportInventoryController = async (req, res) => {
       const teacherDocs = await Teacher.find({ schoolId: schoolObjId }).lean();
       console.log('[INVENTORY] raw teacher docs:', teacherDocs.length);
 
+      // DEBUG: check each userId exists
+      for (const t of teacherDocs) {
+        const userExists = await User.findById(t.userId)
+          .select('name role status').lean();
+        console.log('[INVENTORY] Teacher', t._id,
+          '-> userId:', t.userId,
+          '-> User found:', userExists ?
+            `${userExists.name} (${userExists.role})` : 'NULL - NOT FOUND');
+      }
+
+      // DEBUG: list all users for school with actual stored roles
+      const allUsersForSchool = await User.find({
+        schoolId: schoolObjId
+      }).select('name role status').lean();
+      console.log('[INVENTORY] ALL users for school:',
+        allUsersForSchool.map(u => `${u.name}(${u.role})`).join(', '));
+
       // Fetch User docs for each teacher by userId individually
       const teacherStaff = [];
       for (const t of teacherDocs) {
