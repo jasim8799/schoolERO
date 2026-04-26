@@ -10,8 +10,6 @@ const mongoose  = require('mongoose');
 const exportInventoryController = async (req, res) => {
   try {
     const { role } = req.user;
-
-    // Get schoolId as STRING — same way getAllUsers does it
     const schoolIdStr = (req.user.schoolId || req.schoolId || '').toString();
 
     console.log('[INVENTORY] role:', role);
@@ -31,7 +29,6 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    // Use ObjectId only for models that need it
     let schoolObjId;
     try {
       schoolObjId = new mongoose.Types.ObjectId(schoolIdStr);
@@ -42,7 +39,7 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    // -- 1. Students ---------------------------------------------
+    // ── 1. Students ──────────────────────────────────────────────
     let students = [];
     try {
       students = await Student.find({ schoolId: schoolObjId })
@@ -63,111 +60,92 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] student error:', e.message);
     }
 
-    // -- 2. Staff ------------------------------------------------
+    // ── 2. Staff ─────────────────────────────────────────────────
     let staff = [];
     try {
-      // STEP 1: Get teachers via Teacher model
-      // Teacher.schoolId is confirmed correct in MongoDB
-      const teacherDocs = await Teacher.find({
-        schoolId: schoolObjId
-      })
-      .populate({
-        path: 'userId',
-        select: '-password -documents'
-      })
-      .lean();
+      // Fetch Teacher docs with schoolId (confirmed working in MongoDB)
+      const teacherDocs = await Teacher.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] raw teacher docs:', teacherDocs.length);
 
-      console.log('[INVENTORY] Teacher docs found:', teacherDocs.length);
-
-      // Build staff from Teacher + populated User
-      const teacherStaff = teacherDocs
-        .filter(t => t.userId)
-        .map(t => {
-          const u = t.userId;
-          return {
+      // Fetch User docs for each teacher by userId individually
+      const teacherStaff = [];
+      for (const t of teacherDocs) {
+        try {
+          if (!t.userId) continue;
+          const u = await User.findById(t.userId)
+            .select('-password -documents')
+            .lean();
+          if (!u) continue;
+          teacherStaff.push({
             _id:        u._id.toString(),
             _teacherId: t._id.toString(),
-            name:                     u.name,
-            email:                    u.email,
-            mobile:                   u.mobile,
-            whatsappNumber:           u.whatsappNumber,
-            gender:                   u.gender,
-            dateOfBirth:              u.dateOfBirth,
-            bloodGroup:               u.bloodGroup,
-            address:                  u.address,
-            city:                     u.city,
-            state:                    u.state,
-            pincode:                  u.pincode,
-            employeeId:               u.employeeId,
-            designation:              t.designation || u.designation,
-            department:               u.department,
-            qualification:            t.qualification || u.qualification,
-            experienceYears:          u.experienceYears,
-            monthlySalary:            u.monthlySalary,
+            name:                     u.name || '',
+            email:                    u.email || '',
+            mobile:                   u.mobile || '',
+            whatsappNumber:           u.whatsappNumber || '',
+            gender:                   u.gender || '',
+            dateOfBirth:              u.dateOfBirth || null,
+            bloodGroup:               u.bloodGroup || '',
+            address:                  u.address || '',
+            city:                     u.city || '',
+            state:                    u.state || '',
+            pincode:                  u.pincode || '',
+            employeeId:               u.employeeId || '',
+            designation:              t.designation || u.designation || '',
+            department:               u.department || '',
+            qualification:            t.qualification || u.qualification || '',
+            experienceYears:          u.experienceYears || 0,
+            monthlySalary:            u.monthlySalary || 0,
             subjects:                 u.subjects || [],
-            emergencyContactName:     u.emergencyContactName,
-            emergencyContactRelation: u.emergencyContactRelation,
-            emergencyContactPhone:    u.emergencyContactPhone,
-            dateOfJoining:            t.joiningDate || u.dateOfJoining,
-            status:                   t.status,
+            emergencyContactName:     u.emergencyContactName || '',
+            emergencyContactRelation: u.emergencyContactRelation || '',
+            emergencyContactPhone:    u.emergencyContactPhone || '',
+            dateOfJoining:            t.joiningDate || u.dateOfJoining || null,
+            status:                   t.status || 'active',
             role:                     'TEACHER',
-          };
-        });
+          });
+        } catch (innerErr) {
+          console.error('[INVENTORY] teacher userId fetch error:', innerErr.message);
+        }
+      }
+      console.log('[INVENTORY] teacher staff built:', teacherStaff.length);
 
-      console.log('[INVENTORY] teacher staff mapped:', teacherStaff.length);
-
-      // STEP 2: Get OPERATOR and PRINCIPAL via User model
-      // These are NOT in Teacher model so use User directly
+      // Fetch OPERATOR and PRINCIPAL from User model
       const otherStaff = await User.find({
         schoolId: schoolObjId,
         role: { $in: ['OPERATOR', 'PRINCIPAL'] }
       })
       .select('-password -documents')
       .lean();
-
-      console.log('[INVENTORY] operator/principal found:', otherStaff.length);
-
-      // If otherStaff is 0, try fetching by userId from Teacher collection
-      // to find the school's principal who created the school
-      if (otherStaff.length === 0) {
-        // Try string schoolId as fallback
-        const otherStaff2 = await User.find({
-          schoolId: schoolIdStr,
-          role: { $in: ['OPERATOR', 'PRINCIPAL'] }
-        })
-        .select('-password -documents')
-        .lean();
-        console.log('[INVENTORY] operator/principal (string):', otherStaff2.length);
-        otherStaff.push(...otherStaff2);
-      }
+      console.log('[INVENTORY] operator/principal:', otherStaff.length);
 
       const otherMapped = otherStaff.map(u => ({
         _id:        u._id.toString(),
         _teacherId: null,
-        name:                     u.name,
-        email:                    u.email,
-        mobile:                   u.mobile,
-        whatsappNumber:           u.whatsappNumber,
-        gender:                   u.gender,
-        dateOfBirth:              u.dateOfBirth,
-        bloodGroup:               u.bloodGroup,
-        address:                  u.address,
-        city:                     u.city,
-        state:                    u.state,
-        pincode:                  u.pincode,
-        employeeId:               u.employeeId,
-        designation:              u.designation,
-        department:               u.department,
-        qualification:            u.qualification,
-        experienceYears:          u.experienceYears,
-        monthlySalary:            u.monthlySalary,
+        name:                     u.name || '',
+        email:                    u.email || '',
+        mobile:                   u.mobile || '',
+        whatsappNumber:           u.whatsappNumber || '',
+        gender:                   u.gender || '',
+        dateOfBirth:              u.dateOfBirth || null,
+        bloodGroup:               u.bloodGroup || '',
+        address:                  u.address || '',
+        city:                     u.city || '',
+        state:                    u.state || '',
+        pincode:                  u.pincode || '',
+        employeeId:               u.employeeId || '',
+        designation:              u.designation || '',
+        department:               u.department || '',
+        qualification:            u.qualification || '',
+        experienceYears:          u.experienceYears || 0,
+        monthlySalary:            u.monthlySalary || 0,
         subjects:                 u.subjects || [],
-        emergencyContactName:     u.emergencyContactName,
-        emergencyContactRelation: u.emergencyContactRelation,
-        emergencyContactPhone:    u.emergencyContactPhone,
-        dateOfJoining:            u.dateOfJoining,
-        status:                   u.status,
-        role:                     u.role,
+        emergencyContactName:     u.emergencyContactName || '',
+        emergencyContactRelation: u.emergencyContactRelation || '',
+        emergencyContactPhone:    u.emergencyContactPhone || '',
+        dateOfJoining:            u.dateOfJoining || null,
+        status:                   u.status || 'active',
+        role:                     u.role || '',
       }));
 
       staff = [...teacherStaff, ...otherMapped];
@@ -176,9 +154,11 @@ const exportInventoryController = async (req, res) => {
     } catch (e) {
       console.error('[INVENTORY] staff error:', e.message);
       console.error('[INVENTORY] staff stack:', e.stack);
+      // Don't crash — continue with empty staff
+      staff = [];
     }
 
-    // -- 3. Bills ------------------------------------------------
+    // ── 3. Bills ─────────────────────────────────────────────────
     let billMap = {}, hostelFeeMap = {}, transportFeeMap = {};
     try {
       const Bill = mongoose.model('Bill');
@@ -201,7 +181,8 @@ const exportInventoryController = async (req, res) => {
           hostelFeeMap[sid].pending += due;
         }
         if (b.billType === 'TRANSPORT') {
-          if (!transportFeeMap[sid]) transportFeeMap[sid] = { paid: 0, pending: 0 };
+          if (!transportFeeMap[sid])
+            transportFeeMap[sid] = { paid: 0, pending: 0 };
           transportFeeMap[sid].paid    += paid;
           transportFeeMap[sid].pending += due;
         }
@@ -211,7 +192,7 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] bill error:', e.message);
     }
 
-    // TransportFee model supplement
+    // TransportFee supplement
     try {
       const TransportFee = mongoose.model('TransportFee');
       const fees = await TransportFee.find({ schoolId: schoolObjId })
@@ -219,7 +200,8 @@ const exportInventoryController = async (req, res) => {
       fees.forEach(f => {
         const sid = f.studentId?.toString();
         if (!sid) return;
-        if (!transportFeeMap[sid]) transportFeeMap[sid] = { paid: 0, pending: 0 };
+        if (!transportFeeMap[sid])
+          transportFeeMap[sid] = { paid: 0, pending: 0 };
         const amt = f.amount || 0;
         if (f.status === 'PAID') transportFeeMap[sid].paid += amt;
         else transportFeeMap[sid].pending += amt;
@@ -228,7 +210,7 @@ const exportInventoryController = async (req, res) => {
       console.log('[INVENTORY] TransportFee skip:', e.message);
     }
 
-    // -- 4. Hostel assignments -----------------------------------
+    // ── 4. Hostel assignments ────────────────────────────────────
     let hostelMap = {};
     try {
       const StudentHostel = mongoose.model('StudentHostel');
@@ -244,16 +226,14 @@ const exportInventoryController = async (req, res) => {
           hostelName: a.hostelId?.name || '',
           roomNumber: a.roomId?.roomNumber || '',
           floor:      a.roomId?.floor?.toString() || '',
-          wardenName: a.hostelId?.wardenName || '',
-          feeStatus:  a.feeStatus || '',
         };
       });
-      console.log('[INVENTORY] hostel assignments:', assignments.length);
+      console.log('[INVENTORY] hostel:', assignments.length);
     } catch (e) {
       console.error('[INVENTORY] hostel error:', e.message);
     }
 
-    // -- 5. Transport assignments --------------------------------
+    // ── 5. Transport assignments ─────────────────────────────────
     let transportMap = {};
     try {
       const StudentTransport = mongoose.model('StudentTransport');
@@ -279,116 +259,38 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] transport error:', e.message);
     }
 
-    // -- 6. Staff attendance -------------------------------------
+    // ── 6. Staff attendance ──────────────────────────────────────
     let staffAttendanceMap = {};
     try {
       const StaffAttendance = mongoose.model('StaffAttendance');
-        // STEP 1: Get teachers via Teacher model
-        // Teacher.schoolId is confirmed correct in MongoDB
-        const teacherDocs = await Teacher.find({
-          schoolId: schoolObjId
-        })
-        .populate({
-          path: 'userId',
-          select: '-password -documents'
-        })
-        .lean();
-
-        console.log('[INVENTORY] Teacher docs found:', teacherDocs.length);
-
-        // Build staff from Teacher + populated User
-        const teacherStaff = teacherDocs
-          .filter(t => t.userId)
-          .map(t => {
-            const u = t.userId;
-            return {
-              _id:        u._id.toString(),
-              _teacherId: t._id.toString(),
-              name:                     u.name,
-              email:                    u.email,
-              mobile:                   u.mobile,
-              whatsappNumber:           u.whatsappNumber,
-              gender:                   u.gender,
-              dateOfBirth:              u.dateOfBirth,
-              bloodGroup:               u.bloodGroup,
-              address:                  u.address,
-              city:                     u.city,
-              state:                    u.state,
-              pincode:                  u.pincode,
-              employeeId:               u.employeeId,
-              designation:              t.designation || u.designation,
-              department:               u.department,
-              qualification:            t.qualification || u.qualification,
-              experienceYears:          u.experienceYears,
-              monthlySalary:            u.monthlySalary,
-              subjects:                 u.subjects || [],
-              emergencyContactName:     u.emergencyContactName,
-              emergencyContactRelation: u.emergencyContactRelation,
-              emergencyContactPhone:    u.emergencyContactPhone,
-              dateOfJoining:            t.joiningDate || u.dateOfJoining,
-              status:                   t.status,
-              role:                     'TEACHER',
-            };
-          });
-
-        console.log('[INVENTORY] teacher staff mapped:', teacherStaff.length);
-
-        // STEP 2: Get OPERATOR and PRINCIPAL via User model
-        // These are NOT in Teacher model so use User directly
-        const otherStaff = await User.find({
-          schoolId: schoolObjId,
-          role: { $in: ['OPERATOR', 'PRINCIPAL'] }
-        })
-        .select('-password -documents')
-        .lean();
-
-        console.log('[INVENTORY] operator/principal found:', otherStaff.length);
-
-        // If otherStaff is 0, try fetching by userId from Teacher collection
-        // to find the school's principal who created the school
-        if (otherStaff.length === 0) {
-          // Try string schoolId as fallback
-          const otherStaff2 = await User.find({
-            schoolId: schoolIdStr,
-            role: { $in: ['OPERATOR', 'PRINCIPAL'] }
-          })
-          .select('-password -documents')
-          .lean();
-          console.log('[INVENTORY] operator/principal (string):', otherStaff2.length);
-          otherStaff.push(...otherStaff2);
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const records = await StaffAttendance.find({
+        schoolId: schoolObjId,
+        date: { $gte: since }
+      }).select('staffId status').lean();
+      records.forEach(r => {
+        const uid = r.staffId?.toString();
+        if (!uid) return;
+        if (!staffAttendanceMap[uid])
+          staffAttendanceMap[uid] = { present: 0, absent: 0, total: 0 };
+        staffAttendanceMap[uid].total++;
+        const s = (r.status || '').toUpperCase();
+        if (s === 'PRESENT' || s === 'LATE' || s === 'HALF_DAY') {
+          staffAttendanceMap[uid].present++;
+        } else {
+          staffAttendanceMap[uid].absent++;
         }
+      });
+      console.log('[INVENTORY] attendance:', records.length);
+    } catch (e) {
+      console.error('[INVENTORY] attendance error:', e.message);
+    }
 
-        const otherMapped = otherStaff.map(u => ({
-          _id:        u._id.toString(),
-          _teacherId: null,
-          name:                     u.name,
-          email:                    u.email,
-          mobile:                   u.mobile,
-          whatsappNumber:           u.whatsappNumber,
-          gender:                   u.gender,
-          dateOfBirth:              u.dateOfBirth,
-          bloodGroup:               u.bloodGroup,
-          address:                  u.address,
-          city:                     u.city,
-          state:                    u.state,
-          pincode:                  u.pincode,
-          employeeId:               u.employeeId,
-          designation:              u.designation,
-          department:               u.department,
-          qualification:            u.qualification,
-          experienceYears:          u.experienceYears,
-          monthlySalary:            u.monthlySalary,
-          subjects:                 u.subjects || [],
-          emergencyContactName:     u.emergencyContactName,
-          emergencyContactRelation: u.emergencyContactRelation,
-          emergencyContactPhone:    u.emergencyContactPhone,
-          dateOfJoining:            u.dateOfJoining,
-          status:                   u.status,
-          role:                     u.role,
-        }));
-
-        staff = [...teacherStaff, ...otherMapped];
-        console.log('[INVENTORY] FINAL staff:', staff.length);
+    // ── 7. Teacher class map ─────────────────────────────────────
+    let teacherClassMap = {};
+    try {
+      const TeacherAssignment = mongoose.model('TeacherAssignment');
       const assignments = await TeacherAssignment.find({
         schoolId: schoolObjId
       })
@@ -396,32 +298,32 @@ const exportInventoryController = async (req, res) => {
       .populate('sectionId', 'name')
       .lean();
       assignments.forEach(a => {
-        const teacherDocId = a.teacherId?.toString();
-        if (!teacherDocId) return;
-        if (!teacherClassMap[teacherDocId]) teacherClassMap[teacherDocId] = new Set();
+        const tid = a.teacherId?.toString();
+        if (!tid) return;
+        if (!teacherClassMap[tid]) teacherClassMap[tid] = new Set();
         const cls = a.classId?.name || '';
         const sec = a.sectionId?.name || '';
         const label = sec ? `${cls}-${sec}` : cls;
-        if (label) teacherClassMap[teacherDocId].add(label);
+        if (label) teacherClassMap[tid].add(label);
       });
       Object.keys(teacherClassMap).forEach(k => {
         teacherClassMap[k] = [...teacherClassMap[k]];
       });
-      console.log('[INVENTORY] teacherClassMap:', Object.keys(teacherClassMap).length);
+      console.log('[INVENTORY] classMap entries:', Object.keys(teacherClassMap).length);
     } catch (e) {
-      console.error('[INVENTORY] teacher class map error:', e.message);
+      console.error('[INVENTORY] classMap error:', e.message);
     }
 
-    // -- 8. Physical inventory -----------------------------------
+    // ── 8. Physical inventory ────────────────────────────────────
     let inventoryItems = [];
     try {
       inventoryItems = await Inventory.find({ schoolId: schoolObjId }).lean();
-      console.log('[INVENTORY] physical items:', inventoryItems.length);
+      console.log('[INVENTORY] items:', inventoryItems.length);
     } catch (e) {
-      console.error('[INVENTORY] physical inventory error:', e.message);
+      console.error('[INVENTORY] items error:', e.message);
     }
 
-    // -- Audit ---------------------------------------------------
+    // ── Audit ────────────────────────────────────────────────────
     try {
       await auditLog({
         action: 'INVENTORY_EXPORTED',
@@ -433,7 +335,7 @@ const exportInventoryController = async (req, res) => {
       });
     } catch (e) {}
 
-    // -- Class summary -------------------------------------------
+    // ── Class summary ────────────────────────────────────────────
     const classMap = {};
     students.forEach(s => {
       const cls = s.classId?.name || 'Unknown';
@@ -455,7 +357,8 @@ const exportInventoryController = async (req, res) => {
         students, staff, inventoryItems,
         billMap, hostelMap, hostelFeeMap,
         transportMap, transportFeeMap,
-        teacherClassMap, staffAttendanceMap,
+        teacherClassMap,
+        staffAttendanceMap,
         classSummary: classMap,
         summary: {
           totalStudents:    students.length,
@@ -463,7 +366,7 @@ const exportInventoryController = async (req, res) => {
           inactiveStudents: students.filter(s => s.status !== 'ACTIVE').length,
           totalStaff:       staff.length,
           teachers:  staff.filter(s => s.role === 'TEACHER').length,
-          operators: staff.filter(s => s.role === USER_ROLES.OPERATOR).length,
+          operators: staff.filter(s => s.role === 'OPERATOR').length,
           inventoryItems: inventoryItems.length,
         }
       },
@@ -471,7 +374,8 @@ const exportInventoryController = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[INVENTORY EXPORT] Error:', error);
+    console.error('[INVENTORY EXPORT] Unexpected error:', error.message);
+    console.error('[INVENTORY EXPORT] Stack:', error.stack);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Error exporting school data',
