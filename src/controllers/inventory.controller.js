@@ -12,6 +12,13 @@ const exportInventoryController = async (req, res) => {
     const { role } = req.user;
     const rawSchoolId = req.user.schoolId || req.schoolId;
 
+    console.log('[INVENTORY DEBUG] ==================');
+    console.log('[INVENTORY DEBUG] role:', role);
+    console.log('[INVENTORY DEBUG] req.user.schoolId:', req.user.schoolId);
+    console.log('[INVENTORY DEBUG] req.schoolId:', req.schoolId);
+    console.log('[INVENTORY DEBUG] rawSchoolId:', rawSchoolId);
+    console.log('[INVENTORY DEBUG] ==================');
+
     if (![USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR].includes(role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
@@ -33,6 +40,25 @@ const exportInventoryController = async (req, res) => {
         success: false,
         message: `Invalid school ID: ${rawSchoolId}`
       });
+    }
+
+    try {
+      const teacherCount = await Teacher.countDocuments({
+        schoolId: schoolObjId
+      });
+      const teacherActiveCount = await Teacher.countDocuments({
+        schoolId: schoolObjId,
+        status: 'active'
+      });
+      console.log('[INVENTORY] Teacher.countDocuments total:', teacherCount);
+      console.log('[INVENTORY] Teacher.countDocuments active:', teacherActiveCount);
+
+      const sampleTeacher = await Teacher.findOne({
+        schoolId: schoolObjId
+      }).lean();
+      console.log('[INVENTORY] sample teacher:', JSON.stringify(sampleTeacher));
+    } catch (e) {
+      console.error('[INVENTORY] count check error:', e.message);
     }
 
     // 1. Students
