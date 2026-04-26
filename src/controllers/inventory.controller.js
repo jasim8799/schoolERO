@@ -3,6 +3,7 @@ const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 const Student = require('../models/Student.js');
 const User = require('../models/User.js');
+const Teacher = require('../models/Teacher.js');
 const Inventory = require('../models/Inventory.js');
 const mongoose = require('mongoose');
 
@@ -17,7 +18,6 @@ const exportInventoryController = async (req, res) => {
         message: 'Access denied. Principal or Operator only.'
       });
     }
-
     if (!rawSchoolId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
@@ -35,7 +35,7 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    // 1. Students with class/section/parent
+    // 1. Students
     let students = [];
     try {
       students = await Student.find({ schoolId: schoolObjId })
@@ -51,23 +51,105 @@ const exportInventoryController = async (req, res) => {
         })
         .populate('userId', 'mobile email')
         .lean();
+      console.log('[INVENTORY] students:', students.length);
     } catch (e) {
       console.error('[INVENTORY] student error:', e.message);
     }
 
-    // 2. Staff
+    // 2. BUG FIX: Fetch Teachers from Teacher model
     let staff = [];
     try {
-      staff = await User.find({
+      const teachers = await Teacher.find({
         schoolId: schoolObjId,
-        role: { $in: [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL] },
+        status: 'active'
+      })
+        .populate({
+          path: 'userId',
+          select: '-password -documents'
+        })
+        .lean();
+
+      console.log('[INVENTORY] teachers from Teacher model:', teachers.length);
+
+      staff = teachers
+        .filter((t) => t.userId)
+        .map((t) => ({
+          _teacherId: t._id.toString(),
+          _id: t.userId._id.toString(),
+          name: t.userId.name,
+          email: t.userId.email,
+          mobile: t.userId.mobile,
+          whatsappNumber: t.userId.whatsappNumber,
+          gender: t.userId.gender,
+          dateOfBirth: t.userId.dateOfBirth,
+          bloodGroup: t.userId.bloodGroup,
+          address: t.userId.address,
+          city: t.userId.city,
+          state: t.userId.state,
+          pincode: t.userId.pincode,
+          occupation: t.userId.occupation,
+          employeeId: t.userId.employeeId,
+          designation: t.designation || t.userId.designation,
+          department: t.userId.department,
+          qualification: t.qualification || t.userId.qualification,
+          experienceYears: t.userId.experienceYears,
+          monthlySalary: t.userId.monthlySalary,
+          subjects: t.userId.subjects || [],
+          emergencyContactName: t.userId.emergencyContactName,
+          emergencyContactRelation: t.userId.emergencyContactRelation,
+          emergencyContactPhone: t.userId.emergencyContactPhone,
+          status: t.status,
+          role: 'TEACHER',
+          dateOfJoining: t.joiningDate || t.userId.dateOfJoining,
+        }));
+
+      const otherStaff = await User.find({
+        schoolId: schoolObjId,
+        role: { $in: [USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL] },
         status: 'active',
-      }).select('-password -documents').lean();
+      })
+        .select('-password -documents')
+        .lean();
+
+      console.log('[INVENTORY] operators/principals:', otherStaff.length);
+
+      otherStaff.forEach((u) => {
+        staff.push({
+          _teacherId: null,
+          _id: u._id.toString(),
+          name: u.name,
+          email: u.email,
+          mobile: u.mobile,
+          whatsappNumber: u.whatsappNumber,
+          gender: u.gender,
+          dateOfBirth: u.dateOfBirth,
+          bloodGroup: u.bloodGroup,
+          address: u.address,
+          city: u.city,
+          state: u.state,
+          pincode: u.pincode,
+          employeeId: u.employeeId,
+          designation: u.designation,
+          department: u.department,
+          qualification: u.qualification,
+          experienceYears: u.experienceYears,
+          monthlySalary: u.monthlySalary,
+          subjects: u.subjects || [],
+          emergencyContactName: u.emergencyContactName,
+          emergencyContactRelation: u.emergencyContactRelation,
+          emergencyContactPhone: u.emergencyContactPhone,
+          status: u.status,
+          role: u.role,
+          dateOfJoining: u.dateOfJoining,
+        });
+      });
+
+      console.log('[INVENTORY] total staff:', staff.length);
     } catch (e) {
       console.error('[INVENTORY] staff error:', e.message);
     }
 
-    // 3. Fee bills per student
+    // 3. Fee bills
     let billMap = {};
     try {
       const Bill = mongoose.model('Bill');
@@ -84,10 +166,9 @@ const exportInventoryController = async (req, res) => {
       });
     } catch (e) {
       console.error('[INVENTORY] bill error:', e.message);
-      billMap = {};
     }
 
-    // 4. Student hostel assignments
+    // 4. Hostel assignments
     let hostelMap = {};
     try {
       const StudentHostel = mongoose.model('StudentHostel');
@@ -100,18 +181,19 @@ const exportInventoryController = async (req, res) => {
         .lean();
       assignments.forEach((a) => {
         const sid = a.studentId?.toString();
-        if (!sid) return;
-        hostelMap[sid] = {
-          hostelName: a.hostelId?.name || '',
-          roomNumber: a.roomId?.roomNumber || '',
-          floor: a.roomId?.floor || '',
-        };
+        if (sid) {
+          hostelMap[sid] = {
+            hostelName: a.hostelId?.name || '',
+            roomNumber: a.roomId?.roomNumber || '',
+            floor: a.roomId?.floor || '',
+          };
+        }
       });
     } catch (e) {
-      console.error('[INVENTORY] hostel assignment error:', e.message);
+      console.error('[INVENTORY] hostel error:', e.message);
     }
 
-    // 5. Hostel fees per student (fallback to Bill(HOSTEL) if HostelFee model unavailable)
+    // 5. Hostel fees
     let hostelFeeMap = {};
     try {
       const HostelFee = mongoose.model('HostelFee');
@@ -126,48 +208,37 @@ const exportInventoryController = async (req, res) => {
         hostelFeeMap[sid].pending += Math.max(0, (f.totalAmount || 0) - (f.paidAmount || 0));
       });
     } catch (e) {
-      try {
-        const Bill = mongoose.model('Bill');
-        const bills = await Bill.find({ schoolId: schoolObjId, billType: 'HOSTEL' })
-          .select('studentId totalAmount paidAmount')
-          .lean();
-        bills.forEach((b) => {
-          const sid = b.studentId?.toString();
-          if (!sid) return;
-          if (!hostelFeeMap[sid]) hostelFeeMap[sid] = { paid: 0, pending: 0 };
-          hostelFeeMap[sid].paid += b.paidAmount || 0;
-          hostelFeeMap[sid].pending += Math.max(0, (b.totalAmount || 0) - (b.paidAmount || 0));
-        });
-      } catch (fallbackError) {
-        console.error('[INVENTORY] hostel fee error:', fallbackError.message);
-      }
+      console.error('[INVENTORY] hostel fee error:', e.message);
     }
 
-    // 6. Student transport assignments
+    // 6. Transport assignments
     let transportMap = {};
     try {
       const StudentTransport = mongoose.model('StudentTransport');
-      const assignments = await StudentTransport.find({ schoolId: schoolObjId, status: 'ACTIVE' })
+      const assignments = await StudentTransport.find({
+        schoolId: schoolObjId
+      })
         .populate('routeId', 'name startPoint endPoint')
         .populate('vehicleId', 'vehicleNumber driverName driverMobile')
         .lean();
       assignments.forEach((a) => {
         const sid = a.studentId?.toString();
-        if (!sid) return;
-        transportMap[sid] = {
-          routeName: a.routeId?.name || '',
-          startPoint: a.routeId?.startPoint || '',
-          endPoint: a.routeId?.endPoint || '',
-          vehicleNo: a.vehicleId?.vehicleNumber || '',
-          driverName: a.vehicleId?.driverName || '',
-          driverMobile: a.vehicleId?.driverMobile || '',
-        };
+        if (sid) {
+          transportMap[sid] = {
+            routeName: a.routeId?.name || '',
+            startPoint: a.routeId?.startPoint || '',
+            endPoint: a.routeId?.endPoint || '',
+            vehicleNo: a.vehicleId?.vehicleNumber || '',
+            driverName: a.vehicleId?.driverName || '',
+            driverMobile: a.vehicleId?.driverMobile || '',
+          };
+        }
       });
     } catch (e) {
       console.error('[INVENTORY] transport error:', e.message);
     }
 
-    // 7. Transport fees per student
+    // 7. Transport fees
     let transportFeeMap = {};
     try {
       const TransportFee = mongoose.model('TransportFee');
@@ -178,53 +249,47 @@ const exportInventoryController = async (req, res) => {
         const sid = f.studentId?.toString();
         if (!sid) return;
         if (!transportFeeMap[sid]) transportFeeMap[sid] = { paid: 0, pending: 0 };
-
-        if (typeof f.totalAmount === 'number' || typeof f.paidAmount === 'number') {
-          const total = f.totalAmount || 0;
-          const paid = f.paidAmount || 0;
-          transportFeeMap[sid].paid += paid;
-          transportFeeMap[sid].pending += Math.max(0, total - paid);
-          return;
-        }
-
-        // Fallback for current model shape: amount + status
-        const amount = f.amount || 0;
-        if (f.status === 'PAID') {
-          transportFeeMap[sid].paid += amount;
+        if (typeof f.totalAmount === 'number') {
+          transportFeeMap[sid].paid += f.paidAmount || 0;
+          transportFeeMap[sid].pending += Math.max(0, (f.totalAmount || 0) - (f.paidAmount || 0));
         } else {
-          transportFeeMap[sid].pending += amount;
+          const amt = f.amount || 0;
+          if (f.status === 'PAID') transportFeeMap[sid].paid += amt;
+          else transportFeeMap[sid].pending += amt;
         }
       });
     } catch (e) {
       console.error('[INVENTORY] transport fee error:', e.message);
     }
 
-    // 8. Teacher to class assignments
+    // 8. BUG FIX: Teacher class map
     let teacherClassMap = {};
     try {
       const TeacherAssignment = mongoose.model('TeacherAssignment');
-      const assignments = await TeacherAssignment.find({ schoolId: schoolObjId })
+      const assignments = await TeacherAssignment.find({
+        schoolId: schoolObjId
+      })
         .populate('classId', 'name')
         .populate('sectionId', 'name')
-        .populate('teacherId', 'userId')
         .lean();
 
       assignments.forEach((a) => {
-        const teacherUserId = a.teacherId?.userId?.toString();
-        if (!teacherUserId) return;
-        if (!teacherClassMap[teacherUserId]) teacherClassMap[teacherUserId] = [];
+        const teacherDocId = a.teacherId?.toString();
+        if (!teacherDocId) return;
+        if (!teacherClassMap[teacherDocId]) teacherClassMap[teacherDocId] = [];
         const cls = a.classId?.name || '';
         const sec = a.sectionId?.name || '';
         const label = sec ? `${cls}-${sec}` : cls;
-        if (label && !teacherClassMap[teacherUserId].includes(label)) {
-          teacherClassMap[teacherUserId].push(label);
+        if (label && !teacherClassMap[teacherDocId].includes(label)) {
+          teacherClassMap[teacherDocId].push(label);
         }
       });
+      console.log('[INVENTORY] teacherClassMap keys:', Object.keys(teacherClassMap).length);
     } catch (e) {
-      console.error('[INVENTORY] teacher assignments error:', e.message);
+      console.error('[INVENTORY] teacher class map error:', e.message);
     }
 
-    // 9. Staff attendance summary
+    // 9. Staff attendance
     let staffAttendanceMap = {};
     try {
       const StaffAttendance = mongoose.model('StaffAttendance');
@@ -233,20 +298,18 @@ const exportInventoryController = async (req, res) => {
       const records = await StaffAttendance.find({
         schoolId: schoolObjId,
         date: { $gte: since }
-      }).select('staffId status').lean();
+      }).select('staffId userId status').lean();
 
       records.forEach((r) => {
-        const uid = r.staffId?.toString();
+        const uid = (r.staffId || r.userId)?.toString();
         if (!uid) return;
         if (!staffAttendanceMap[uid]) {
           staffAttendanceMap[uid] = { present: 0, absent: 0, total: 0 };
         }
-        staffAttendanceMap[uid].total += 1;
-        if (r.status === 'PRESENT' || r.status === 'present') {
-          staffAttendanceMap[uid].present += 1;
-        } else {
-          staffAttendanceMap[uid].absent += 1;
-        }
+        staffAttendanceMap[uid].total++;
+        const s = (r.status || '').toUpperCase();
+        if (s === 'PRESENT') staffAttendanceMap[uid].present++;
+        else staffAttendanceMap[uid].absent++;
       });
     } catch (e) {
       console.error('[INVENTORY] staff attendance error:', e.message);
@@ -255,12 +318,14 @@ const exportInventoryController = async (req, res) => {
     // 10. Physical inventory
     let inventoryItems = [];
     try {
-      inventoryItems = await Inventory.find({ schoolId: schoolObjId }).lean();
+      inventoryItems = await Inventory.find({
+        schoolId: schoolObjId
+      }).lean();
     } catch (e) {
       console.error('[INVENTORY] physical inventory error:', e.message);
     }
 
-    // Audit log
+    // Audit
     try {
       await auditLog({
         action: 'INVENTORY_EXPORTED',
@@ -278,15 +343,15 @@ const exportInventoryController = async (req, res) => {
     students.forEach((s) => {
       const cls = s.classId?.name || 'Unknown';
       if (!classMap[cls]) classMap[cls] = { total: 0, active: 0, boys: 0, girls: 0 };
-      classMap[cls].total += 1;
-      if (s.status === 'ACTIVE') classMap[cls].active += 1;
-      if (s.gender === 'Male') classMap[cls].boys += 1;
-      if (s.gender === 'Female') classMap[cls].girls += 1;
+      classMap[cls].total++;
+      if (s.status === 'ACTIVE') classMap[cls].active++;
+      if (s.gender === 'Male') classMap[cls].boys++;
+      if (s.gender === 'Female') classMap[cls].girls++;
     });
 
     logger.success(
-      `School export OK: ${students.length} students, ` +
-      `${staff.length} staff, ${inventoryItems.length} items`
+      `Export OK: ${students.length} students, ${staff.length} staff, ` +
+      `${inventoryItems.length} items`
     );
 
     return res.status(HTTP_STATUS.OK).json({
@@ -308,7 +373,7 @@ const exportInventoryController = async (req, res) => {
           activeStudents: students.filter((s) => s.status === 'ACTIVE').length,
           inactiveStudents: students.filter((s) => s.status !== 'ACTIVE').length,
           totalStaff: staff.length,
-          teachers: staff.filter((s) => s.role === USER_ROLES.TEACHER).length,
+          teachers: staff.filter((s) => s.role === 'TEACHER').length,
           operators: staff.filter((s) => s.role === USER_ROLES.OPERATOR).length,
           inventoryItems: inventoryItems.length,
         }
