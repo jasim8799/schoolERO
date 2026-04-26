@@ -244,122 +244,84 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] attendance error:', e.message);
     }
 
-    // 7. Teachers from Teacher model — NO status filter
+    // 7. Staff — fetch exactly like staff_management_screen.dart does
+    // Staff screen: GET /api/users?schoolId=X&role=OPERATOR
+    // Staff screen: GET /api/users?schoolId=X&role=TEACHER
+    // Both return User documents directly — no Teacher model needed
     let staff = [];
     try {
-      const teachers = await Teacher.find({
-        schoolId: schoolObjId
-        // No status filter — get all teachers regardless of status
-      })
-        .populate({
-          path: 'userId',
-          select: '-password -documents'
-        })
-        .lean();
-
-      console.log('[INVENTORY] teachers found (no status filter):', teachers.length);
-
-      // Log first teacher to see its data
-      if (teachers.length > 0) {
-        const t = teachers[0];
-        console.log('[INVENTORY] first teacher status:', t.status);
-        console.log('[INVENTORY] first teacher has userId:', !!t.userId);
-        console.log('[INVENTORY] first teacher userId._id:', t.userId?._id?.toString());
-      }
-
-      staff = teachers
-        .filter((t) => t.userId)
-        .map((t) => {
-          const u = t.userId;
-          return {
-            _id: u._id.toString(),
-            _teacherId: t._id.toString(),
-            name: u.name,
-            email: u.email,
-            mobile: u.mobile,
-            whatsappNumber: u.whatsappNumber,
-            gender: u.gender,
-            dateOfBirth: u.dateOfBirth,
-            bloodGroup: u.bloodGroup,
-            address: u.address,
-            city: u.city,
-            state: u.state,
-            pincode: u.pincode,
-            employeeId: u.employeeId,
-            department: u.department,
-            designation: t.designation || u.designation,
-            qualification: t.qualification || u.qualification,
-            dateOfJoining: t.joiningDate || u.dateOfJoining,
-            experienceYears: u.experienceYears,
-            monthlySalary: u.monthlySalary,
-            subjects: u.subjects || [],
-            emergencyContactName: u.emergencyContactName,
-            emergencyContactRelation: u.emergencyContactRelation,
-            emergencyContactPhone: u.emergencyContactPhone,
-            status: t.status,
-            role: 'TEACHER',
-          };
-        });
-
-      console.log('[INVENTORY] teachers mapped to staff:', staff.length);
-
-      const otherStaff = await User.find({
+      // Fetch all staff roles directly from User model
+      // Same query the staff screen uses — role filter on User collection
+      const allStaff = await User.find({
         schoolId: schoolObjId,
-        role: { $in: [USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL] },
-        // Handle both 'active' and 'ACTIVE' status values
-        status: { $in: ['active', 'ACTIVE'] },
+        role: { $in: ['TEACHER', 'OPERATOR', 'PRINCIPAL'] },
       })
         .select('-password -documents')
         .lean();
 
-      console.log('[INVENTORY] operators/principals:', otherStaff.length);
+      console.log('[INVENTORY] staff from User.find:', allStaff.length);
 
-      // Log first operator to debug
-      if (otherStaff.length > 0) {
-        console.log('[INVENTORY] first operator status:', otherStaff[0].status);
-        console.log('[INVENTORY] first operator role:', otherStaff[0].role);
-      } else {
-        // Try without status filter to see if they exist
-        const anyOtherStaff = await User.find({
-          schoolId: schoolObjId,
-          role: { $in: [USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL] },
-        }).select('name role status').lean();
-        console.log('[INVENTORY] operators/principals (no status filter):', anyOtherStaff.length);
-        anyOtherStaff.forEach((u) => {
-          console.log(`  - ${u.name}: role=${u.role} status=${u.status}`);
-        });
+      // Map to flat objects with _teacherId=null (will fix class map below)
+      staff = allStaff.map((u) => ({
+        _id: u._id.toString(),
+        _teacherId: null,
+        name: u.name,
+        email: u.email,
+        mobile: u.mobile,
+        whatsappNumber: u.whatsappNumber,
+        gender: u.gender,
+        dateOfBirth: u.dateOfBirth,
+        bloodGroup: u.bloodGroup,
+        address: u.address,
+        city: u.city,
+        state: u.state,
+        pincode: u.pincode,
+        employeeId: u.employeeId,
+        designation: u.designation,
+        department: u.department,
+        qualification: u.qualification,
+        experienceYears: u.experienceYears,
+        monthlySalary: u.monthlySalary,
+        subjects: u.subjects || [],
+        emergencyContactName: u.emergencyContactName,
+        emergencyContactRelation: u.emergencyContactRelation,
+        emergencyContactPhone: u.emergencyContactPhone,
+        dateOfJoining: u.dateOfJoining,
+        status: u.status,
+        role: u.role,
+      }));
+
+      // Now enrich teachers with Teacher model _id for class map lookup
+      // Teacher model links userId → Teacher._id
+      if (staff.length > 0) {
+        const teacherUserIds = staff
+          .filter((s) => s.role === 'TEACHER')
+          .map((s) => s._id);
+
+        if (teacherUserIds.length > 0) {
+          const teacherDocs = await Teacher.find({
+            userId: { $in: teacherUserIds },
+            schoolId: schoolObjId,
+          }).select('_id userId').lean();
+
+          // Build userId → Teacher._id map
+          const userIdToTeacherId = {};
+          teacherDocs.forEach((t) => {
+            userIdToTeacherId[t.userId.toString()] = t._id.toString();
+          });
+
+          // Enrich staff with _teacherId
+          staff = staff.map((s) => ({
+            ...s,
+            _teacherId: userIdToTeacherId[s._id] || null,
+          }));
+
+          console.log(
+            '[INVENTORY] teachers enriched with teacherId:',
+            Object.keys(userIdToTeacherId).length
+          );
+        }
       }
-
-      otherStaff.forEach((u) => {
-        staff.push({
-          _id: u._id.toString(),
-          _teacherId: null,
-          name: u.name,
-          email: u.email,
-          mobile: u.mobile,
-          whatsappNumber: u.whatsappNumber,
-          gender: u.gender,
-          dateOfBirth: u.dateOfBirth,
-          bloodGroup: u.bloodGroup,
-          address: u.address,
-          city: u.city,
-          state: u.state,
-          pincode: u.pincode,
-          employeeId: u.employeeId,
-          designation: u.designation,
-          department: u.department,
-          qualification: u.qualification,
-          experienceYears: u.experienceYears,
-          monthlySalary: u.monthlySalary,
-          subjects: u.subjects || [],
-          emergencyContactName: u.emergencyContactName,
-          emergencyContactRelation: u.emergencyContactRelation,
-          emergencyContactPhone: u.emergencyContactPhone,
-          dateOfJoining: u.dateOfJoining,
-          status: u.status,
-          role: u.role,
-        });
-      });
 
       console.log('[INVENTORY] FINAL total staff:', staff.length);
     } catch (e) {
