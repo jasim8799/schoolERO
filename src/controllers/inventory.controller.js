@@ -244,12 +244,12 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] attendance error:', e.message);
     }
 
-    // 7. Teachers from Teacher model
+    // 7. Teachers from Teacher model — NO status filter
     let staff = [];
     try {
       const teachers = await Teacher.find({
-        schoolId: schoolObjId,
-        status: 'active'
+        schoolId: schoolObjId
+        // No status filter — get all teachers regardless of status
       })
         .populate({
           path: 'userId',
@@ -257,7 +257,15 @@ const exportInventoryController = async (req, res) => {
         })
         .lean();
 
-      console.log('[INVENTORY] teachers:', teachers.length);
+      console.log('[INVENTORY] teachers found (no status filter):', teachers.length);
+
+      // Log first teacher to see its data
+      if (teachers.length > 0) {
+        const t = teachers[0];
+        console.log('[INVENTORY] first teacher status:', t.status);
+        console.log('[INVENTORY] first teacher has userId:', !!t.userId);
+        console.log('[INVENTORY] first teacher userId._id:', t.userId?._id?.toString());
+      }
 
       staff = teachers
         .filter((t) => t.userId)
@@ -293,15 +301,34 @@ const exportInventoryController = async (req, res) => {
           };
         });
 
+      console.log('[INVENTORY] teachers mapped to staff:', staff.length);
+
       const otherStaff = await User.find({
         schoolId: schoolObjId,
         role: { $in: [USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL] },
-        status: 'active',
+        // Handle both 'active' and 'ACTIVE' status values
+        status: { $in: ['active', 'ACTIVE'] },
       })
         .select('-password -documents')
         .lean();
 
       console.log('[INVENTORY] operators/principals:', otherStaff.length);
+
+      // Log first operator to debug
+      if (otherStaff.length > 0) {
+        console.log('[INVENTORY] first operator status:', otherStaff[0].status);
+        console.log('[INVENTORY] first operator role:', otherStaff[0].role);
+      } else {
+        // Try without status filter to see if they exist
+        const anyOtherStaff = await User.find({
+          schoolId: schoolObjId,
+          role: { $in: [USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL] },
+        }).select('name role status').lean();
+        console.log('[INVENTORY] operators/principals (no status filter):', anyOtherStaff.length);
+        anyOtherStaff.forEach((u) => {
+          console.log(`  - ${u.name}: role=${u.role} status=${u.status}`);
+        });
+      }
 
       otherStaff.forEach((u) => {
         staff.push({
@@ -334,9 +361,10 @@ const exportInventoryController = async (req, res) => {
         });
       });
 
-      console.log('[INVENTORY] total staff:', staff.length);
+      console.log('[INVENTORY] FINAL total staff:', staff.length);
     } catch (e) {
       console.error('[INVENTORY] staff error:', e.message);
+      console.error('[INVENTORY] staff stack:', e.stack);
     }
 
     // 8. Teacher class map
