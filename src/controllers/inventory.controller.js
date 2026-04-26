@@ -63,120 +63,94 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] student error:', e.message);
     }
 
-    // -- 2. Staff - call same logic as getAllUsers exactly ----------
+    // -- 2. Staff ------------------------------------------------
     let staff = [];
     try {
-      // Mirror EXACTLY what getAllUsers does:
-      // GET /api/users?schoolId=X&role=TEACHER
-      // filterBySchool sets req.query.schoolId from req.user.schoolId
-      // getAllUsers: User.find({ schoolId: req.query.schoolId, role: role })
-      //
-      // The key: filterBySchool uses req.user.schoolId which comes from
-      // authenticate middleware: user.schoolId.toString()
-      // This is already set in req.user.schoolId as a string
-      //
-      // Mongoose auto-casts string to ObjectId for ObjectId fields
-      // So User.find({ schoolId: '67abc...' }) works fine
+      // Raw query - no filters except schoolId
+      const rawQuery = { schoolId: schoolObjId };
+      const totalUsersForSchool = await User.countDocuments(rawQuery);
+      console.log('[INVENTORY] total users for school (any role):', totalUsersForSchool);
 
-      const roles = ['TEACHER', 'OPERATOR', 'PRINCIPAL'];
+      const teacherCount = await User.countDocuments({
+        ...rawQuery, role: 'TEACHER'
+      });
+      console.log('[INVENTORY] TEACHER count:', teacherCount);
 
-      // Fetch each role separately - EXACT same as staff screen does
-      // staff_management_screen: GET /api/users?schoolId=X&role=TEACHER
-      //                           GET /api/users?schoolId=X&role=OPERATOR
-      const allStaffArrays = await Promise.all(
-        roles.map(r =>
-          User.find({ schoolId: schoolIdStr, role: r })
-            .select('-password -documents')
-            .lean()
-        )
-      );
+      const operatorCount = await User.countDocuments({
+        ...rawQuery, role: 'OPERATOR'
+      });
+      console.log('[INVENTORY] OPERATOR count:', operatorCount);
 
-      const allStaff = allStaffArrays.flat();
-      console.log('[INVENTORY] staff per role:',
-        roles.map((r, i) => `${r}:${allStaffArrays[i].length}`).join(', '));
-      console.log('[INVENTORY] total allStaff:', allStaff.length);
+      const principalCount = await User.countDocuments({
+        ...rawQuery, role: 'PRINCIPAL'
+      });
+      console.log('[INVENTORY] PRINCIPAL count:', principalCount);
 
-      // If string didn't work, try ObjectId
-      if (allStaff.length === 0) {
-        console.log('[INVENTORY] string query got 0 - trying ObjectId...');
-        const allStaff2 = await User.find({
-          schoolId: schoolObjId,
-          role: { $in: roles }
-        }).select('-password -documents').lean();
-        console.log('[INVENTORY] ObjectId query result:', allStaff2.length);
+      // Fetch all non-student non-parent users for this school
+      const allStaff = await User.find({
+        schoolId: schoolObjId,
+        role: { $in: ['TEACHER', 'OPERATOR', 'PRINCIPAL'] }
+      })
+      .select('-password -documents')
+      .lean();
 
-        if (allStaff2.length === 0) {
-          // Last resort: check if ANY user exists for this school
-          const anyUser = await User.findOne({ schoolId: schoolObjId })
-            .select('name role status schoolId').lean();
-          console.log('[INVENTORY] any user for school:', JSON.stringify(anyUser));
-
-          const anyTeacher = await User.findOne({ role: 'TEACHER' })
-            .select('name schoolId').lean();
-          console.log('[INVENTORY] any TEACHER in entire DB:',
-            JSON.stringify(anyTeacher ? {
-              name: anyTeacher.name,
-              schoolId: anyTeacher.schoolId?.toString(),
-              ourSchoolId: schoolIdStr,
-              match: anyTeacher.schoolId?.toString() === schoolIdStr
-            } : null));
-        } else {
-          allStaff.push(...allStaff2);
-        }
-      }
-
-      // Get Teacher docs for class map (_teacherId lookup)
+      console.log('[INVENTORY] allStaff fetched:', allStaff.length);
       if (allStaff.length > 0) {
-        const teacherUserIds = allStaff
-          .filter(u => u.role === 'TEACHER')
-          .map(u => u._id);
-
-        const teacherDocMap = {};
-        if (teacherUserIds.length > 0) {
-          const teacherDocs = await Teacher.find({
-            userId: { $in: teacherUserIds }
-          }).select('_id userId').lean();
-          teacherDocs.forEach(t => {
-            teacherDocMap[t.userId.toString()] = t._id.toString();
-          });
-          console.log('[INVENTORY] Teacher docs for class map:',
-            teacherDocs.length);
-        }
-
-        staff = allStaff.map(u => ({
-          _id:        u._id.toString(),
-          _teacherId: teacherDocMap[u._id.toString()] || null,
-          name:                     u.name,
-          email:                    u.email,
-          mobile:                   u.mobile,
-          whatsappNumber:           u.whatsappNumber,
-          gender:                   u.gender,
-          dateOfBirth:              u.dateOfBirth,
-          bloodGroup:               u.bloodGroup,
-          address:                  u.address,
-          city:                     u.city,
-          state:                    u.state,
-          pincode:                  u.pincode,
-          employeeId:               u.employeeId,
-          designation:              u.designation,
-          department:               u.department,
-          qualification:            u.qualification,
-          experienceYears:          u.experienceYears,
-          monthlySalary:            u.monthlySalary,
-          subjects:                 u.subjects || [],
-          emergencyContactName:     u.emergencyContactName,
-          emergencyContactRelation: u.emergencyContactRelation,
-          emergencyContactPhone:    u.emergencyContactPhone,
-          dateOfJoining:            u.dateOfJoining,
-          status:                   u.status,
-          role:                     u.role,
+        console.log('[INVENTORY] first staff:', JSON.stringify({
+          name: allStaff[0].name,
+          role: allStaff[0].role,
+          schoolId: allStaff[0].schoolId?.toString(),
+          status: allStaff[0].status
         }));
       }
 
-      console.log('[INVENTORY] FINAL staff:', staff.length);
+      // Get Teacher docs for _teacherId
+      const teacherDocMap = {};
+      if (allStaff.some(u => u.role === 'TEACHER')) {
+        const teacherUserIds = allStaff
+          .filter(u => u.role === 'TEACHER')
+          .map(u => u._id);
+        const teacherDocs = await Teacher.find({
+          userId: { $in: teacherUserIds }
+        }).select('_id userId').lean();
+        teacherDocs.forEach(t => {
+          teacherDocMap[t.userId.toString()] = t._id.toString();
+        });
+      }
+
+      staff = allStaff.map(u => ({
+        _id:        u._id.toString(),
+        _teacherId: teacherDocMap[u._id.toString()] || null,
+        name:                     u.name,
+        email:                    u.email,
+        mobile:                   u.mobile,
+        whatsappNumber:           u.whatsappNumber,
+        gender:                   u.gender,
+        dateOfBirth:              u.dateOfBirth,
+        bloodGroup:               u.bloodGroup,
+        address:                  u.address,
+        city:                     u.city,
+        state:                    u.state,
+        pincode:                  u.pincode,
+        employeeId:               u.employeeId,
+        designation:              u.designation,
+        department:               u.department,
+        qualification:            u.qualification,
+        experienceYears:          u.experienceYears,
+        monthlySalary:            u.monthlySalary,
+        subjects:                 u.subjects || [],
+        emergencyContactName:     u.emergencyContactName,
+        emergencyContactRelation: u.emergencyContactRelation,
+        emergencyContactPhone:    u.emergencyContactPhone,
+        dateOfJoining:            u.dateOfJoining,
+        status:                   u.status,
+        role:                     u.role,
+      }));
+
+      console.log('[INVENTORY] FINAL staff mapped:', staff.length);
     } catch (e) {
-      console.error('[INVENTORY] staff error:', e.message);
-      console.error('[INVENTORY] staff stack:', e.stack);
+      console.error('[INVENTORY] staff EXCEPTION:', e.message);
+      console.error('[INVENTORY] staff STACK:', e.stack);
     }
 
     // -- 3. Bills ------------------------------------------------
