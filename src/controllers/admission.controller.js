@@ -313,7 +313,7 @@ exports.getAdmissionByStudent = async (req, res) => {
 
     const sanitized = admissions.map((adm) => {
       if (adm.documents) {
-        for (const docType of ['aadhaar', 'birthCertificate', 'photo', 'tc']) {
+        for (const docType of ['aadhaar', 'birthCertificate', 'photo', 'tc', 'parentAadhaar']) {
           if (adm.documents[docType]) {
             delete adm.documents[docType].dataUrl;
           }
@@ -335,7 +335,7 @@ exports.getDocumentData = async (req, res) => {
     const { id, docType } = req.params;
     const schoolId = req.user.schoolId._id || req.user.schoolId;
 
-    const validDocTypes = ['aadhaar', 'birthCertificate', 'photo', 'tc'];
+    const validDocTypes = ['aadhaar', 'birthCertificate', 'photo', 'tc', 'parentAadhaar'];
     if (!validDocTypes.includes(docType)) {
       return res.status(400).json({ success: false, message: 'Invalid document type' });
     }

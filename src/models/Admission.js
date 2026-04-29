@@ -36,6 +36,7 @@ const admissionSchema = new mongoose.Schema(
       birthCertificate: { type: documentSchema, default: () => ({}) },
       photo:            { type: documentSchema, default: () => ({}) },
       tc:               { type: documentSchema, default: () => ({}) },
+      parentAadhaar:    { type: documentSchema, default: () => ({}) },
     },
     fees:          { type: feesSchema, default: () => ({}) },
     paymentStatus: {
