@@ -1,5 +1,11 @@
 const express = require('express');
-const { createSection, getAllSections, getSectionById } = require('../controllers/section.controller.js');
+const {
+	createSection,
+	getAllSections,
+	getSectionById,
+	updateSection,
+	deleteSection
+} = require('../controllers/section.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
@@ -17,5 +23,11 @@ router.get('/', requireMinRole(USER_ROLES.TEACHER), getAllSections);
 
 // GET /api/sections/:id - Get section by ID
 router.get('/:id', requireMinRole(USER_ROLES.TEACHER), getSectionById);
+
+// PATCH /api/sections/:id
+router.patch('/:id', requireMinRole(USER_ROLES.PRINCIPAL), updateSection);
+
+// DELETE /api/sections/:id
+router.delete('/:id', requireMinRole(USER_ROLES.PRINCIPAL), deleteSection);
 
 module.exports = router;

@@ -144,8 +144,102 @@ const getSubjectById = async (req, res) => {
   }
 };
 
+// Update Subject
+const updateSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.user.sessionId;
+
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Subject name is required'
+      });
+    }
+
+    const subject = await Subject.findOne({ _id: id, schoolId, sessionId });
+    if (!subject) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Check duplicate (exclude self)
+    const duplicate = await Subject.findOne({
+      name: name.trim(),
+      classId: subject.classId,
+      schoolId,
+      sessionId,
+      _id: { $ne: id }
+    });
+    if (duplicate) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: `Subject '${name}' already exists for this class`
+      });
+    }
+
+    subject.name = name.trim();
+    await subject.save();
+
+    logger.success(`Subject updated: ${subject.name}`);
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Subject updated successfully',
+      data: subject
+    });
+  } catch (error) {
+    logger.error('Update subject error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating subject',
+      error: error.message
+    });
+  }
+};
+
+// Delete Subject
+const deleteSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.user.sessionId;
+
+    const deleted = await Subject.findOneAndDelete({
+      _id: id,
+      schoolId,
+      sessionId
+    });
+
+    if (!deleted) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    logger.success(`Subject deleted: ${deleted.name}`);
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Subject deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete subject error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error deleting subject',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createSubject,
   getAllSubjects,
-  getSubjectById
+  getSubjectById,
+  updateSubject,
+  deleteSubject
 };

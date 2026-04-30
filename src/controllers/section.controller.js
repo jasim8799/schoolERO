@@ -157,8 +157,102 @@ const getSectionById = async (req, res) => {
   }
 };
 
+// Update Section
+const updateSection = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const sessionId = req.user.sessionId;
+
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Section name is required'
+      });
+    }
+
+    const section = await Section.findOne({ _id: id, schoolId, sessionId });
+    if (!section) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Section not found'
+      });
+    }
+
+    // Check duplicate (exclude self)
+    const duplicate = await Section.findOne({
+      name: name.trim().toUpperCase(),
+      classId: section.classId,
+      schoolId,
+      sessionId,
+      _id: { $ne: id }
+    });
+    if (duplicate) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: `Section '${name}' already exists for this class`
+      });
+    }
+
+    section.name = name.trim().toUpperCase();
+    await section.save();
+
+    logger.success(`Section updated: ${section.name}`);
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Section updated successfully',
+      data: section
+    });
+  } catch (error) {
+    logger.error('Update section error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating section',
+      error: error.message
+    });
+  }
+};
+
+// Delete Section
+const deleteSection = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.user.schoolId._id || req.user.schoolId;
+    const sessionId = req.user.sessionId;
+
+    const deleted = await Section.findOneAndDelete({
+      _id: id,
+      schoolId,
+      sessionId
+    });
+
+    if (!deleted) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Section not found'
+      });
+    }
+
+    logger.success(`Section deleted: ${deleted.name}`);
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Section deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete section error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error deleting section',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createSection,
   getAllSections,
-  getSectionById
+  getSectionById,
+  updateSection,
+  deleteSection
 };

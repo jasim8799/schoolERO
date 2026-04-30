@@ -156,8 +156,109 @@ const getClassById = async (req, res) => {
   }
 };
 
+// Update Class
+const updateClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, order } = req.body;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.user.sessionId;
+
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Class name is required'
+      });
+    }
+
+    // Check duplicate name (exclude self)
+    const duplicate = await Class.findOne({
+      name: name.trim(),
+      schoolId,
+      sessionId,
+      _id: { $ne: id }
+    });
+    if (duplicate) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: `Class '${name}' already exists for this school and session`
+      });
+    }
+
+    const updated = await Class.findOneAndUpdate(
+      { _id: id, schoolId, sessionId },
+      { $set: { name: name.trim(), ...(order !== undefined && { order }) } },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Class not found'
+      });
+    }
+
+    logger.success(`Class updated: ${name}`);
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Class updated successfully',
+      data: updated
+    });
+  } catch (error) {
+    logger.error('Update class error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating class',
+      error: error.message
+    });
+  }
+};
+
+// Delete Class (hard delete — warn: cascades to sections/subjects)
+const deleteClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.user.sessionId;
+
+    const deleted = await Class.findOneAndDelete({
+      _id: id,
+      schoolId,
+      sessionId
+    });
+
+    if (!deleted) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Class not found'
+      });
+    }
+
+    // Also delete related sections and subjects
+    const Section = require('../models/Section.js');
+    const Subject = require('../models/Subject.js');
+    await Section.deleteMany({ classId: id, schoolId, sessionId });
+    await Subject.deleteMany({ classId: id, schoolId, sessionId });
+
+    logger.success(`Class deleted: ${deleted.name}`);
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Class and its sections/subjects deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete class error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error deleting class',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createClass,
   getAllClasses,
-  getClassById
+  getClassById,
+  updateClass,
+  deleteClass
 };
