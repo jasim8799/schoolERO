@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Subject = require('../models/Subject.js');
 const Class = require('../models/Class.js');
 const School = require('../models/School.js');
@@ -5,6 +6,37 @@ const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
+
+const handleControllerError = (res, error, { context = 'Request', duplicateMessage } = {}) => {
+  if (error.code === 11000) {
+    return res.status(HTTP_STATUS.CONFLICT).json({
+      success: false,
+      message: duplicateMessage || 'A value with this name already exists'
+    });
+  }
+  if (error.name === 'CastError') {
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: `Invalid ID format for field: ${error.path}`
+    });
+  }
+  if (error.name === 'ValidationError') {
+    const messages = Object.values(error.errors || {})
+      .map((e) => e.message)
+      .join(', ');
+    return res.status(HTTP_STATUS.UNPROCESSABLE_ENTITY).json({
+      success: false,
+      message: `Validation failed: ${messages}`
+    });
+  }
+
+  logger.error(`${context} error:`, error.message);
+  return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+    success: false,
+    message: 'Internal server error. Please try again later.',
+    error: error.message
+  });
+};
 
 // Create Subject
 const createSubject = async (req, res) => {
@@ -14,12 +46,26 @@ const createSubject = async (req, res) => {
     const sessionId = req.user.sessionId;
 
     // Validate required fields
-    if (!name || !classId) {
+    if (!name || !name.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Subject name and classId are required'
+        message: 'Name is required and cannot be empty'
       });
     }
+    if (!classId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'classId is required'
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid classId format'
+      });
+    }
+
+    const normalizedName = name.trim();
 
     // Verify class exists and belongs to same school and session
     const classData = await Class.findOne({ _id: classId, schoolId, sessionId });
@@ -31,17 +77,17 @@ const createSubject = async (req, res) => {
     }
 
     // Check if subject already exists for this class
-    const existingSubject = await Subject.findOne({ name, classId, schoolId, sessionId });
+    const existingSubject = await Subject.findOne({ name: normalizedName, classId, schoolId, sessionId });
     if (existingSubject) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Subject '${name}' already exists for this class`
+        message: 'Subject name already exists for this class'
       });
     }
 
     // Create subject
     const newSubject = await Subject.create({
-      name,
+      name: normalizedName,
       classId,
       schoolId,
       sessionId,
@@ -68,11 +114,9 @@ const createSubject = async (req, res) => {
       data: newSubject
     });
   } catch (error) {
-    logger.error('Create subject error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error creating subject',
-      error: error.message
+    return handleControllerError(res, error, {
+      context: 'Create subject',
+      duplicateMessage: 'Subject name already exists for this class'
     });
   }
 };
@@ -90,7 +134,15 @@ const getAllSubjects = async (req, res) => {
     const filter = {};
     if (schoolId) filter.schoolId = schoolId;
     if (sessionId) filter.sessionId = sessionId;
-    if (classId) filter.classId = classId;
+    if (classId) {
+      if (!mongoose.Types.ObjectId.isValid(classId)) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          message: 'Invalid classId format'
+        });
+      }
+      filter.classId = classId;
+    }
 
     const subjects = await Subject.find(filter)
       .populate('classId', 'name')
@@ -104,12 +156,7 @@ const getAllSubjects = async (req, res) => {
       data: subjects
     });
   } catch (error) {
-    logger.error('Get subjects error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving subjects',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get subjects' });
   }
 };
 
@@ -117,6 +164,13 @@ const getAllSubjects = async (req, res) => {
 const getSubjectById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid subject ID format'
+      });
+    }
 
     const subject = await Subject.findOne({ _id: id, schoolId: req.user.schoolId, sessionId: req.user.sessionId })
       .populate('classId', 'name')
@@ -135,12 +189,7 @@ const getSubjectById = async (req, res) => {
       data: subject
     });
   } catch (error) {
-    logger.error('Get subject error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving subject',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get subject by ID' });
   }
 };
 
@@ -152,12 +201,21 @@ const updateSubject = async (req, res) => {
     const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid subject ID format'
+      });
+    }
+
     if (!name || !name.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Subject name is required'
+        message: 'Name is required and cannot be empty'
       });
     }
+
+    const normalizedName = name.trim();
 
     const subject = await Subject.findOne({ _id: id, schoolId, sessionId });
     if (!subject) {
@@ -169,20 +227,20 @@ const updateSubject = async (req, res) => {
 
     // Check duplicate (exclude self)
     const duplicate = await Subject.findOne({
-      name: name.trim(),
+      name: normalizedName,
       classId: subject.classId,
       schoolId,
       sessionId,
       _id: { $ne: id }
     });
     if (duplicate) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Subject '${name}' already exists for this class`
+        message: 'Subject name already exists for this class'
       });
     }
 
-    subject.name = name.trim();
+    subject.name = normalizedName;
     await subject.save();
 
     logger.success(`Subject updated: ${subject.name}`);
@@ -192,11 +250,9 @@ const updateSubject = async (req, res) => {
       data: subject
     });
   } catch (error) {
-    logger.error('Update subject error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error updating subject',
-      error: error.message
+    return handleControllerError(res, error, {
+      context: 'Update subject',
+      duplicateMessage: 'Subject name already exists for this class'
     });
   }
 };
@@ -207,6 +263,13 @@ const deleteSubject = async (req, res) => {
     const { id } = req.params;
     const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid subject ID format'
+      });
+    }
 
     const deleted = await Subject.findOneAndDelete({
       _id: id,
@@ -227,12 +290,7 @@ const deleteSubject = async (req, res) => {
       message: 'Subject deleted successfully'
     });
   } catch (error) {
-    logger.error('Delete subject error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error deleting subject',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Delete subject' });
   }
 };
 

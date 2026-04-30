@@ -58,6 +58,42 @@ const toObjectId = (value) => {
   return new mongoose.Types.ObjectId(value);
 };
 
+const isValidDateValue = (value) => {
+  const dt = new Date(value);
+  return !Number.isNaN(dt.getTime());
+};
+
+const handleControllerError = (res, error, { context = 'Request' } = {}) => {
+  if (error.code === 11000) {
+    const field = Object.keys(error.keyValue || {})[0] || 'value';
+    return res.status(HTTP_STATUS.CONFLICT).json({
+      success: false,
+      message: `Duplicate entry: a record with this ${field} already exists`
+    });
+  }
+  if (error.name === 'CastError') {
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: `Invalid ID format for field: ${error.path}`
+    });
+  }
+  if (error.name === 'ValidationError') {
+    const messages = Object.values(error.errors || {})
+      .map((e) => e.message)
+      .join(', ');
+    return res.status(HTTP_STATUS.UNPROCESSABLE_ENTITY).json({
+      success: false,
+      message: `Validation failed: ${messages}`
+    });
+  }
+
+  return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+    success: false,
+    message: 'Internal server error. Please try again later.',
+    error: error.message
+  });
+};
+
 const buildDueDateFilter = ({ date, fromDate, toDate }) => {
   if (date) {
     const day = new Date(date);
@@ -114,12 +150,56 @@ const createHomework = async (req, res) => {
     }
 
     // Validate required fields
-    if (!title || !classId || !subjectId || !dueDate) {
+    if (!title || !title.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'title, classId, subjectId, and dueDate are required'
+        message: 'Title is required and cannot be empty'
       });
     }
+    if (!classId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'classId is required'
+      });
+    }
+    if (!subjectId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'subjectId is required'
+      });
+    }
+    if (!dueDate) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'dueDate is required'
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid classId format'
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid subjectId format'
+      });
+    }
+    if (sectionId && !mongoose.Types.ObjectId.isValid(sectionId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid sectionId format'
+      });
+    }
+    if (!isValidDateValue(dueDate)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid dueDate format'
+      });
+    }
+
+    const normalizedTitle = title.trim();
 
     // Verify class exists and belongs to same school and session
     const classData = await Class.findOne({ _id: classId, schoolId, sessionId });
@@ -152,14 +232,14 @@ const createHomework = async (req, res) => {
 
     // Create homework
     const homework = await Homework.create({
-      title,
+      title: normalizedTitle,
       description,
       topic,
       chapter,
       classId,
       sectionId,
       subjectId,
-      dueDate,
+      dueDate: new Date(dueDate),
       attachments,
       createdBy,
       sessionId,
@@ -174,11 +254,7 @@ const createHomework = async (req, res) => {
       data: homework
     });
   } catch (error) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error creating homework',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Create homework' });
   }
 };
 
@@ -187,6 +263,13 @@ const getHomeworkById = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid homework ID format'
+      });
+    }
 
     const homework = await Homework.findOne({ _id: id, schoolId })
       .populate('classId', 'name')
@@ -203,11 +286,7 @@ const getHomeworkById = async (req, res) => {
 
     res.status(HTTP_STATUS.OK).json({ success: true, data: homework });
   } catch (error) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving homework',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get homework by ID' });
   }
 };
 
@@ -227,6 +306,45 @@ const updateHomework = async (req, res) => {
       dueDate,
       attachments
     } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid homework ID format'
+      });
+    }
+
+    if (title !== undefined && !title.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Title cannot be empty'
+      });
+    }
+    if (dueDate !== undefined && !isValidDateValue(dueDate)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid dueDate format'
+      });
+    }
+    if (classId !== undefined && !mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid classId format'
+      });
+    }
+    if (subjectId !== undefined && !mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid subjectId format'
+      });
+    }
+    if (sectionId !== undefined && sectionId !== null && sectionId !== ''
+        && !mongoose.Types.ObjectId.isValid(sectionId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid sectionId format'
+      });
+    }
 
     // Only TEACHER (own), PRINCIPAL, OPERATOR can update
     if (![USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR]
@@ -256,11 +374,11 @@ const updateHomework = async (req, res) => {
 
     // Build update object — only update fields that were provided
     const updates = {};
-    if (title !== undefined) updates.title = title;
+    if (title !== undefined) updates.title = title.trim();
     if (description !== undefined) updates.description = description;
     if (topic !== undefined) updates.topic = topic;
     if (chapter !== undefined) updates.chapter = chapter;
-    if (dueDate !== undefined) updates.dueDate = dueDate;
+    if (dueDate !== undefined) updates.dueDate = new Date(dueDate);
     if (attachments !== undefined) updates.attachments = attachments;
 
     // If classId is changing, validate it
@@ -338,11 +456,7 @@ const updateHomework = async (req, res) => {
       data: updated
     });
   } catch (error) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error updating homework',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Update homework' });
   }
 };
 
@@ -351,6 +465,13 @@ const deleteHomework = async (req, res) => {
   try {
     const { id } = req.params;
     const { role, schoolId, _id: userId } = req.user;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid homework ID format'
+      });
+    }
 
     if (![USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR]
         .includes(role)) {
@@ -387,11 +508,7 @@ const deleteHomework = async (req, res) => {
       message: 'Homework deleted successfully'
     });
   } catch (error) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error deleting homework',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Delete homework' });
   }
 };
 
@@ -400,6 +517,43 @@ const getHomeworkByClass = async (req, res) => {
   try {
     const { classId, sectionId, subjectId, date, fromDate, toDate } = req.query;
     const { schoolId, role, _id: userId } = req.user;
+
+    if (classId && !mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid classId format'
+      });
+    }
+    if (sectionId && !mongoose.Types.ObjectId.isValid(sectionId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid sectionId format'
+      });
+    }
+    if (subjectId && !mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid subjectId format'
+      });
+    }
+    if (date && !isValidDateValue(date)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid date format'
+      });
+    }
+    if (fromDate && !isValidDateValue(fromDate)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid fromDate format'
+      });
+    }
+    if (toDate && !isValidDateValue(toDate)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid toDate format'
+      });
+    }
 
     const schoolObjectId = toObjectId(schoolId);
     if (!schoolObjectId) {
@@ -461,11 +615,7 @@ const getHomeworkByClass = async (req, res) => {
       groupedByClass: Object.values(groupedByClass)
     });
   } catch (error) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving homework',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get homework by class' });
   }
 };
 
@@ -606,11 +756,7 @@ const getHomeworkForStudent = async (req, res) => {
       });
     }
   } catch (error) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving homework',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get homework for student' });
   }
 };
 

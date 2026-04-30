@@ -1,9 +1,42 @@
+const mongoose = require('mongoose');
 const Class = require('../models/Class.js');
 const School = require('../models/School.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
+
+const handleControllerError = (res, error, { context = 'Request', duplicateMessage } = {}) => {
+  if (error.code === 11000) {
+    const field = Object.keys(error.keyValue || {})[0] || 'value';
+    return res.status(HTTP_STATUS.CONFLICT).json({
+      success: false,
+      message: duplicateMessage || `A ${field} with this name already exists`
+    });
+  }
+  if (error.name === 'CastError') {
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: `Invalid ID format for field: ${error.path}`
+    });
+  }
+  if (error.name === 'ValidationError') {
+    const messages = Object.values(error.errors || {})
+      .map((e) => e.message)
+      .join(', ');
+    return res.status(HTTP_STATUS.UNPROCESSABLE_ENTITY).json({
+      success: false,
+      message: `Validation failed: ${messages}`
+    });
+  }
+
+  logger.error(`${context} error:`, error.message);
+  return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+    success: false,
+    message: 'Internal server error. Please try again later.',
+    error: error.message
+  });
+};
 
 // Create Class
 const createClass = async (req, res) => {
@@ -14,10 +47,10 @@ const createClass = async (req, res) => {
     const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
 
-    if (!name) {
+    if (!name || !name.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Class name is required'
+        message: 'Name is required and cannot be empty'
       });
     }
 
@@ -45,17 +78,18 @@ const createClass = async (req, res) => {
     }
 
     // Check if class already exists for this school and session
-    const existingClass = await Class.findOne({ name, schoolId, sessionId });
+    const normalizedName = name.trim();
+    const existingClass = await Class.findOne({ name: normalizedName, schoolId, sessionId });
     if (existingClass) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Class '${name}' already exists for this school and session`
+        message: `Class '${normalizedName}' already exists for this school and session`
       });
     }
 
     // Create class
     const newClass = await Class.create({
-      name,
+      name: normalizedName,
       schoolId,
       sessionId,
       order,
@@ -75,7 +109,7 @@ const createClass = async (req, res) => {
       // Continue — don't fail the request because of audit log
     }
 
-    logger.success(`Class created: ${name} for school ${schoolId}`);
+    logger.success(`Class created: ${normalizedName} for school ${schoolId}`);
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
@@ -83,11 +117,9 @@ const createClass = async (req, res) => {
       data: newClass
     });
   } catch (error) {
-    logger.error('Create class error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error creating class',
-      error: error.message
+    return handleControllerError(res, error, {
+      context: 'Create class',
+      duplicateMessage: 'A class with this name already exists'
     });
   }
 };
@@ -117,12 +149,7 @@ const getAllClasses = async (req, res) => {
       data: classes
     });
   } catch (error) {
-    logger.error('Get classes error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving classes',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get classes' });
   }
 };
 
@@ -130,6 +157,13 @@ const getAllClasses = async (req, res) => {
 const getClassById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid class ID format'
+      });
+    }
 
     const classData = await Class.findById(id)
       .populate('schoolId', 'name code')
@@ -147,12 +181,7 @@ const getClassById = async (req, res) => {
       data: classData
     });
   } catch (error) {
-    logger.error('Get class error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving class',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get class by ID' });
   }
 };
 
@@ -164,30 +193,39 @@ const updateClass = async (req, res) => {
     const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
 
-    if (!name || !name.trim()) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Class name is required'
+        message: 'Invalid class ID format'
       });
     }
 
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Name is required and cannot be empty'
+      });
+    }
+
+    const normalizedName = name.trim();
+
     // Check duplicate name (exclude self)
     const duplicate = await Class.findOne({
-      name: name.trim(),
+      name: normalizedName,
       schoolId,
       sessionId,
       _id: { $ne: id }
     });
     if (duplicate) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Class '${name}' already exists for this school and session`
+        message: `Class '${normalizedName}' already exists for this school and session`
       });
     }
 
     const updated = await Class.findOneAndUpdate(
       { _id: id, schoolId, sessionId },
-      { $set: { name: name.trim(), ...(order !== undefined && { order }) } },
+      { $set: { name: normalizedName, ...(order !== undefined && { order }) } },
       { new: true, runValidators: true }
     );
 
@@ -198,18 +236,16 @@ const updateClass = async (req, res) => {
       });
     }
 
-    logger.success(`Class updated: ${name}`);
+    logger.success(`Class updated: ${normalizedName}`);
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Class updated successfully',
       data: updated
     });
   } catch (error) {
-    logger.error('Update class error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error updating class',
-      error: error.message
+    return handleControllerError(res, error, {
+      context: 'Update class',
+      duplicateMessage: 'A class with this name already exists'
     });
   }
 };
@@ -220,6 +256,13 @@ const deleteClass = async (req, res) => {
     const { id } = req.params;
     const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid class ID format'
+      });
+    }
 
     const deleted = await Class.findOneAndDelete({
       _id: id,
@@ -246,12 +289,7 @@ const deleteClass = async (req, res) => {
       message: 'Class and its sections/subjects deleted successfully'
     });
   } catch (error) {
-    logger.error('Delete class error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error deleting class',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Delete class' });
   }
 };
 

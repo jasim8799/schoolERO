@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Section = require('../models/Section.js');
 const Class = require('../models/Class.js');
 const School = require('../models/School.js');
@@ -5,6 +6,37 @@ const AcademicSession = require('../models/AcademicSession.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
+
+const handleControllerError = (res, error, { context = 'Request', duplicateMessage } = {}) => {
+  if (error.code === 11000) {
+    return res.status(HTTP_STATUS.CONFLICT).json({
+      success: false,
+      message: duplicateMessage || 'A value with this name already exists'
+    });
+  }
+  if (error.name === 'CastError') {
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: `Invalid ID format for field: ${error.path}`
+    });
+  }
+  if (error.name === 'ValidationError') {
+    const messages = Object.values(error.errors || {})
+      .map((e) => e.message)
+      .join(', ');
+    return res.status(HTTP_STATUS.UNPROCESSABLE_ENTITY).json({
+      success: false,
+      message: `Validation failed: ${messages}`
+    });
+  }
+
+  logger.error(`${context} error:`, error.message);
+  return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+    success: false,
+    message: 'Internal server error. Please try again later.',
+    error: error.message
+  });
+};
 
 // Create Section
 const createSection = async (req, res) => {
@@ -14,12 +46,32 @@ const createSection = async (req, res) => {
     const sessionId = req.user.sessionId;
 
     // Validate required fields
-    if (!name || !classId || !schoolId || !sessionId) {
+    if (!name || !name.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Section name and classId are required, and user must have schoolId and sessionId'
+        message: 'Name is required and cannot be empty'
       });
     }
+    if (!classId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'classId is required'
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid classId format'
+      });
+    }
+    if (!schoolId || !sessionId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'User must have schoolId and sessionId'
+      });
+    }
+
+    const normalizedName = name.trim().toUpperCase();
 
     // Verify school exists
     const school = await School.findById(schoolId);
@@ -43,21 +95,21 @@ const createSection = async (req, res) => {
 
     // Check if section already exists for this class
     const existingSection = await Section.findOne({ 
-      name: name.toUpperCase(), 
+      name: normalizedName,
       classId, 
       schoolId, 
       sessionId 
     });
     if (existingSection) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Section '${name}' already exists for this class`
+        message: 'Section name already exists for this class'
       });
     }
 
     // Create section
     const newSection = await Section.create({
-      name: name.toUpperCase(),
+      name: normalizedName,
       classId,
       schoolId,
       sessionId,
@@ -84,11 +136,9 @@ const createSection = async (req, res) => {
       data: newSection
     });
   } catch (error) {
-    logger.error('Create section error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error creating section',
-      error: error.message
+    return handleControllerError(res, error, {
+      context: 'Create section',
+      duplicateMessage: 'Section name already exists for this class'
     });
   }
 };
@@ -103,7 +153,15 @@ const getAllSections = async (req, res) => {
       schoolId: req.user.schoolId._id || req.user.schoolId,
       sessionId: req.user.sessionId
     };
-    if (classId) filter.classId = classId;
+    if (classId) {
+      if (!mongoose.Types.ObjectId.isValid(classId)) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          message: 'Invalid classId format'
+        });
+      }
+      filter.classId = classId;
+    }
 
     const sections = await Section.find(filter)
       .populate('classId', 'name')
@@ -117,12 +175,7 @@ const getAllSections = async (req, res) => {
       data: sections
     });
   } catch (error) {
-    logger.error('Get sections error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving sections',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get sections' });
   }
 };
 
@@ -130,6 +183,13 @@ const getAllSections = async (req, res) => {
 const getSectionById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid section ID format'
+      });
+    }
 
     const section = await Section.findById(id)
       .populate('classId', 'name')
@@ -148,12 +208,7 @@ const getSectionById = async (req, res) => {
       data: section
     });
   } catch (error) {
-    logger.error('Get section error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error retrieving section',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Get section by ID' });
   }
 };
 
@@ -165,12 +220,21 @@ const updateSection = async (req, res) => {
     const schoolId = req.user.schoolId._id || req.user.schoolId;
     const sessionId = req.user.sessionId;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid section ID format'
+      });
+    }
+
     if (!name || !name.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Section name is required'
+        message: 'Name is required and cannot be empty'
       });
     }
+
+    const normalizedName = name.trim().toUpperCase();
 
     const section = await Section.findOne({ _id: id, schoolId, sessionId });
     if (!section) {
@@ -189,13 +253,13 @@ const updateSection = async (req, res) => {
       _id: { $ne: id }
     });
     if (duplicate) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Section '${name}' already exists for this class`
+        message: 'Section name already exists for this class'
       });
     }
 
-    section.name = name.trim().toUpperCase();
+    section.name = normalizedName;
     await section.save();
 
     logger.success(`Section updated: ${section.name}`);
@@ -205,11 +269,9 @@ const updateSection = async (req, res) => {
       data: section
     });
   } catch (error) {
-    logger.error('Update section error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error updating section',
-      error: error.message
+    return handleControllerError(res, error, {
+      context: 'Update section',
+      duplicateMessage: 'Section name already exists for this class'
     });
   }
 };
@@ -220,6 +282,13 @@ const deleteSection = async (req, res) => {
     const { id } = req.params;
     const schoolId = req.user.schoolId._id || req.user.schoolId;
     const sessionId = req.user.sessionId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid section ID format'
+      });
+    }
 
     const deleted = await Section.findOneAndDelete({
       _id: id,
@@ -240,12 +309,7 @@ const deleteSection = async (req, res) => {
       message: 'Section deleted successfully'
     });
   } catch (error) {
-    logger.error('Delete section error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error deleting section',
-      error: error.message
-    });
+    return handleControllerError(res, error, { context: 'Delete section' });
   }
 };
 
