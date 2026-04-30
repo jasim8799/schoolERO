@@ -182,6 +182,219 @@ const createHomework = async (req, res) => {
   }
 };
 
+// Get Homework by ID
+const getHomeworkById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+
+    const homework = await Homework.findOne({ _id: id, schoolId })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('subjectId', 'name')
+      .populate('createdBy', 'name');
+
+    if (!homework) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Homework not found'
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({ success: true, data: homework });
+  } catch (error) {
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error retrieving homework',
+      error: error.message
+    });
+  }
+};
+
+// Update Homework
+const updateHomework = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, schoolId, _id: userId } = req.user;
+    const {
+      title,
+      description,
+      topic,
+      chapter,
+      classId,
+      sectionId,
+      subjectId,
+      dueDate,
+      attachments
+    } = req.body;
+
+    // Only TEACHER (own), PRINCIPAL, OPERATOR can update
+    if (![USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR]
+        .includes(role)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Forbidden'
+      });
+    }
+
+    const homework = await Homework.findOne({ _id: id, schoolId });
+    if (!homework) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Homework not found'
+      });
+    }
+
+    // Teachers can only edit their own homework
+    if (role === USER_ROLES.TEACHER &&
+        homework.createdBy.toString() !== userId.toString()) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'You can only edit your own homework'
+      });
+    }
+
+    // Build update object — only update fields that were provided
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (topic !== undefined) updates.topic = topic;
+    if (chapter !== undefined) updates.chapter = chapter;
+    if (dueDate !== undefined) updates.dueDate = dueDate;
+    if (attachments !== undefined) updates.attachments = attachments;
+
+    // If classId is changing, validate it
+    if (classId !== undefined && classId !== homework.classId.toString()) {
+      const classData = await Class.findOne({
+        _id: classId,
+        schoolId,
+        sessionId: homework.sessionId
+      });
+      if (!classData) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({
+          success: false,
+          message: 'Class not found'
+        });
+      }
+      updates.classId = classId;
+    }
+
+    // If subjectId is changing, validate it
+    if (subjectId !== undefined && subjectId !== homework.subjectId.toString()) {
+      const targetClassId = updates.classId || homework.classId;
+      const subject = await Subject.findOne({
+        _id: subjectId,
+        classId: targetClassId,
+        schoolId,
+        sessionId: homework.sessionId
+      });
+      if (!subject) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({
+          success: false,
+          message: 'Subject not found or does not belong to the specified class'
+        });
+      }
+      updates.subjectId = subjectId;
+    }
+
+    // sectionId is optional — allow null to clear it
+    if (sectionId !== undefined) {
+      if (sectionId === null || sectionId === '') {
+        updates.sectionId = null;
+      } else {
+        const targetClassId = updates.classId || homework.classId;
+        const section = await Section.findOne({
+          _id: sectionId,
+          classId: targetClassId,
+          schoolId,
+          sessionId: homework.sessionId
+        });
+        if (!section) {
+          return res.status(HTTP_STATUS.NOT_FOUND).json({
+            success: false,
+            message: 'Section not found'
+          });
+        }
+        updates.sectionId = sectionId;
+      }
+    }
+
+    const updated = await Homework.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    )
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('subjectId', 'name')
+      .populate('createdBy', 'name');
+
+    _audit('HOMEWORK_UPDATED', 'HOMEWORK', id,
+      `Homework "${updated.title}" updated`, {}, req);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Homework updated successfully',
+      data: updated
+    });
+  } catch (error) {
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating homework',
+      error: error.message
+    });
+  }
+};
+
+// Delete Homework
+const deleteHomework = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, schoolId, _id: userId } = req.user;
+
+    if (![USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR]
+        .includes(role)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Forbidden'
+      });
+    }
+
+    const homework = await Homework.findOne({ _id: id, schoolId });
+    if (!homework) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Homework not found'
+      });
+    }
+
+    // Teachers can only delete their own homework
+    if (role === USER_ROLES.TEACHER &&
+        homework.createdBy.toString() !== userId.toString()) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'You can only delete your own homework'
+      });
+    }
+
+    await Homework.findByIdAndDelete(id);
+
+    _audit('HOMEWORK_DELETED', 'HOMEWORK', id,
+      `Homework "${homework.title}" deleted`, {}, req);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Homework deleted successfully'
+    });
+  } catch (error) {
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error deleting homework',
+      error: error.message
+    });
+  }
+};
+
 // Get Homework by Class
 const getHomeworkByClass = async (req, res) => {
   try {
@@ -403,6 +616,9 @@ const getHomeworkForStudent = async (req, res) => {
 
 module.exports = {
   createHomework,
+  getHomeworkById,
+  updateHomework,
+  deleteHomework,
   getHomeworkByClass,
   getHomeworkForStudent
 };

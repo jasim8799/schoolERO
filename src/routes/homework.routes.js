@@ -3,7 +3,14 @@ const { authenticate } = require('../middlewares/auth.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
 const { requireMinRole } = require('../middlewares/role.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
-const { createHomework, getHomeworkByClass, getHomeworkForStudent } = require('../controllers/homework.controller.js');
+const {
+  createHomework,
+  getHomeworkById,
+  updateHomework,
+  deleteHomework,
+  getHomeworkByClass,
+  getHomeworkForStudent
+} = require('../controllers/homework.controller.js');
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
@@ -20,5 +27,14 @@ router.get('/class', requireMinRole(USER_ROLES.TEACHER), getHomeworkByClass);
 
 // GET /api/homework/student/me - Get homework for student/parent
 router.get('/student/me', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), getHomeworkForStudent);
+
+// GET /api/homework/:id
+router.get('/:id', requireMinRole(USER_ROLES.TEACHER), getHomeworkById);
+
+// PATCH /api/homework/:id
+router.patch('/:id', requireMinRole(USER_ROLES.TEACHER), updateHomework);
+
+// DELETE /api/homework/:id
+router.delete('/:id', requireMinRole(USER_ROLES.TEACHER), deleteHomework);
 
 module.exports = router;
