@@ -64,7 +64,7 @@ const _safeDate = (value) => {
 
 const issueTC = async (req, res) => {
   try {
-    const { studentId, reason, issueDate } = req.body;
+    const { studentId, reason, issueDate, affiliationBody, affiliationNo } = req.body;
     const { role, schoolId } = req.user;
 
     if (!studentId) {
@@ -93,9 +93,11 @@ const issueTC = async (req, res) => {
       return res.status(400).json({ message: 'Student is not active' });
     }
 
-    // Generate unique tcNumber school-wise
+    // Generate readable tcNumber school-wise
     const count = await TC.countDocuments({ schoolId });
-    const tcNumber = `TC-${schoolId}-${count + 1}`;
+    const year = new Date().getFullYear();
+    const seq = String(count + 1).padStart(4, '0');
+    const tcNumber = `TC/${year}/${seq}`;
 
     const tc = await TC.create({
       studentId,
@@ -103,6 +105,8 @@ const issueTC = async (req, res) => {
       reason,
       issueDate,
       tcNumber,
+      affiliationBody: affiliationBody || null,
+      affiliationNo: affiliationNo || null,
       schoolId,
       sessionId: student.sessionId,
       issuedBy: req.user._id || req.user.userId

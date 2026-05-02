@@ -24,6 +24,14 @@ const TCSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  affiliationBody: {
+    type: String,
+    default: null
+  },
+  affiliationNo: {
+    type: String,
+    default: null
+  },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AcademicSession',
