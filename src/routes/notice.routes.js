@@ -9,6 +9,7 @@ const {
   getParentNotices,
   getTeacherNotices,
   deleteNotice,
+  updateNotice,
 } = require('../controllers/notice.controller');
 const { USER_ROLES } = require('../config/constants');
 
@@ -53,6 +54,14 @@ router.get(
   enforceSchoolIsolation,
   requireRole(USER_ROLES.TEACHER),
   getTeacherNotices
+);
+
+router.patch(
+  '/:id',
+  authenticate,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.TEACHER),
+  updateNotice
 );
 
 router.delete(
