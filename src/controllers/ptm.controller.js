@@ -331,9 +331,80 @@ const addMeetingNotes = async (req, res) => {
   }
 };
 
+const updatePtm = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId, sessionId } = req.user;
+    const {
+      title, description, date, startTime, endTime,
+      teacherId, classId, maxSlots, agendaPoints
+    } = req.body;
+
+    const updates = {};
+    if (title       !== undefined) updates.title       = title;
+    if (description !== undefined) updates.description = description;
+    if (date        !== undefined) updates.date        = new Date(date);
+    if (startTime   !== undefined) updates.startTime   = startTime;
+    if (endTime     !== undefined) updates.endTime     = endTime;
+    if (teacherId   !== undefined) updates.teacherId   = teacherId;
+    if (classId     !== undefined) updates.classId     = classId || null;
+    if (maxSlots    !== undefined) updates.maxSlots    = maxSlots;
+    if (agendaPoints!== undefined) {
+      updates.agendaPoints = Array.isArray(agendaPoints)
+        ? agendaPoints : [];
+    }
+
+    const ptm = await Ptm.findOneAndUpdate(
+      { _id: id, schoolId, ..._sessionFilter(sessionId) },
+      updates,
+      { new: true, runValidators: true }
+    )
+      .populate({ path: 'teacherId', select: 'userId',
+          populate: { path: 'userId', select: 'name' } })
+      .populate('classId', 'name');
+
+    if (!ptm) return res.status(404).json({
+      success: false, message: 'PTM not found' });
+
+    _audit('PTM_UPDATED', 'PTM', id,
+      `PTM "${ptm.title}" updated`, {}, req);
+
+    return res.json({ success: true, data: ptm });
+  } catch (err) {
+    return res.status(500).json({
+      success: false, message: err.message });
+  }
+};
+
+const deletePtm = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const ptm = await Ptm.findOneAndDelete({
+      _id: id, schoolId, ..._sessionFilter(sessionId)
+    });
+    if (!ptm) return res.status(404).json({
+      success: false, message: 'PTM not found' });
+
+    // Delete all bookings for this PTM
+    await PtmBooking.deleteMany({ ptmId: id });
+
+    _audit('PTM_DELETED', 'PTM', id,
+      `PTM "${ptm.title}" deleted`, {}, req);
+
+    return res.json({ success: true,
+      message: 'PTM deleted successfully' });
+  } catch (err) {
+    return res.status(500).json({
+      success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createPtm, getPtms, bookPtm,
   getMyBookings, getPtmBookings,
   updatePtmStatus, cancelBooking,
   markAttendance, addMeetingNotes,
+  updatePtm, deletePtm,
 };

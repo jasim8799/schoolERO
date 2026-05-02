@@ -258,6 +258,42 @@ const getTeachersForStudent = async (req, res) => {
   }
 };
 
+const deleteQuestion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId, _id: userId, role, sessionId } = req.user;
+
+    const filter = { _id: id, schoolId, ..._sessionFilter(sessionId) };
+
+    // Teachers can only delete questions assigned to them
+    if (role === 'TEACHER') {
+      const teacher = await Teacher.findOne({ userId, schoolId })
+        .select('_id').lean();
+      if (!teacher) {
+        return res.status(403).json({
+          success: false, message: 'Forbidden' });
+      }
+      filter.teacherId = teacher._id;
+    }
+    // PRINCIPAL and OPERATOR can delete any question in their school
+
+    const question = await Question.findOneAndDelete(filter);
+    if (!question) {
+      return res.status(404).json({
+        success: false, message: 'Question not found' });
+    }
+
+    _audit('QUESTION_DELETED', 'QUESTION', id,
+      `Question deleted`, {}, req);
+
+    return res.json({ success: true,
+      message: 'Question deleted successfully' });
+  } catch (err) {
+    return res.status(500).json({
+      success: false, message: err.message });
+  }
+};
+
 module.exports = {
   askQuestion,
   getMyQuestions,
@@ -266,4 +302,5 @@ module.exports = {
   getAllQuestions,
   getSubjectsForStudent,
   getTeachersForStudent,
+  deleteQuestion,
 };

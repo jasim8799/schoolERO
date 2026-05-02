@@ -7,6 +7,7 @@ const {
   getMyBookings, getPtmBookings,
   updatePtmStatus, cancelBooking,
   markAttendance, addMeetingNotes,
+  updatePtm, deletePtm,
 } = require('../controllers/ptm.controller');
 const { USER_ROLES } = require('../config/constants');
 const router = express.Router();
@@ -36,6 +37,16 @@ router.get('/:ptmId/bookings',
   authenticate, enforceSchoolIsolation,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.TEACHER),
   getPtmBookings);
+
+router.patch('/:id',
+  authenticate, enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  updatePtm);
+
+router.delete('/:id',
+  authenticate, enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  deletePtm);
 
 router.patch('/:id/status',
   authenticate, enforceSchoolIsolation,
