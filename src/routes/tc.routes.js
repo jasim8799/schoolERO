@@ -10,6 +10,18 @@ const router = express.Router();
 router.get('/students-with-tc', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getStudentsWithTC);
 router.post('/issue', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), issueTC);
 router.get('/student/:studentId', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.STUDENT, USER_ROLES.PARENT), getStudentTC);
-router.get('/student/:studentId/pdf', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.STUDENT, USER_ROLES.PARENT), downloadTCPDF);
+router.get('/student/:studentId/pdf',
+	// Allow token via query param for browser direct download
+	(req, res, next) => {
+		if (!req.headers.authorization && req.query.token) {
+			req.headers.authorization = `Bearer ${req.query.token}`;
+		}
+		next();
+	},
+	authenticate,
+	enforceSchoolIsolation,
+	requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.STUDENT, USER_ROLES.PARENT),
+	downloadTCPDF,
+);
 
 module.exports = router;
