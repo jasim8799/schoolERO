@@ -169,7 +169,7 @@ const deleteVideo = async (req, res) => {
     }
 
     await video.deleteOne();
-    _audit('VIDEO_DELETED', 'VIDEO', id,
+    _audit('VIDEO_DELETED', 'VIDEO', req.params.id,
       `Video deleted`, {}, req);
     res.json({ success: true, message: 'Video deleted successfully' });
   } catch (error) {
@@ -180,4 +180,78 @@ const deleteVideo = async (req, res) => {
   }
 };
 
-module.exports = { createVideo, getVideos, deleteVideo };
+const updateVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, schoolId } = req.user;
+
+    const video = await Video.findOne({ _id: id, schoolId });
+    if (!video) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'Video not found',
+      });
+    }
+
+    // Teachers can only edit their own videos
+    if (role === 'TEACHER') {
+      const userId = req.user._id || req.user.userId;
+      if (video.createdBy.toString() !== userId.toString()) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'You can only edit your own videos',
+        });
+      }
+    }
+
+    const {
+      title, description, topic, chapter, classId, subjectId,
+      videoUrl, videoType, thumbnailUrl, duration, isFree, visibility
+    } = req.body;
+
+    if (title !== undefined && !title.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false, message: 'Title cannot be empty'
+      });
+    }
+
+    const updates = {};
+    if (title !== undefined) updates.title = title.trim();
+    if (description !== undefined) updates.description = description;
+    if (topic !== undefined) updates.topic = topic;
+    if (chapter !== undefined) updates.chapter = chapter || null;
+    if (classId !== undefined) updates.classId = classId;
+    if (subjectId !== undefined) updates.subjectId = subjectId;
+    if (videoUrl !== undefined) updates.videoUrl = videoUrl;
+    if (videoType !== undefined) updates.videoType = videoType;
+    if (thumbnailUrl !== undefined) updates.thumbnailUrl = thumbnailUrl || null;
+    if (duration !== undefined) updates.duration = duration || null;
+    if (isFree !== undefined) updates.isFree = isFree;
+    if (visibility !== undefined) updates.visibility = visibility;
+
+    const updated = await Video.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    )
+      .populate('classId', 'name')
+      .populate('subjectId', 'name')
+      .populate('createdBy', 'name');
+
+    _audit('VIDEO_UPDATED', 'VIDEO', id,
+      `Video "${updated.title}" updated`, {}, req);
+
+    res.json({
+      success: true,
+      data: updated,
+      message: 'Video updated successfully',
+    });
+  } catch (error) {
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+module.exports = { createVideo, getVideos, deleteVideo, updateVideo };
