@@ -45,9 +45,9 @@ exports.getAutomations = async (req, res) => {
     const schoolId = req.user?.schoolId;
     if (!schoolId) {
       console.error('[getAutomations] NO schoolId in req.user!');
-      return res.status(400).json({
+      return res.status(401).json({
         success: false,
-        message: 'No school context - schoolId missing from token'
+        message: 'No school context - please log in again'
       });
     }
 
@@ -180,7 +180,20 @@ exports.updateAutomation = async (req, res) => {
     if (!rule) return res.status(404).json({ success: false, message: 'Rule not found' });
     res.json({ success: true, data: rule });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map((e) => e.message);
+      return res.status(422).json({
+        success: false,
+        message: `Validation failed: ${errors.join(', ')}`,
+      });
+    }
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid rule ID format',
+      });
+    }
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -203,6 +216,12 @@ exports.deleteAutomation = async (req, res) => {
       `Automation rule deleted`, {}, req);
     res.json({ success: true, message: 'Automation rule deleted' });
   } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid rule ID format',
+      });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 };
