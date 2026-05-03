@@ -3,7 +3,7 @@ const {
   setupSalaryProfile, getSalaryProfile, calculateSalary,
   getMonthlySalaries, paySalary, getSalarySlip, getSalarySlipPdf,
   getAllStaffList, getStaffSlipAdmin, createAdvance, getAdvances, getMyAdvances, getStaffSalaryHistory,
-  payAdvance, clearAdvance,
+  payAdvance, clearAdvance, deleteStaffSalaryCalc,
 } = require('../controllers/salary.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
@@ -40,6 +40,13 @@ router.post('/advance', requireRole('PRINCIPAL', 'OPERATOR'), createAdvance);
 router.get('/advances', requireRole('PRINCIPAL', 'OPERATOR'), getAdvances);
 router.post('/advance/pay',   requireRole('PRINCIPAL', 'OPERATOR'), payAdvance);
 router.post('/advance/clear', requireRole('PRINCIPAL', 'OPERATOR'), clearAdvance);
+
+// Delete a salary calculation (to correct bad ₹0 records)
+router.delete(
+  '/calculation/:calcId',
+  requireRole('PRINCIPAL', 'OPERATOR'),
+  deleteStaffSalaryCalc
+);
 
 // Admin view any staff slip
 router.get('/slip/:staffId/:month', requireRole('PRINCIPAL', 'OPERATOR'), getStaffSlipAdmin);

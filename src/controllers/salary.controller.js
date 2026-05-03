@@ -905,6 +905,69 @@ const getAdvances = async (req, res) => {
   }
 };
 
+// Delete a salary calculation (admin only — for correcting bad ₹0 records)
+const deleteStaffSalaryCalc = async (req, res) => {
+  try {
+    const { calcId } = req.params;
+    const { schoolId } = req.user;
+
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(calcId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid calculation ID format',
+      });
+    }
+
+    // Find the calculation and verify it belongs to this school
+    const calc = await SalaryCalculation.findOne({
+      _id: calcId,
+      schoolId,
+    });
+
+    if (!calc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Salary calculation not found',
+      });
+    }
+
+    // Check if it has a payment — if paid, require force flag
+    const payment = await SalaryPayment.findOne({
+      salaryCalculationId: calcId,
+    }).lean();
+
+    if (payment && !req.query.force) {
+      return res.status(409).json({
+        success: false,
+        message: 'This calculation has a payment record. Add ?force=true to delete both.',
+        hasPaid: true,
+        amountPaid: payment.amountPaid,
+      });
+    }
+
+    // Delete payment first (if exists)
+    if (payment) {
+      await SalaryPayment.deleteOne({ salaryCalculationId: calcId });
+    }
+
+    // Delete the calculation
+    await SalaryCalculation.deleteOne({ _id: calcId });
+
+    res.json({
+      success: true,
+      message: `Salary calculation deleted${payment ? ' along with its payment record' : ''}.`,
+      deletedPayment: !!payment,
+    });
+  } catch (err) {
+    console.error('[deleteStaffSalaryCalc] Error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete salary calculation. Please try again.',
+    });
+  }
+};
+
 // Get advances for the currently logged-in staff member
 const getMyAdvances = async (req, res) => {
   try {
@@ -939,4 +1002,5 @@ module.exports = {
   getMyAdvances,
   payAdvance,
   clearAdvance,
+  deleteStaffSalaryCalc,
 };
