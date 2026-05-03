@@ -175,7 +175,95 @@ const getStudentTransport = async (req, res) => {
   }
 };
 
+const getAllAssignments = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const assignments = await StudentTransport.find({
+      schoolId,
+      status: 'ACTIVE'
+    })
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber classId',
+        populate: { path: 'classId', select: 'name' }
+      })
+      .populate('routeId', 'name stops monthlyFee')
+      .populate('vehicleId', 'vehicleNumber driverName driverContact')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: assignments });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const removeStudentTransport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+
+    const assignment = await StudentTransport.findOne({ _id: id, schoolId });
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Assignment not found' });
+    }
+
+    assignment.status = 'INACTIVE';
+    await assignment.save();
+
+    res.json({ success: true, message: 'Student removed from transport' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const reassignStudentTransport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { routeId } = req.body;
+    const { schoolId } = req.user;
+
+    if (!routeId) {
+      return res.status(400).json({ success: false, message: 'routeId is required' });
+    }
+
+    const assignment = await StudentTransport.findOne({
+      _id: id,
+      schoolId,
+      status: 'ACTIVE'
+    });
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Active assignment not found' });
+    }
+
+    const route = await Route.findById(routeId).populate('vehicleId');
+    if (!route) {
+      return res.status(404).json({ success: false, message: 'Route not found' });
+    }
+
+    assignment.routeId = routeId;
+    assignment.vehicleId = route.vehicleId._id;
+    await assignment.save();
+
+    const updated = await StudentTransport.findById(id)
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber'
+      })
+      .populate('routeId', 'name stops monthlyFee')
+      .populate('vehicleId', 'vehicleNumber driverName')
+      .lean();
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   assignTransport,
   getStudentTransport,
+  getAllAssignments,
+  removeStudentTransport,
+  reassignStudentTransport,
 };
