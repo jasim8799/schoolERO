@@ -22,8 +22,8 @@ router.post('/setup', requireRole('PRINCIPAL', 'OPERATOR'), setupSalaryProfile);
 router.get('/staff-list', requireRole('PRINCIPAL', 'OPERATOR'), getAllStaffList);
 
 // Get salary profile - Principal, Operator, and staff (with restrictions)
-router.get('/staff/:id', requireRole('PRINCIPAL', 'OPERATOR', 'TEACHER'), getSalaryProfile);
 router.get('/staff/:staffId/history', requireRole('PRINCIPAL', 'OPERATOR'), getStaffSalaryHistory);
+router.get('/staff/:id', requireRole('PRINCIPAL', 'OPERATOR', 'TEACHER'), getSalaryProfile);
 
 // Calculate salary - Only Principal and Operator
 router.post('/calculate', requireRole('PRINCIPAL', 'OPERATOR'), calculateSalary);

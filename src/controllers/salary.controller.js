@@ -197,7 +197,10 @@ const calculateSalary = async (req, res) => {
         ..._sessionFilter(sessionId),
       });
       if (existing) {
-        return res.status(409).json({ message: 'Salary calculation already exists for this staff and month' });
+        return res.status(409).json({
+          success: false,
+          message: `Salary already calculated for ${staff.name} for ${month}. Pay it from the dashboard or use a different month.`,
+        });
       }
 
       const salaryCalculation = await _calcForStaff({
@@ -344,7 +347,10 @@ const paySalary = async (req, res) => {
 
     // Check if already paid
     if (salaryCalculation.status === 'Paid') {
-      return res.status(409).json({ message: 'Salary has already been paid' });
+      return res.status(409).json({
+        success: false,
+        message: `Salary for ${salaryCalculation.staffId?.name || 'this staff'} for ${salaryCalculation.month} has already been paid`,
+      });
     }
 
     // Check if payment already exists
@@ -498,6 +504,24 @@ const getStaffSalaryHistory = async (req, res) => {
     const { staffId } = req.params;
     const { schoolId, sessionId } = req.user;
 
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(staffId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid staff ID format',
+      });
+    }
+
+    const staff = await User.findOne({ _id: staffId, schoolId })
+      .select('_id name')
+      .lean();
+    if (!staff) {
+      return res.status(404).json({
+        success: false,
+        message: 'Staff member not found in this school',
+      });
+    }
+
     const calculations = await SalaryCalculation.find({
       staffId,
       schoolId,
@@ -507,13 +531,24 @@ const getStaffSalaryHistory = async (req, res) => {
       .lean();
 
     const withPayments = await Promise.all(calculations.map(async (calc) => {
-      const payment = await SalaryPayment.findOne({ salaryCalculationId: calc._id }).lean();
-      return { ...calc, payment };
+      try {
+        const payment = await SalaryPayment.findOne({
+          salaryCalculationId: calc._id,
+        }).lean();
+        return { ...calc, payment: payment || null };
+      } catch (payErr) {
+        console.error('[getStaffSalaryHistory] payment lookup failed:', payErr.message);
+        return { ...calc, payment: null };
+      }
     }));
 
     res.json({ success: true, data: withPayments });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[getStaffSalaryHistory] Error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to load salary history. Please try again.',
+    });
   }
 };
 
@@ -643,12 +678,43 @@ const getAllStaffList = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const staffRoles = [USER_ROLES.TEACHER, USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, 'PEON'];
-    const users = await User.find({ schoolId, role: { $in: staffRoles }, status: USER_STATUS.ACTIVE })
+    const users = await User.find({
+      schoolId,
+      role: { $in: staffRoles },
+      status: USER_STATUS.ACTIVE,
+    })
       .select('name email mobile role')
-      .sort({ role: 1, name: 1 });
-    res.json({ data: users });
+      .sort({ role: 1, name: 1 })
+      .lean();
+
+    const enriched = await Promise.all(users.map(async (user) => {
+      try {
+        const profile = await SalaryProfile.findOne({
+          userId: user._id,
+          schoolId,
+        }).select('baseSalary').lean();
+        return {
+          ...user,
+          baseSalary: profile ? profile.baseSalary : null,
+          hasSalaryProfile: !!profile,
+        };
+      } catch (profileErr) {
+        console.error('[getAllStaffList] profile lookup failed for', user._id, profileErr.message);
+        return {
+          ...user,
+          baseSalary: null,
+          hasSalaryProfile: false,
+        };
+      }
+    }));
+
+    res.json({ data: enriched });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[getAllStaffList] Error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to load staff list. Please try again.',
+    });
   }
 };
 
