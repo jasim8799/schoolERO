@@ -300,11 +300,34 @@ const getMonthlySalaries = async (req, res) => {
     // Get salary calculations for the month
     const salaryCalculations = await SalaryCalculation.find({ schoolId, month, ..._sessionFilter(sessionId) })
       .populate('staffId', 'name email mobile role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const enriched = await Promise.all(salaryCalculations.map(async (calc) => {
+      try {
+        const payment = await SalaryPayment.findOne({
+          salaryCalculationId: calc._id,
+          ..._sessionFilter(sessionId),
+        }).lean();
+        return {
+          ...calc,
+          amountPaid: payment ? payment.amountPaid : null,
+          paymentMode: payment ? payment.paymentMode : null,
+          paymentDate: payment ? payment.paymentDate : null,
+        };
+      } catch (_) {
+        return {
+          ...calc,
+          amountPaid: null,
+          paymentMode: null,
+          paymentDate: null,
+        };
+      }
+    }));
 
     res.json({
       month,
-      salaryCalculations
+      salaryCalculations: enriched,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
