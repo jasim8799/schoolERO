@@ -78,8 +78,41 @@ const updateRoom = async (req, res) => {
   }
 };
 
+const deleteRoom = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+
+    // Check for active student assignments in this room
+    const StudentHostel = require('../models/StudentHostel');
+    const activeCount = await StudentHostel.countDocuments({
+      roomId: id, schoolId, status: 'ACTIVE'
+    });
+    if (activeCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Cannot delete room — ${activeCount} student(s) assigned. Remove them first.`
+      });
+    }
+
+    const room = await Room.findOneAndDelete({ _id: id, schoolId });
+    if (!room) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
+    }
+
+    // Restore available beds count on hostel (optional: hostel capacity tracking)
+    return res.json({ success: true, message: 'Room deleted successfully' });
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid room ID' });
+    }
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createRoom,
   getRooms,
-  updateRoom
+  updateRoom,
+  deleteRoom
 };

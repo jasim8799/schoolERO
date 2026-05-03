@@ -169,8 +169,99 @@ const getAllStudentHostels = async (req, res) => {
   }
 };
 
+const removeStudentHostel = async (req, res) => {
+  try {
+    const { id } = req.params; // assignment _id
+    const { schoolId } = req.user;
+
+    const assignment = await StudentHostel.findOne({
+      _id: id, schoolId, status: 'ACTIVE'
+    });
+    if (!assignment) {
+      return res.status(404).json({
+        success: false, message: 'Active hostel assignment not found'
+      });
+    }
+
+    // Mark as INACTIVE
+    assignment.status = 'INACTIVE';
+    await assignment.save();
+
+    // Restore available bed count
+    await Room.findByIdAndUpdate(assignment.roomId, {
+      $inc: { availableBeds: 1 }
+    });
+
+    return res.json({
+      success: true, message: 'Student removed from hostel successfully'
+    });
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        success: false, message: 'Invalid assignment ID'
+      });
+    }
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const reassignHostel = async (req, res) => {
+  try {
+    const { id } = req.params; // assignment _id (current active one)
+    const { hostelId, roomId, bedNumber } = req.body;
+    const { schoolId } = req.user;
+
+    const assignment = await StudentHostel.findOne({
+      _id: id, schoolId, status: 'ACTIVE'
+    });
+    if (!assignment) {
+      return res.status(404).json({
+        success: false, message: 'Active assignment not found'
+      });
+    }
+
+    // Restore old room bed
+    await Room.findByIdAndUpdate(assignment.roomId, {
+      $inc: { availableBeds: 1 }
+    });
+
+    // Check new room availability
+    const newRoom = await Room.findOne({ _id: roomId, schoolId });
+    if (!newRoom || newRoom.availableBeds <= 0) {
+      // Undo the restore if new room is full
+      await Room.findByIdAndUpdate(assignment.roomId, {
+        $inc: { availableBeds: -1 }
+      });
+      return res.status(409).json({
+        success: false, message: 'No available beds in the selected room'
+      });
+    }
+
+    // Update assignment
+    assignment.hostelId = hostelId;
+    assignment.roomId = roomId;
+    assignment.bedNumber = bedNumber;
+    await assignment.save();
+
+    // Deduct from new room
+    await Room.findByIdAndUpdate(roomId, {
+      $inc: { availableBeds: -1 }
+    });
+
+    const updated = await StudentHostel.findById(assignment._id)
+      .populate('hostelId', 'name monthlyFee')
+      .populate('roomId', 'roomNumber totalBeds availableBeds');
+
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   assignHostel,
   getStudentHostel,
-  getAllStudentHostels
+  getAllStudentHostels,
+  removeStudentHostel,
+  reassignHostel,
 };
