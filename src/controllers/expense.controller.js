@@ -318,7 +318,11 @@ const updateExpense = async (req, res) => {
       expense.amount = parsedAmount;
     }
 
-    const validCategories = ['Electricity', 'Salary', 'Repair', 'Hostel', 'Transport', 'Misc'];
+    const validCategories = [
+      'Electricity', 'Salary', 'Repair', 'Hostel', 'Transport',
+      'Food & Canteen', 'Stationery', 'Cleaning', 'Security',
+      'IT & Equipment', 'Medical', 'Events & Functions', 'Misc'
+    ];
     if (category !== undefined) {
       if (!validCategories.includes(category)) {
         return res.status(400).json({
