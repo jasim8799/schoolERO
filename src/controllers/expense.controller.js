@@ -70,15 +70,18 @@ const createExpense = async (req, res) => {
       return res.status(400).json({ message: 'No active academic session found' });
     }
 
-    // Handle file upload
+    // Handle bill attachment — accepts either multipart file OR base64 dataUrl
     let billAttachment = null;
     if (req.file) {
+      // Multipart upload (mobile native)
       billAttachment = req.file.filename;
-      console.log('[createExpense] File saved:', billAttachment,
-        'size:', req.file.size, 'mime:', req.file.mimetype);
+      console.log('[createExpense] File saved via multipart:', billAttachment);
+    } else if (req.body.billAttachment && typeof req.body.billAttachment === 'string') {
+      // Base64 data URL (web + mobile via file_picker)
+      billAttachment = req.body.billAttachment;
+      console.log('[createExpense] Bill received as base64, length:', billAttachment.length);
     } else {
-      console.log('[createExpense] No file in request. Content-Type:',
-        req.headers['content-type']);
+      console.log('[createExpense] No bill attachment in request');
     }
 
     // Create expense
