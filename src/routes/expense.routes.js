@@ -1,5 +1,5 @@
 const express = require('express');
-const { createExpense, getExpenses, getExpenseSummary, upload } = require('../controllers/expense.controller.js');
+const { createExpense, getExpenses, getExpenseSummary, getExpenseById, updateExpense, upload } = require('../controllers/expense.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
@@ -17,5 +17,7 @@ router.use(requireRole('PRINCIPAL', 'OPERATOR'));
 router.post('/', upload.single('billAttachment'), createExpense);
 router.get('/', getExpenses);
 router.get('/summary', getExpenseSummary);
+router.get('/:id', getExpenseById);
+router.put('/:id', updateExpense);
 
 module.exports = router;

@@ -204,12 +204,11 @@ const getExpenseSummary = async (req, res) => {
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(year, monthNum, 1);
 
-    // MongoDB aggregation pipeline
+    // MongoDB aggregation pipeline — no sessionId filter so totals match the list
     const pipeline = [
       {
         $match: {
           schoolId,
-          sessionId: activeSession._id,
           date: {
             $gte: startDate,
             $lt: endDate
@@ -245,10 +244,159 @@ const getExpenseSummary = async (req, res) => {
   }
 };
 
+// Get single expense by ID
+const getExpenseById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+
+    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid expense ID format'
+      });
+    }
+
+    const expense = await Expense.findOne({ _id: id, schoolId })
+      .populate('createdBy', 'name')
+      .populate('sessionId', 'name');
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found'
+      });
+    }
+
+    res.json({ success: true, expense });
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid expense ID' });
+    }
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Update expense (Principal only)
+const updateExpense = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId, role } = req.user;
+
+    if (role !== 'PRINCIPAL') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only principals can update expense records'
+      });
+    }
+
+    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid expense ID format'
+      });
+    }
+
+    const expense = await Expense.findOne({ _id: id, schoolId });
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found or does not belong to this school'
+      });
+    }
+
+    const { category, amount, date, paymentMode, description } = req.body;
+
+    if (amount !== undefined) {
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Amount must be a number greater than 0'
+        });
+      }
+      expense.amount = parsedAmount;
+    }
+
+    const validCategories = ['Electricity', 'Salary', 'Repair', 'Hostel', 'Transport', 'Misc'];
+    if (category !== undefined) {
+      if (!validCategories.includes(category)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid category. Must be one of: ${validCategories.join(', ')}`
+        });
+      }
+      expense.category = category;
+    }
+
+    if (paymentMode !== undefined) {
+      if (!['Cash', 'Bank'].includes(paymentMode)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Payment mode must be Cash or Bank'
+        });
+      }
+      expense.paymentMode = paymentMode;
+    }
+
+    if (description !== undefined) {
+      if (typeof description !== 'string' || description.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Description cannot be empty'
+        });
+      }
+      expense.description = description.trim();
+    }
+
+    if (date !== undefined) {
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format'
+        });
+      }
+      expense.date = parsedDate;
+    }
+
+    await expense.save();
+    await expense.populate('createdBy', 'name');
+    await expense.populate('sessionId', 'name');
+
+    res.json({
+      success: true,
+      message: 'Expense updated successfully',
+      expense
+    });
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid expense ID'
+      });
+    }
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
+    console.error('[updateExpense] error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating expense'
+    });
+  }
+};
+
 // Export functions and multer middleware
 module.exports = {
   createExpense,
   getExpenses,
   getExpenseSummary,
+  getExpenseById,
+  updateExpense,
   upload
 };
