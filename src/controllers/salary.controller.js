@@ -200,6 +200,8 @@ const calculateSalary = async (req, res) => {
         return res.status(409).json({
           success: false,
           message: `Salary already calculated for ${staff.name} for ${month}. Pay it from the dashboard or use a different month.`,
+          existingCalcId: existing._id.toString(),
+          existingStatus: existing.status,
         });
       }
 
