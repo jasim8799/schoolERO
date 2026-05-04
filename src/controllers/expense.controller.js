@@ -24,14 +24,20 @@ const storage = multer.diskStorage({
 
 // File filter for PDF and images
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /pdf|jpeg|jpg|png/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const allowedExtensions = /\.(pdf|jpeg|jpg|png)$/i;
+  const allowedMimeTypes = [
+    'image/jpeg', 'image/jpg', 'image/png',
+    'application/pdf',
+    'application/octet-stream', // allow generic binary — ext check is the real guard
+  ];
+  const extOk = allowedExtensions.test(file.originalname);
+  const mimeOk = allowedMimeTypes.includes(file.mimetype);
 
-  if (mimetype && extname) {
+  if (extOk && mimeOk) {
     return cb(null, true);
   } else {
-    cb(new Error('Only PDF, JPEG, JPG, and PNG files are allowed'));
+    console.error(`[fileFilter] Rejected: ext=${path.extname(file.originalname)} mime=${file.mimetype}`);
+    cb(new Error(`Only PDF, JPEG, JPG, and PNG files are allowed. Got: ${file.mimetype}`));
   }
 };
 
@@ -68,6 +74,11 @@ const createExpense = async (req, res) => {
     let billAttachment = null;
     if (req.file) {
       billAttachment = req.file.filename;
+      console.log('[createExpense] File saved:', billAttachment,
+        'size:', req.file.size, 'mime:', req.file.mimetype);
+    } else {
+      console.log('[createExpense] No file in request. Content-Type:',
+        req.headers['content-type']);
     }
 
     // Create expense

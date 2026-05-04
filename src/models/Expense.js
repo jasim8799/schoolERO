@@ -16,7 +16,7 @@ const ExpenseSchema = new mongoose.Schema({
       'IT & Equipment',
       'Medical',
       'Events & Functions',
-      'Misc'
+      'Other'
     ],
     required: true
   },
