@@ -65,7 +65,14 @@ exports.getSchoolBills = async (req, res) => {
     const skip = (page - 1) * limit;
     const [bills, total] = await Promise.all([
       Bill.find(filter)
-        .populate('studentId', 'name rollNumber')
+        .populate({
+          path: 'studentId',
+          select: 'name rollNumber classId sectionId',
+          populate: [
+            { path: 'classId', select: 'name' },
+            { path: 'sectionId', select: 'name' }
+          ]
+        })
         .populate('sessionId', 'name')
         .sort({ createdAt: -1 })
         .skip(skip)
