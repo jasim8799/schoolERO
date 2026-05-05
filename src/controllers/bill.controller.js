@@ -256,7 +256,9 @@ exports.getBillSummary = async (req, res) => {
       totalUnpaid,
       totalPartial,
       totalPaid,
-      todayPayments
+      todayPayments,
+      allPayments,
+      monthPayments
     ] = await Promise.all([
       Bill.aggregate([
         { $match: { schoolId: safeSchoolId, status: 'UNPAID', ...sessionMatch } },
@@ -286,6 +288,25 @@ exports.getBillSummary = async (req, res) => {
         },
         { $group: { _id: null, total: { $sum: '$amount' },
           count: { $sum: 1 } } }
+      ]),
+      // Total collected all time
+      Payment.aggregate([
+        { $match: { schoolId: safeSchoolId, ...sessionMatch } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      // Current calendar month collection
+      Payment.aggregate([
+        {
+          $match: {
+            schoolId: safeSchoolId,
+            ...sessionMatch,
+            paymentDate: {
+              $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+              $lt: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1)
+            }
+          }
+        },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
       ])
     ]);
 
@@ -299,7 +320,11 @@ exports.getBillSummary = async (req, res) => {
         paidTotal: totalPaid[0]?.total || 0,
         paidCount: totalPaid[0]?.count || 0,
         collectedToday: todayPayments[0]?.total || 0,
-        paymentsToday: todayPayments[0]?.count || 0
+        paymentsToday: todayPayments[0]?.count || 0,
+        totalCollected: allPayments[0]?.total || 0,
+        totalPaymentsCount: allPayments[0]?.count || 0,
+        thisMonthCollected: monthPayments[0]?.total || 0,
+        thisMonthPaymentsCount: monthPayments[0]?.count || 0
       }
     });
   } catch (err) {
