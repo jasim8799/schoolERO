@@ -238,8 +238,19 @@ exports.payBill = async (req, res) => {
 // Dashboard summary for school
 exports.getBillSummary = async (req, res) => {
   try {
-    const { schoolId } = req.user;
-    const sessionMatch = req.user?.sessionId ? { sessionId: req.user.sessionId } : {};
+    const mongoose = require('mongoose');
+    const rawSchoolId = req.user?.schoolId;
+    const safeSchoolId = rawSchoolId?._id
+      ? new mongoose.Types.ObjectId(rawSchoolId._id.toString())
+      : new mongoose.Types.ObjectId(rawSchoolId?.toString());
+    const rawSessionId = req.user?.sessionId;
+    const sessionMatch = rawSessionId
+      ? { sessionId: new mongoose.Types.ObjectId(rawSessionId.toString()) }
+      : {};
+
+    console.log('[getBillSummary] schoolId:', safeSchoolId,
+      'sessionId:', rawSessionId,
+      'sessionMatch:', JSON.stringify(sessionMatch));
 
     const [
       totalUnpaid,
@@ -248,24 +259,24 @@ exports.getBillSummary = async (req, res) => {
       todayPayments
     ] = await Promise.all([
       Bill.aggregate([
-        { $match: { schoolId, status: 'UNPAID', ...sessionMatch } },
+        { $match: { schoolId: safeSchoolId, status: 'UNPAID', ...sessionMatch } },
         { $group: { _id: null, total: { $sum: '$dueAmount' },
           count: { $sum: 1 } } }
       ]),
       Bill.aggregate([
-        { $match: { schoolId, status: 'PARTIAL', ...sessionMatch } },
+        { $match: { schoolId: safeSchoolId, status: 'PARTIAL', ...sessionMatch } },
         { $group: { _id: null, total: { $sum: '$dueAmount' },
           count: { $sum: 1 } } }
       ]),
       Bill.aggregate([
-        { $match: { schoolId, status: 'PAID', ...sessionMatch } },
+        { $match: { schoolId: safeSchoolId, status: 'PAID', ...sessionMatch } },
         { $group: { _id: null, total: { $sum: '$totalAmount' },
           count: { $sum: 1 } } }
       ]),
       Payment.aggregate([
         {
           $match: {
-            schoolId,
+            schoolId: safeSchoolId,
             ...sessionMatch,
             paymentDate: {
               $gte: new Date(new Date().setHours(0, 0, 0, 0)),
