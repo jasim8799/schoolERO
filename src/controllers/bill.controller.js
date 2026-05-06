@@ -74,6 +74,7 @@ exports.getSchoolBills = async (req, res) => {
           ]
         })
         .populate('sessionId', 'name')
+        .populate('createdBy', 'name')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit))
@@ -81,9 +82,38 @@ exports.getSchoolBills = async (req, res) => {
       Bill.countDocuments(filter)
     ]);
 
+    // Attach paymentMode from the most recent Payment for each bill
+    const billIds = bills.map(b => b._id);
+    const latestPayments = await Payment.find(
+      { billId: { $in: billIds } },
+      { billId: 1, paymentMode: 1, collectedBy: 1 }
+    )
+      .populate('collectedBy', 'name')
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    // Build map: billId -> latest payment
+    const paymentMap = {};
+    for (const p of latestPayments) {
+      const key = p.billId.toString();
+      if (!paymentMap[key]) {
+        paymentMap[key] = p; // first = latest (sorted desc)
+      }
+    }
+
+    // Merge payment info onto each bill
+    const enrichedBills = bills.map(b => {
+      const payment = paymentMap[b._id.toString()];
+      return {
+        ...b,
+        paymentMode: payment?.paymentMode || null,
+        collectedByUser: payment?.collectedBy || b.createdBy || null,
+      };
+    });
+
     res.json({
       success: true,
-      data: bills,
+      data: enrichedBills,
       pagination: { total, page: Number(page), limit: Number(limit) }
     });
   } catch (err) {
