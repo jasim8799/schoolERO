@@ -39,7 +39,19 @@ exports.getStudentBills = async (req, res) => {
     if (billType) filter.billType = billType;
 
     const bills = await Bill.find(filter)
-      .populate('studentId', 'name rollNumber')
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber admissionNumber parentId',
+        populate: [
+          { path: 'classId', select: 'name' },
+          { path: 'sectionId', select: 'name' },
+          {
+            path: 'parentId',
+            select: 'name guardianName',
+            populate: { path: 'userId', select: 'name mobile' }
+          },
+        ],
+      })
       .populate('sessionId', 'name')
       .sort({ createdAt: -1 })
       .lean();

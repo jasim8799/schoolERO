@@ -24,8 +24,11 @@ exports.searchStudents = async (req, res) => {
   try {
     const { q } = req.query;
     const { schoolId } = req.user;
+    if (!schoolId) {
+      return res.status(400).json({ success: false, message: 'School context missing' });
+    }
 
-    if (!q || q.trim().length < 2) {
+    if (!q || q.trim().length < 1) {
       return res.json({ success: true, data: [] });
     }
 
@@ -61,6 +64,11 @@ exports.searchStudents = async (req, res) => {
       .populate('userId', 'name mobile email')
       .populate('classId', 'name')
       .populate('sectionId', 'name')
+      .populate({
+        path: 'parentId',
+        select: 'name guardianName',
+        populate: { path: 'userId', select: 'name mobile' }
+      })
       .lean();
 
     // 3. Deduplicate by _id
@@ -75,8 +83,11 @@ exports.searchStudents = async (req, res) => {
 
     res.json({ success: true, data: filtered });
   } catch (err) {
-    console.error('[FEE SEARCH ERROR]', err.message);
-    res.status(500).json({ success: false, message: err.message });
+    console.error('[FEE SEARCH ERROR]', err.message, err.stack);
+    if (err.name === 'CastError') {
+      return res.status(400).json({ success: false, message: 'Invalid ID format in search' });
+    }
+    res.status(500).json({ success: false, message: 'Search failed. Please try again.' });
   }
 };
 
@@ -144,11 +155,24 @@ exports.collectPayment = async (req, res) => {
     };
 
     const receipts = [];
+    const errors = [];
 
     for (const billId of billIds) {
-      const bill = await Bill.findOne({ _id: billId, schoolId, ...getSessionFilter(req) });
-      if (!bill) continue;
-      if (bill.status === 'PAID') continue;
+      let bill;
+      try {
+        bill = await Bill.findOne({ _id: billId, schoolId, ...getSessionFilter(req) });
+      } catch (findErr) {
+        errors.push({ billId, error: 'Bill lookup failed' });
+        continue;
+      }
+      if (!bill) {
+        errors.push({ billId, error: 'Bill not found' });
+        continue;
+      }
+      if (bill.status === 'PAID') {
+        errors.push({ billId, error: 'Already paid' });
+        continue;
+      }
 
       // Use specified amount or full due amount
       const amount = amounts?.[billId]
@@ -259,12 +283,23 @@ exports.collectPayment = async (req, res) => {
       });
     }
 
+    if (receipts.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: errors.length > 0
+          ? `No payments processed: ${errors.map(e => e.error).join(', ')}`
+          : 'No valid bills to process',
+        errors
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: `${receipts.length} payment(s) recorded successfully`,
       receipts,
       billIds: receipts.map(r => r.billId.toString()),
-      totalCollected: receipts.reduce((s, r) => s + r.amount, 0)
+      totalCollected: receipts.reduce((s, r) => s + r.amount, 0),
+      ...(errors.length > 0 ? { warnings: errors } : {})
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
