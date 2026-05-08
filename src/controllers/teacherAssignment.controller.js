@@ -303,7 +303,18 @@ const getMyTimetable = async (req, res) => {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Teacher profile not found' });
     }
 
-    const assignments = await TeacherAssignment.find({ teacherId: teacher._id, schoolId, isPublished: true, ...sessionFilter(req) })
+    // Build session match explicitly to avoid spread issues
+    const sid = req.user?.sessionId;
+    const sessionMatch = sid
+      ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
+      : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
+
+    const assignments = await TeacherAssignment.find({
+      teacherId: teacher._id,
+      schoolId,
+      isPublished: true,
+      ...sessionMatch,
+    })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('subjectId', 'name')
@@ -371,21 +382,45 @@ const getStudentClassTimetable = async (req, res) => {
       return res.status(HTTP_STATUS.OK).json({ success: true, data: [] });
     }
 
-    const query = {
+    // Build session match the same way as sessionFilter() helper
+    const sid = sessionId;
+    const sessionMatch = sid
+      ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
+      : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
+
+    // Build the base query — do NOT use plain sessionId field;
+    // use sessionMatch spread to handle ObjectId vs string mismatch.
+    const baseQuery = {
       schoolId: schoolObjectId,
-      sessionId,
       isPublished: true,
       classId,
+      ...sessionMatch,
     };
+
+    // If sectionId exists, filter by section OR no section assigned.
+    // We must use $and to combine sessionMatch.$or with sectionId.$or.
+    let finalQuery;
     if (sectionId) {
-      query.$or = [
-        { sectionId },
-        { sectionId: null },
-        { sectionId: { $exists: false } },
-      ];
+      finalQuery = {
+        ...baseQuery,
+        $and: [
+          sessionMatch,
+          {
+            $or: [
+              { sectionId },
+              { sectionId: null },
+              { sectionId: { $exists: false } },
+            ],
+          },
+        ],
+      };
+      // Remove the top-level sessionMatch $or since it's now in $and
+      delete finalQuery.$or;
+    } else {
+      finalQuery = baseQuery;
     }
 
-    const assignments = await TeacherAssignment.find(query)
+    const assignments = await TeacherAssignment.find(finalQuery)
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
@@ -587,11 +622,16 @@ const getTimetableByDate = async (req, res) => {
     }
 
     // Find published assignments for this school/session matching day-of-week
+    const sid2 = req.user?.sessionId;
+    const sessionMatch2 = sid2
+      ? { $or: [{ sessionId: sid2 }, { sessionId: null }, { sessionId: { $exists: false } }] }
+      : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
+
     const filter = {
       schoolId,
-      sessionId,
       isPublished: true,
-      day: dayName
+      day: dayName,
+      ...sessionMatch2,
     };
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
