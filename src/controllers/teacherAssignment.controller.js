@@ -179,10 +179,13 @@ const deleteAssignment = async (req, res) => {
 const getAllBySchool = async (req, res) => {
   try {
     const schoolId = req.user.schoolId;
-    const { classId, date } = req.query;
-
+    const { date } = req.query;
+    // classId intentionally NOT used as a filter here.
+    // getAllBySchool must always return ALL assignments for the school.
+    // The frontend's _applyFilter() handles per-class display filtering.
+    // Filtering here caused switching classes to show empty grid because
+    // _allAssignments only contained the previously loaded class's data.
     const filter = { schoolId, ...sessionFilter(req) };
-    if (classId) filter.classId = classId;
 
     const assignments = await TeacherAssignment.find(filter)
       .populate({ path: 'teacherId', populate: { path: 'userId', select: 'name' } })
