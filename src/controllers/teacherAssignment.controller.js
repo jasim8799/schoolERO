@@ -231,9 +231,26 @@ const getAllBySchool = async (req, res) => {
       const cid = a.classId?._id?.toString() || a.classId?.toString();
       if (!cid) continue;
       if (!(cid in classPublishMap)) {
-        classPublishMap[cid] = { published: true, weeklyRepeat: a.weeklyRepeat };
+        classPublishMap[cid] = {
+          published: true,
+          weeklyRepeat: a.weeklyRepeat,
+          totalSlots: 0,
+          publishedSlots: 0,
+        };
       }
-      if (!a.isPublished) classPublishMap[cid].published = false;
+      classPublishMap[cid].totalSlots++;
+      if (a.isPublished) {
+        classPublishMap[cid].publishedSlots++;
+      } else {
+        // Even one unpublished slot marks the class as needing re-publish
+        classPublishMap[cid].published = false;
+      }
+    }
+    // Add hasUnpublished flag: true when class has SOME published but ALSO
+    // some unpublished (i.e. new slots added after last publish).
+    for (const cid of Object.keys(classPublishMap)) {
+      const entry = classPublishMap[cid];
+      entry.hasUnpublished = entry.publishedSlots > 0 && !entry.published;
     }
 
     return res.status(200).json({
