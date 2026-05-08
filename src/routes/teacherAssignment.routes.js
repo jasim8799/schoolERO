@@ -25,10 +25,13 @@ router.post('/publish', requireMinRole(USER_ROLES.OPERATOR), publishTimetable);
 router.get('/all', requireMinRole(USER_ROLES.OPERATOR), getAllBySchool);
 router.get('/publish-status', requireMinRole(USER_ROLES.OPERATOR), getPublishStatus);
 
-// ── Holiday management (Principal/Operator only) ──────────────────────
+// ── Holiday management ────────────────────────────────────────────────
+// POST and DELETE require OPERATOR — only principal/operator can mark holidays
 router.post('/holidays', requireMinRole(USER_ROLES.OPERATOR), addHoliday);
 router.delete('/holidays', requireMinRole(USER_ROLES.OPERATOR), removeHoliday);
-router.get('/holidays', requireMinRole(USER_ROLES.OPERATOR), getHolidays);
+// GET holidays is accessible to all roles — teachers and students need
+// to know when a day is a holiday to show it in their timetable screens.
+router.get('/holidays', requireMinRole(USER_ROLES.STUDENT), getHolidays);
 
 // ── Date-based timetable (all authenticated roles) ────────────────────
 router.get('/date', requireMinRole(USER_ROLES.STUDENT), getTimetableByDate);
