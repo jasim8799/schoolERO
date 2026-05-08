@@ -313,7 +313,9 @@ const publishTimetable = async (req, res) => {
 const getMyTimetable = async (req, res) => {
   try {
     const userId = req.user.userId || req.user._id;
-    const schoolId = req.user.schoolId;
+    // schoolId may be a populated object — always extract the raw _id
+    const rawSchoolId = req.user.schoolId?._id || req.user.schoolId;
+    const schoolId = rawSchoolId;
 
     const teacher = await Teacher.findOne({ userId, schoolId });
     if (!teacher) {
@@ -328,7 +330,7 @@ const getMyTimetable = async (req, res) => {
 
     const assignments = await TeacherAssignment.find({
       teacherId: teacher._id,
-      schoolId,
+      schoolId: rawSchoolId,
       isPublished: true,
       ...sessionMatch,
     })
