@@ -56,6 +56,11 @@ const teacherAssignmentSchema = new mongoose.Schema({
   isPublished: {
     type: Boolean,
     default: false
+  },
+  weeklyRepeat: {
+    type: Boolean,
+    default: false,
+    index: true
   }
 }, {
   timestamps: true
