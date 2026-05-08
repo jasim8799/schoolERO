@@ -49,34 +49,45 @@ const createAssignment = async (req, res) => {
       sessionId,
     });
 
-    // 2) Teacher period conflict for same day + period
+    // Build session match — handles null/undefined sessionId correctly
+    const sessionMatch = sessionId
+      ? { $or: [{ sessionId }, { sessionId: null }, { sessionId: { $exists: false } }] }
+      : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
+
+    // 2) Teacher period conflict — same teacher, same day, same period
+    // A teacher CAN teach different classes on different periods.
+    // This only blocks: same teacher, same day, same period (any class).
     const teacherConflict = await TeacherAssignment.findOne({
       teacherId,
       day,
-      periodNumber,
+      periodNumber: Number(periodNumber),
       schoolId,
-      sessionId,
+      ...sessionMatch,
     });
     if (teacherConflict) {
+      const conflictClass = teacherConflict.classId?.name ||
+        teacherConflict.classId?.toString() || 'another class';
       return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `Teacher already has a class in Period ${periodNumber} on ${day}`,
+        message: `Teacher already has Period ${periodNumber} on ${day} assigned to ${conflictClass}. Choose a different period.`,
       });
     }
 
-    // 3) Class-section period conflict for same day + period
+    // 3) Class-section period conflict — same class+section, same day, same period
+    // A class CAN have multiple teachers on different periods.
+    // This only blocks: same class+section+day+period (two teachers at once).
     const classConflict = await TeacherAssignment.findOne({
       classId,
       sectionId,
       day,
-      periodNumber,
+      periodNumber: Number(periodNumber),
       schoolId,
-      sessionId,
+      ...sessionMatch,
     });
     if (classConflict) {
       return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        message: `This class-section already has a subject in Period ${periodNumber} on ${day}`,
+        message: `Class-section already has a teacher in Period ${periodNumber} on ${day}. Choose a different period.`,
       });
     }
 
@@ -86,11 +97,11 @@ const createAssignment = async (req, res) => {
       sectionId,
       subjectId,
       day,
-      periodNumber,
+      periodNumber: Number(periodNumber),
       startTime,
       endTime,
       schoolId,
-      sessionId
+      sessionId: sessionId || null
     });
 
     const populated = await TeacherAssignment.findById(assignment._id)
