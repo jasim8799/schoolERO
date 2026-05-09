@@ -105,7 +105,7 @@ router.get(
 router.get(
   '/students/subject',
   authenticate,
-  requireMinRole(USER_ROLES.TEACHER),
+  requireMinRole(USER_ROLES.STUDENT),
   getSubjectAttendance
 );
 

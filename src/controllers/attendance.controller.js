@@ -373,9 +373,26 @@ const getStudentDailyAttendance = async (req, res) => {
 
 const getSubjectAttendance = async (req, res) => {
   try {
-    const { classId, subjectId, date, studentId } = req.query;
-    const { schoolId } = req.user;
+    const { classId, subjectId, date } = req.query;
+    let { studentId } = req.query;
+    const { schoolId, role, userId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
+
+    if (role === 'STUDENT') {
+      const studentRecord = await Student.findOne({
+        userId,
+        schoolId: normalizedSchoolId,
+      }).select('_id classId');
+
+      if (!studentRecord) {
+        return res.status(404).json({ success: false, message: 'Student record not found' });
+      }
+
+      studentId = studentRecord._id.toString();
+      if (!classId && studentRecord.classId) {
+        req.query.classId = studentRecord.classId.toString();
+      }
+    }
 
     const activeSession = await AcademicSession.findOne({
       schoolId: normalizedSchoolId,
@@ -394,7 +411,7 @@ const getSubjectAttendance = async (req, res) => {
       ...sessionFilter(req),
     };
 
-    if (classId) filter.classId = classId;
+    if (req.query.classId) filter.classId = req.query.classId;
     if (subjectId) filter.subjectId = subjectId;
     if (date) {
       filter.date = normalizeDate(date);
