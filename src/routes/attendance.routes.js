@@ -19,6 +19,7 @@ const {
   getTeacherClassStudents,
   checkDuplicateAttendance,
   checkLateThreshold,
+  getClassAttendanceSummary,
 } = require('../controllers/attendance.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireMinRole, requireRole } = require('../middlewares/role.middleware.js');
@@ -165,6 +166,13 @@ router.get(
   authenticate,
   requireRole(USER_ROLES.STUDENT),
   getStudentSelfAttendance
+);
+
+router.get(
+  '/class-summary',
+  authenticate,
+  requireMinRole(USER_ROLES.OPERATOR),
+  getClassAttendanceSummary
 );
 
 module.exports = router;
