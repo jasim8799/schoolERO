@@ -10,6 +10,7 @@ const Subject = require('../models/Subject.js');
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const AcademicHistory = require('../models/AcademicHistory.js');
+const mongoose = require('mongoose');
 const { auditLog } = require('../utils/auditLog.js');
 const { dispatchAutomationTrigger } = require('../services/automation.service');
 
@@ -44,6 +45,13 @@ const markStudentDailyAttendance = async (req, res) => {
     const { records } = req.body;
     const { userId, schoolId, sessionId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
+    let schoolObjId;
+
+    try {
+      schoolObjId = new mongoose.Types.ObjectId(normalizedSchoolId);
+    } catch (_) {
+      schoolObjId = normalizedSchoolId;
+    }
 
     if (!records || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ success: false, message: 'Records array is required' });
@@ -87,7 +95,7 @@ const markStudentDailyAttendance = async (req, res) => {
           filter: {
             studentId: record.studentId,
             date: attendanceDate,
-            schoolId: normalizedSchoolId,
+            schoolId: schoolObjId,
             sessionId,
           },
           update: {
@@ -96,7 +104,7 @@ const markStudentDailyAttendance = async (req, res) => {
               sectionId: record.sectionId,
               status: record.status,
               markedBy: userId,
-              schoolId: normalizedSchoolId,
+              schoolId: schoolObjId,
               sessionId,
             },
           },
@@ -761,6 +769,29 @@ const getStudentSelfAttendance = async (req, res) => {
     const { schoolId, sessionId, isBrowsingHistory } = req.user;
     const { startDate, endDate } = req.query;
     const normalizedSchoolId = schoolId?._id || schoolId;
+    let schoolObjectId;
+
+    try {
+      schoolObjectId = new mongoose.Types.ObjectId(normalizedSchoolId);
+    } catch (_) {
+      schoolObjectId = normalizedSchoolId;
+    }
+
+    console.log(
+      '[getStudentSelfAttendance] called by userId:',
+      resolvedUserId?.toString(),
+      'schoolId:',
+      normalizedSchoolId?.toString(),
+      'sessionId:',
+      sessionId?.toString(),
+      'isBrowsingHistory:',
+      isBrowsingHistory,
+    );
+
+    const totalCount = await StudentDailyAttendance.countDocuments({
+      schoolId: schoolObjectId,
+    });
+    console.log('[getStudentSelfAttendance] total attendance records for school:', totalCount);
 
     const activeSession = await AcademicSession.findOne({
       schoolId: normalizedSchoolId,
@@ -822,7 +853,21 @@ const getStudentSelfAttendance = async (req, res) => {
         .populate('sectionId', 'name');
 
       if (!student) {
-        return res.status(404).json({ success: false, message: 'Student record not found' });
+        student = await Student.findOne({ userId: resolvedUserId })
+          .populate('classId', 'name')
+          .populate('sectionId', 'name');
+
+        if (!student || student.schoolId?.toString() !== normalizedSchoolId?.toString()) {
+          console.log(
+            '[getStudentSelfAttendance] Student not found. userId:',
+            resolvedUserId,
+            'schoolId:',
+            normalizedSchoolId,
+          );
+          return res.status(404).json({ success: false, message: 'Student record not found' });
+        }
+
+        console.log('[getStudentSelfAttendance] Student found via fallback:', student._id.toString());
       }
 
       responseRollNumber = student.rollNumber || '';
@@ -830,10 +875,15 @@ const getStudentSelfAttendance = async (req, res) => {
       responseSectionName = student.sectionId?.name || '';
     }
 
+    const sid = req.user?.sessionId;
+    const sessionMatch = sid
+      ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
+      : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
+
     const filter = {
       studentId: student._id,
-      schoolId: normalizedSchoolId,
-      ...sessionFilter(req),
+      schoolId: schoolObjectId,
+      ...sessionMatch,
     };
 
     if (startDate && endDate) {
@@ -843,9 +893,33 @@ const getStudentSelfAttendance = async (req, res) => {
       filter.date = { $gte: start, $lte: end };
     }
 
-    const attendance = await StudentDailyAttendance.find(filter).sort({ date: -1 });
+    console.log('[getStudentSelfAttendance] filter:', JSON.stringify(filter));
+    console.log('[getStudentSelfAttendance] studentId:', student._id.toString());
 
-    const records = attendance.map(att => ({
+    const attendance = await StudentDailyAttendance.find(filter).sort({ date: -1 });
+    console.log('[getStudentSelfAttendance] found:', attendance.length, 'records');
+
+    let finalAttendance = attendance;
+
+    if (finalAttendance.length === 0) {
+      console.log('[getStudentSelfAttendance] No records with session filter, trying without sessionId...');
+      const fallbackFilter = {
+        studentId: student._id,
+        schoolId: schoolObjectId,
+      };
+
+      if (startDate && endDate) {
+        const start = normalizeDate(startDate);
+        const end = new Date(normalizeDate(endDate));
+        end.setHours(23, 59, 59, 999);
+        fallbackFilter.date = { $gte: start, $lte: end };
+      }
+
+      finalAttendance = await StudentDailyAttendance.find(fallbackFilter).sort({ date: -1 });
+      console.log('[getStudentSelfAttendance] fallback found:', finalAttendance.length, 'records');
+    }
+
+    const records = finalAttendance.map(att => ({
       date: att.date,
       status: att.status
     }));
