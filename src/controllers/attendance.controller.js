@@ -1438,6 +1438,13 @@ const getAttendanceSummary = async (req, res) => {
     const { date } = req.query;
     const { schoolId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
+    let schoolObjId;
+
+    try {
+      schoolObjId = new mongoose.Types.ObjectId(normalizedSchoolId);
+    } catch (_) {
+      schoolObjId = normalizedSchoolId;
+    }
 
     const activeSession = await AcademicSession.findOne({
       schoolId: normalizedSchoolId,
@@ -1450,8 +1457,7 @@ const getAttendanceSummary = async (req, res) => {
     const targetDate = normalizeDate(date || new Date().toISOString().split('T')[0]);
 
     const totalStudents = await Student.countDocuments({
-      schoolId: normalizedSchoolId,
-      ...sessionFilter(req),
+      schoolId: schoolObjId,
       status: { $regex: /^active$/i },
     });
 
@@ -1463,9 +1469,9 @@ const getAttendanceSummary = async (req, res) => {
     const attendanceAgg = await StudentDailyAttendance.aggregate([
       {
         $match: {
-          schoolId: normalizedSchoolId,
-          ...sessionMatchAgg,
+          schoolId: schoolObjId,
           date: targetDate,
+          ...sessionMatchAgg,
         },
       },
       {
@@ -1519,11 +1525,18 @@ const getClassAttendanceSummary = async (req, res) => {
     const { date } = req.query;
     const { schoolId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
+    let schoolObjId;
+
+    try {
+      schoolObjId = new mongoose.Types.ObjectId(normalizedSchoolId);
+    } catch (_) {
+      schoolObjId = normalizedSchoolId;
+    }
 
     const targetDate = normalizeDate(date || new Date().toISOString().split('T')[0]);
 
     const students = await Student.find({
-      schoolId: normalizedSchoolId,
+      schoolId: schoolObjId,
       status: { $regex: /^active$/i },
     }).select('classId sectionId name rollNumber').lean();
 
@@ -1533,7 +1546,7 @@ const getClassAttendanceSummary = async (req, res) => {
       : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
 
     const attendance = await StudentDailyAttendance.find({
-      schoolId: normalizedSchoolId,
+      schoolId: schoolObjId,
       date: targetDate,
       ...sessionMatch,
     }).select('studentId classId status').lean();
@@ -1586,7 +1599,7 @@ const getClassAttendanceSummary = async (req, res) => {
 
     const parents = await Parent.find({
       children: { $in: absentStudentIds },
-      schoolId: normalizedSchoolId,
+      schoolId: schoolObjId,
     }).select('name phone userId children').lean();
 
     const parentByStudent = {};
