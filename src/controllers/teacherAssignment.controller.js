@@ -542,7 +542,9 @@ const removeHoliday = async (req, res) => {
   try {
     const schoolId = req.user.schoolId;
     const sessionId = req.user.sessionId;
-    const { date } = req.body;
+    // Accept date from body (DELETE with JSON body) OR query param
+    // (DELETE /holidays?date=YYYY-MM-DD fallback)
+    const date = req.body?.date || req.query?.date;
 
     if (!date) {
       return res.status(400).json({ success: false, message: 'date is required' });
