@@ -15,6 +15,7 @@ const {
   getStudentSelfAttendance,
   getAttendanceSummary,
   getMonthlyAttendanceSummary,
+  getMonthlyOverviewSummary,
   getStaffMembers,
   getTeacherClassStudents,
   checkDuplicateAttendance,
@@ -40,6 +41,13 @@ router.get(
   authenticate,
   requireMinRole(USER_ROLES.TEACHER),
   getMonthlyAttendanceSummary
+);
+
+router.get(
+  '/summary/overview',
+  authenticate,
+  requireMinRole(USER_ROLES.TEACHER),
+  getMonthlyOverviewSummary
 );
 
 router.get(

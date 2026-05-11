@@ -179,9 +179,19 @@ app.use('/api/transport-fees', attachSchoolId, attachActiveSession, checkSubscri
 app.use(
   '/api/dashboard',
   generalRateLimit,
-  attachSchoolId,
-  attachActiveSession,
-  checkSubscriptionStatus(true), // allow read-only dashboards during grace period
+  (req, res, next) => {
+    // SUPER_ADMIN skips school attachment and subscription check
+    if (req.user && req.user.role === 'SUPER_ADMIN') return next();
+    return attachSchoolId(req, res, next);
+  },
+  (req, res, next) => {
+    if (req.user && req.user.role === 'SUPER_ADMIN') return next();
+    return attachActiveSession(req, res, next);
+  },
+  (req, res, next) => {
+    if (req.user && req.user.role === 'SUPER_ADMIN') return next();
+    return checkSubscriptionStatus(true)(req, res, next);
+  },
   dashboardRoutes
 );
 

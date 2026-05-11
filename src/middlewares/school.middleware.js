@@ -76,18 +76,16 @@ const attachSchoolId = (req, res, next) => {
   if (!req.user) {
     return next();
   }
-
-  // SUPER_ADMIN does not require school context
+  // SUPER_ADMIN does not require school context — always allow
   if (req.user.role === 'SUPER_ADMIN') {
     return next();
   }
-
   // If schoolId already present, continue
   if (req.user.schoolId) {
     req.schoolId = req.user.schoolId;
     return next();
   }
-
+  // Non-SUPER_ADMIN without schoolId — block
   return res.status(403).json({
     success: false,
     message: 'School context missing'
