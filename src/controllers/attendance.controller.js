@@ -356,7 +356,15 @@ const getStudentDailyAttendance = async (req, res) => {
 
 
     const attendance = await StudentDailyAttendance.find(filter)
-      .populate('studentId', 'name rollNumber')
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber parentId',
+        populate: {
+          path: 'parentId',
+          select: 'userId',
+          populate: { path: 'userId', select: 'name mobile' },
+        },
+      })
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('markedBy', 'name')
