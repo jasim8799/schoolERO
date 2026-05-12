@@ -1601,18 +1601,26 @@ const getAttendanceSummary = async (req, res) => {
       'totalStudents:', totalStudents, 'date:', targetDate);
 
     const sid = req.user?.sessionId;
-    const sessionMatchAgg = sid
-      ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
-      : { $or: [{ sessionId: null }, { sessionId: { $exists: false } }] };
+
+    // Build match conditions explicitly for aggregation pipeline
+    const schoolMatch = { $or: [{ schoolId: schoolObjId }, { schoolId: rawSchoolId }] };
+    const sessionConditions = sid
+      ? [
+          { sessionId: sid },
+          { sessionId: new mongoose.Types.ObjectId(sid) },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ]
+      : [{ sessionId: null }, { sessionId: { $exists: false } }];
 
     // Attendance docs may store schoolId as ObjectId — query both forms
     const attendanceAgg = await StudentDailyAttendance.aggregate([
       {
         $match: {
           $and: [
-            { $or: [{ schoolId: schoolObjId }, { schoolId: rawSchoolId }] },
+            schoolMatch,
             { date: targetDate },
-            sessionMatchAgg,
+            { $or: sessionConditions },
           ],
         },
       },
@@ -1629,11 +1637,17 @@ const getAttendanceSummary = async (req, res) => {
       if (counters[row._id] !== undefined) counters[row._id] = row.count;
     }
 
+    console.log('[getAttendanceSummary] aggregation result:', JSON.stringify(attendanceAgg));
+    console.log('[getAttendanceSummary] counters:', JSON.stringify(counters));
+
     const presentCount = counters.PRESENT;
     const absentCount = counters.ABSENT;
     const lateCount = counters.LATE;
     const leaveCount = counters.HALF_DAY + counters.LEAVE + counters.SICK_LEAVE;
     const markedCount = presentCount + absentCount + lateCount + leaveCount;
+
+    console.log('[getAttendanceSummary] markedCount:', markedCount,
+      'targetDate:', targetDate.toISOString());
 
     return res.status(200).json({
       success: true,
