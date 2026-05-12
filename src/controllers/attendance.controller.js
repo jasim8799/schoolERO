@@ -1583,6 +1583,10 @@ const getAttendanceSummary = async (req, res) => {
     // Student docs use STRING schoolId (created by admission_screen / class_management_screen)
     const totalStudents = await Student.countDocuments({ schoolId: rawSchoolId });
 
+    console.log('[getAttendanceSummary] rawSchoolId:', rawSchoolId,
+      'sessionId:', req.user?.sessionId?.toString(),
+      'totalStudents:', totalStudents, 'date:', targetDate);
+
     const sid = req.user?.sessionId;
     const sessionMatchAgg = sid
       ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
@@ -1618,9 +1622,6 @@ const getAttendanceSummary = async (req, res) => {
     const leaveCount = counters.HALF_DAY + counters.LEAVE + counters.SICK_LEAVE;
     const markedCount = presentCount + absentCount + lateCount + leaveCount;
 
-    console.log('[getAttendanceSummary] rawSchoolId:', rawSchoolId,
-      'totalStudents:', totalStudents, 'markedCount:', markedCount, 'date:', targetDate);
-
     return res.status(200).json({
       success: true,
       data: {
@@ -1644,9 +1645,8 @@ const getAttendanceSummary = async (req, res) => {
 const getClassAttendanceSummary = async (req, res) => {
   try {
     const { date } = req.query;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
-    // Class/Student docs store schoolId as plain string
     const rawSchoolId = schoolId?._id?.toString() || schoolId?.toString();
 
     let schoolObjId;
@@ -1656,29 +1656,54 @@ const getClassAttendanceSummary = async (req, res) => {
       schoolObjId = rawSchoolId;
     }
 
-    const targetDate = normalizeDate(date || new Date().toISOString().split('T')[0]);
+    const targetDate = normalizeDate(
+      date || new Date().toISOString().split('T')[0]
+    );
 
-    // Step 1: Fetch ALL classes using string schoolId
-    const allClasses = await Class.find({ schoolId: rawSchoolId })
-      .select('_id name')
-      .lean();
+    // ── Step 1: Get active session to filter classes correctly ─────────────
+    // sessionId from req.user is the active session (set by attachActiveSession)
+    // Classes are duplicated per session, so MUST filter by sessionId
+    const activeSession = await AcademicSession.findOne({
+      schoolId: rawSchoolId,
+      isActive: true,
+    }).lean();
+
+    // Use sessionId from user token (most reliable), fallback to DB lookup
+    const activeSessionId = sessionId?.toString() || activeSession?._id?.toString();
 
     console.log('[getClassAttendanceSummary] rawSchoolId:', rawSchoolId,
-      'classes found:', allClasses.length);
+      'activeSessionId:', activeSessionId, 'date:', targetDate);
 
+    // ── Step 2: Fetch classes for ACTIVE SESSION ONLY ─────────────────────
+    // This prevents fetching duplicate classes from old sessions
+    const classQuery = { schoolId: rawSchoolId };
+    if (activeSessionId) {
+      classQuery.sessionId = activeSessionId;
+    }
+
+    const allClasses = await Class.find(classQuery)
+      .select('_id name sessionId')
+      .lean();
+
+    console.log('[getClassAttendanceSummary] classes found for active session:',
+      allClasses.length);
+
+    // Build className lookup
     const classNameMap = {};
     for (const cls of allClasses) {
       classNameMap[cls._id.toString()] = cls.name || 'Unknown';
     }
 
-    // Step 2: Fetch ALL students using string schoolId
+    // ── Step 3: Fetch ALL students for this school ─────────────────────────
+    // Students don't get duplicated per session — they stay in one session
+    // Filter by sessionId if students have it, otherwise just by schoolId
     const students = await Student.find({ schoolId: rawSchoolId })
       .select('_id classId sectionId name rollNumber')
       .lean();
 
     console.log('[getClassAttendanceSummary] students found:', students.length);
 
-    // Step 3: Fetch attendance — try both ObjectId and string schoolId
+    // ── Step 4: Fetch attendance records for target date ───────────────────
     const sid = req.user?.sessionId;
     const sessionMatch = sid
       ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
@@ -1692,12 +1717,13 @@ const getClassAttendanceSummary = async (req, res) => {
 
     console.log('[getClassAttendanceSummary] attendance records:', attendance.length);
 
+    // Build attendance lookup: studentId → status
     const attendanceMap = {};
     for (const a of attendance) {
       attendanceMap[a.studentId?.toString()] = a.status;
     }
 
-    // Step 4: Initialize classMap from ALL classes (including those with zero attendance)
+    // ── Step 5: Initialize classMap from ACTIVE SESSION classes only ───────
     const classMap = {};
     for (const cls of allClasses) {
       const cid = cls._id.toString();
@@ -1715,19 +1741,15 @@ const getClassAttendanceSummary = async (req, res) => {
       };
     }
 
-    // Step 5: Add student data
+    // ── Step 6: Map students to their classes ──────────────────────────────
+    // Only count students whose classId exists in the active session classMap
     for (const s of students) {
       const cid = s.classId?.toString();
       if (!cid) continue;
 
-      if (!classMap[cid]) {
-        classMap[cid] = {
-          classId: cid,
-          className: classNameMap[cid] || 'Unknown Class',
-          total: 0, present: 0, absent: 0, late: 0, leave: 0,
-          marked: 0, isMarked: false, percentage: 0,
-        };
-      }
+      // Only add to classMap if this class belongs to active session
+      // Skip students assigned to old-session class IDs
+      if (!classMap[cid]) continue;
 
       classMap[cid].total++;
       const status = attendanceMap[s._id?.toString()];
@@ -1740,7 +1762,7 @@ const getClassAttendanceSummary = async (req, res) => {
       }
     }
 
-    // Step 6: Compute percentage and isMarked
+    // ── Step 7: Compute percentage for each class ─────────────────────────
     for (const cid of Object.keys(classMap)) {
       const c = classMap[cid];
       c.isMarked = c.marked > 0;
@@ -1751,7 +1773,7 @@ const getClassAttendanceSummary = async (req, res) => {
 
     const classSummaryArr = Object.values(classMap);
 
-    // Step 7: Absent students list
+    // ── Step 8: Absent students list ───────────────────────────────────────
     const absentStudentIds = attendance
       .filter((a) => a.status === 'ABSENT')
       .map((a) => a.studentId);
@@ -1762,10 +1784,9 @@ const getClassAttendanceSummary = async (req, res) => {
       .populate('sectionId', 'name')
       .lean();
 
-    // Parent query: try both string and ObjectId
     const parents = await Parent.find({
       children: { $in: absentStudentIds },
-      $or: [{ schoolId: rawSchoolId }, { schoolId: schoolObjId }],
+      schoolId: rawSchoolId,
     }).select('name phone userId children').lean();
 
     const parentByStudent = {};
@@ -1784,8 +1805,8 @@ const getClassAttendanceSummary = async (req, res) => {
     const markedClasses = classSummaryArr.filter((c) => c.isMarked).length;
     const pendingClasses = totalClasses - markedClasses;
 
-    console.log('[getClassAttendanceSummary] response: totalClasses:', totalClasses,
-      'students:', students.length);
+    console.log('[getClassAttendanceSummary] RESULT: totalClasses:', totalClasses,
+      'markedClasses:', markedClasses, 'totalStudents:', students.length);
 
     return res.json({
       success: true,
@@ -1796,6 +1817,7 @@ const getClassAttendanceSummary = async (req, res) => {
         totalClasses,
         markedClasses,
         pendingClasses,
+        activeSessionId,
       },
     });
   } catch (error) {
