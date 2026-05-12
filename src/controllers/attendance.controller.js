@@ -1076,11 +1076,9 @@ const getStudentAttendanceByTeacher = async (req, res) => {
 const getTeacherClassStudents = async (req, res) => {
   try {
     const { classId, sectionId } = req.query;
-    const { userId, schoolId } = req.user;
+    const { userId, role, schoolId } = req.user;
     const sFilter = sessionFilter(req);
 
-    // ── Normalize schoolId to ObjectId ────────────────────────────────────
-    const mongoose = require('mongoose');
     let normalizedSchoolId;
     try {
       normalizedSchoolId = new mongoose.Types.ObjectId(schoolId?._id || schoolId);
@@ -1092,12 +1090,49 @@ const getTeacherClassStudents = async (req, res) => {
       return res.status(400).json({ success: false, message: 'classId is required' });
     }
 
-    // ── Resolve Teacher profile from User ID ──────────────────────────────
+    // ── Admin roles (PRINCIPAL, OPERATOR, SUPER_ADMIN) can see ALL students ──
+    // They don't have a Teacher profile, so skip the teacher check entirely
+    const isAdmin = ['PRINCIPAL', 'OPERATOR', 'SUPER_ADMIN'].includes(role);
+
+    if (isAdmin) {
+      // Fetch all students in this class for admin roles
+      const studentFilter = {
+        classId: new mongoose.Types.ObjectId(classId),
+        schoolId: normalizedSchoolId,
+        status: 'ACTIVE',
+      };
+      if (sectionId) {
+        studentFilter.sectionId = new mongoose.Types.ObjectId(sectionId);
+      }
+
+      const students = await Student.find(studentFilter)
+        .select('_id name rollNumber classId sectionId')
+        .populate('classId', 'name')
+        .populate('sectionId', 'name')
+        .sort({ rollNumber: 1 })
+        .lean();
+
+      return res.json({ success: true, data: students });
+    }
+
+    // ── TEACHER role: verify assignment ──────────────────────────────────
     const Teacher = require('../models/Teacher.js');
-    const teacherProfile = await Teacher.findOne({
+
+    // Try to find teacher profile — search both with and without sessionId
+    // to handle cases where teacher was created before session was set
+    let teacherProfile = await Teacher.findOne({
       userId: new mongoose.Types.ObjectId(userId),
       schoolId: normalizedSchoolId,
     }).select('_id').lean();
+
+    if (!teacherProfile) {
+      // Fallback: try string schoolId
+      const rawSchoolId = schoolId?._id?.toString() || schoolId?.toString();
+      teacherProfile = await Teacher.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        schoolId: rawSchoolId,
+      }).select('_id').lean();
+    }
 
     if (!teacherProfile) {
       return res.status(403).json({
@@ -1106,12 +1141,12 @@ const getTeacherClassStudents = async (req, res) => {
       });
     }
 
-    // ── Verify teacher is assigned to this class ──────────────────────────
+    // Verify teacher is assigned to this class
+    // Check without strict session filter first (more permissive)
     const assignments = await TeacherAssignment.find({
       teacherId: teacherProfile._id,
-      classId:   new mongoose.Types.ObjectId(classId),
-      schoolId:  normalizedSchoolId,
-      ...sFilter,
+      classId: new mongoose.Types.ObjectId(classId),
+      schoolId: normalizedSchoolId,
     }).select('sectionId').lean();
 
     if (!assignments.length) {
@@ -1121,12 +1156,10 @@ const getTeacherClassStudents = async (req, res) => {
       });
     }
 
-    // ── Fetch students ────────────────────────────────────────────────────
     const studentFilter = {
-      classId:  new mongoose.Types.ObjectId(classId),
+      classId: new mongoose.Types.ObjectId(classId),
       schoolId: normalizedSchoolId,
-      status:   'ACTIVE',
-      ...sFilter,
+      status: 'ACTIVE',
     };
 
     if (sectionId) {
@@ -1147,6 +1180,8 @@ const getTeacherClassStudents = async (req, res) => {
 
     const students = await Student.find(studentFilter)
       .select('_id name rollNumber classId sectionId')
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
       .sort({ rollNumber: 1 })
       .lean();
 
