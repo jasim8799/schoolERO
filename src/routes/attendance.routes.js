@@ -179,7 +179,7 @@ router.get(
 router.get(
   '/class-summary',
   authenticate,
-  requireMinRole(USER_ROLES.OPERATOR),
+  requireMinRole(USER_ROLES.TEACHER),
   getClassAttendanceSummary
 );
 

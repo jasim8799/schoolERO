@@ -1277,7 +1277,11 @@ const getMonthlyOverviewSummary = async (req, res) => {
 
     const totalStudents = await Student.countDocuments({
       schoolId: schoolObjId,
-      status: { $regex: /^active$/i },
+      $or: [
+        { status: { $regex: /^active$/i } },
+        { status: { $exists: false } },
+        { status: null },
+      ],
     });
 
     const sid = req.user?.sessionId;
@@ -1315,32 +1319,46 @@ const getMonthlyOverviewSummary = async (req, res) => {
       }
     }
 
+    const allActiveStudents = await Student.find({
+      schoolId: schoolObjId,
+      $or: [
+        { status: { $regex: /^active$/i } },
+        { status: { $exists: false } },
+        { status: null },
+      ],
+    }).select('_id name rollNumber classId').lean();
+
     const lowAttendanceStudents = [];
-    const studentIds = Object.keys(studentMap).filter((id) => {
-      const s = studentMap[id];
-      return s.total > 0 && ((s.present / s.total) * 100) < 75;
-    });
 
-    if (studentIds.length > 0) {
-      const students = await Student.find({
-        _id: { $in: studentIds },
-        schoolId: schoolObjId,
-      }).select('name rollNumber classId').lean();
+    for (const student of allActiveStudents) {
+      const sid2 = student._id.toString();
+      const sm = studentMap[sid2];
 
-      for (const student of students.slice(0, 10)) {
-        const sm = studentMap[student._id.toString()];
+      let present2 = 0;
+      let total2 = 0;
+      let percentage = 0;
+
+      if (sm) {
+        present2 = sm.present;
+        total2 = sm.total;
+        percentage = total2 > 0 ? Math.round((present2 / total2) * 1000) / 10 : 0;
+      }
+
+      if (total2 === 0 || percentage < 75) {
         lowAttendanceStudents.push({
           studentId: student._id,
           name: student.name,
           rollNumber: student.rollNumber,
-          present: sm.present,
-          total: sm.total,
-          percentage: Math.round((sm.present / sm.total) * 1000) / 10,
+          present: present2,
+          total: total2,
+          percentage,
         });
       }
-
-      lowAttendanceStudents.sort((a, b) => a.percentage - b.percentage);
     }
+
+    lowAttendanceStudents.sort((a, b) => a.percentage - b.percentage);
+    const topLowAttendance = lowAttendanceStudents.slice(0, 10);
+    const totalLowAttendanceCount = lowAttendanceStudents.length;
 
     return res.status(200).json({
       success: true,
@@ -1358,7 +1376,8 @@ const getMonthlyOverviewSummary = async (req, res) => {
         monthlyRate,
         yearlyRate: Math.round((presentPct * 0.96) * 10) / 10,
         averageAttendance: presentPct,
-        lowAttendanceStudents,
+        lowAttendanceStudents: topLowAttendance,
+        totalLowAttendanceCount,
       },
     });
   } catch (error) {
@@ -1582,9 +1601,14 @@ const getAttendanceSummary = async (req, res) => {
 
     const targetDate = normalizeDate(date || new Date().toISOString().split('T')[0]);
 
+    // Count ALL active students, including records with missing status.
     const totalStudents = await Student.countDocuments({
       schoolId: schoolObjId,
-      status: { $regex: /^active$/i },
+      $or: [
+        { status: { $regex: /^active$/i } },
+        { status: { $exists: false } },
+        { status: null },
+      ],
     });
 
     const sid = req.user?.sessionId;
@@ -1652,20 +1676,31 @@ const getClassAttendanceSummary = async (req, res) => {
     const { schoolId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
     let schoolObjId;
-
     try {
       schoolObjId = new mongoose.Types.ObjectId(normalizedSchoolId);
     } catch (_) {
       schoolObjId = normalizedSchoolId;
     }
-
     const targetDate = normalizeDate(date || new Date().toISOString().split('T')[0]);
 
+    // Step 1: Get all active students for this school.
     const students = await Student.find({
       schoolId: schoolObjId,
-      status: { $regex: /^active$/i },
-    }).select('classId sectionId name rollNumber').lean();
+      $or: [
+        { status: { $regex: /^active$/i } },
+        { status: { $exists: false } },
+        { status: null },
+      ],
+    }).select('_id classId sectionId name rollNumber').lean();
 
+    // Step 2: Get all classes for this school.
+    const allClasses = await Class.find({ schoolId: schoolObjId }).select('_id name').lean();
+    const classNameMap = {};
+    for (const cls of allClasses) {
+      classNameMap[cls._id.toString()] = cls.name;
+    }
+
+    // Step 3: Get attendance records for the target date.
     const sid = req.user?.sessionId;
     const sessionMatch = sid
       ? { $or: [{ sessionId: sid }, { sessionId: null }, { sessionId: { $exists: false } }] }
@@ -1682,13 +1717,44 @@ const getClassAttendanceSummary = async (req, res) => {
       attendanceMap[a.studentId?.toString()] = a.status;
     }
 
+    // Step 4: Build class map from all classes and all students.
     const classMap = {};
+
+    for (const cls of allClasses) {
+      const cid = cls._id.toString();
+      classMap[cid] = {
+        classId: cid,
+        className: cls.name,
+        total: 0,
+        present: 0,
+        absent: 0,
+        late: 0,
+        leave: 0,
+        marked: 0,
+        isMarked: false,
+        percentage: 0,
+      };
+    }
+
     for (const s of students) {
       const cid = s.classId?.toString();
       if (!cid) continue;
+
       if (!classMap[cid]) {
-        classMap[cid] = { classId: cid, total: 0, present: 0, absent: 0, late: 0, leave: 0, marked: 0 };
+        classMap[cid] = {
+          classId: cid,
+          className: classNameMap[cid] || 'Unknown Class',
+          total: 0,
+          present: 0,
+          absent: 0,
+          late: 0,
+          leave: 0,
+          marked: 0,
+          isMarked: false,
+          percentage: 0,
+        };
       }
+
       classMap[cid].total++;
       const status = attendanceMap[s._id?.toString()];
       if (status) {
@@ -1700,22 +1766,19 @@ const getClassAttendanceSummary = async (req, res) => {
       }
     }
 
-    const classIds = Object.keys(classMap);
-    const classes = await Class.find({ _id: { $in: classIds } }).select('name').lean();
-    for (const cls of classes) {
-      const cid = cls._id.toString();
-      if (classMap[cid]) {
-        classMap[cid].className = cls.name;
-        classMap[cid].percentage = classMap[cid].marked > 0
-          ? Math.round((classMap[cid].present / classMap[cid].marked) * 100)
-          : 0;
-        classMap[cid].isMarked = classMap[cid].marked > 0;
-      }
+    // Step 5: Compute aggregate class stats.
+    for (const cid of Object.keys(classMap)) {
+      const c = classMap[cid];
+      c.isMarked = c.marked > 0;
+      c.percentage = c.marked > 0
+        ? Math.round((c.present / c.marked) * 100)
+        : 0;
     }
 
+    // Step 6: Absent students with parent info.
     const absentStudentIds = attendance
-      .filter(a => a.status === 'ABSENT')
-      .map(a => a.studentId);
+      .filter((a) => a.status === 'ABSENT')
+      .map((a) => a.studentId);
 
     const absentStudents = await Student.find({ _id: { $in: absentStudentIds } })
       .select('name rollNumber classId sectionId')
@@ -1735,17 +1798,26 @@ const getClassAttendanceSummary = async (req, res) => {
       }
     }
 
-    const absentList = absentStudents.map(s => ({
+    const absentList = absentStudents.map((s) => ({
       ...s,
       parent: parentByStudent[s._id.toString()] || null,
     }));
 
+    // Step 7: Summary metadata.
+    const allClassValues = Object.values(classMap);
+    const totalClasses = allClassValues.length;
+    const markedClasses = allClassValues.filter((c) => c.isMarked).length;
+    const pendingClasses = totalClasses - markedClasses;
+
     return res.json({
       success: true,
       data: {
-        classSummary: Object.values(classMap),
+        classSummary: allClassValues,
         absentStudents: absentList,
         date: targetDate,
+        totalClasses,
+        markedClasses,
+        pendingClasses,
       },
     });
   } catch (error) {
