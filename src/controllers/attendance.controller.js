@@ -1311,7 +1311,14 @@ const getMonthlyOverviewSummary = async (req, res) => {
 
     // All students for low-attendance — STRING schoolId
     const allStudents = await Student.find({ schoolId: rawSchoolId })
-      .select('_id name rollNumber classId')
+      .select('_id name rollNumber classId sectionId parentId')
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate({
+        path: 'parentId',
+        select: 'userId',
+        populate: { path: 'userId', select: 'name mobile' },
+      })
       .lean();
 
     const lowAttendanceStudents = [];
@@ -1323,10 +1330,16 @@ const getMonthlyOverviewSummary = async (req, res) => {
       const percentage = total > 0 ? Math.round((pres / total) * 1000) / 10 : 0;
 
       if (total === 0 || percentage < 75) {
+        const parentUser = student.parentId?.userId;
         lowAttendanceStudents.push({
           studentId: student._id,
           name: student.name,
           rollNumber: student.rollNumber,
+          classId: student.classId,
+          sectionId: student.sectionId,
+          parent: parentUser
+            ? { name: parentUser.name, phone: parentUser.mobile }
+            : null,
           present: pres,
           total,
           percentage,
