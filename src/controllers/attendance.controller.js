@@ -1332,6 +1332,7 @@ const getMonthlyOverviewSummary = async (req, res) => {
     const presentPct = totalRecords > 0 ? Math.round((present / totalRecords) * 1000) / 10 : 0;
     const absentPct = totalRecords > 0 ? Math.round((absent / totalRecords) * 1000) / 10 : 0;
     const leavePct = totalRecords > 0 ? Math.round((leave / totalRecords) * 1000) / 10 : 0;
+    const latePct = totalRecords > 0 ? Math.round((late / totalRecords) * 1000) / 10 : 0;
 
     const studentMap = {};
     for (const rec of records) {
@@ -1395,6 +1396,7 @@ const getMonthlyOverviewSummary = async (req, res) => {
         leave,
         presentPct,
         absentPct,
+        latePct,
         leavePct,
         monthlyRate: presentPct,
         yearlyRate: Math.round(presentPct * 0.96 * 10) / 10,
