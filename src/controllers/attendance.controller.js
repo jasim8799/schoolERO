@@ -381,7 +381,7 @@ const getStudentDailyAttendance = async (req, res) => {
 
 const getSubjectAttendance = async (req, res) => {
   try {
-    const { classId, subjectId, date } = req.query;
+    const { classId, subjectId, date, startDate, endDate } = req.query;
     let { studentId } = req.query;
     const { schoolId, role, userId } = req.user;
     const normalizedSchoolId = schoolId?._id || schoolId;
@@ -423,6 +423,11 @@ const getSubjectAttendance = async (req, res) => {
     if (subjectId) filter.subjectId = subjectId;
     if (date) {
       filter.date = normalizeDate(date);
+    } else if (startDate && endDate) {
+      const start = normalizeDate(startDate);
+      const end = new Date(normalizeDate(endDate));
+      end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
     }
     if (studentId) filter.studentId = studentId;
 
