@@ -24,26 +24,78 @@ const _audit = async (action, entityType, entityId, desc, details, req) => {
 const createExam = async (req, res) => {
   try {
     const { _id: userId, schoolId, sessionId } = req.user;
+    const { name, classId, startDate, endDate } = req.body;
 
-    const {
-      sessionId: _ignoreSession,
-      schoolId: _ignoreSchool,
-      createdBy: _ignoreCreatedBy,
-      ...safeBody
-    } = req.body;
+    // ── Validation ──────────────────────────────────────────────
+    const errors = [];
+    if (!name || !name.trim()) errors.push('Exam name is required');
+    if (!classId) errors.push('Class is required');
+    if (!startDate) errors.push('Start date is required');
+    if (!endDate) errors.push('End date is required');
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, message: errors.join(', '), errors });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid start date' });
+    }
+    if (isNaN(end.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid end date' });
+    }
+    if (end < start) {
+      return res.status(400).json({ success: false, message: 'End date must be after start date' });
+    }
+
+    // ── Verify class belongs to school ───────────────────────────
+    const Class = require('../models/Class.js');
+    const classDoc = await Class.findOne({ _id: classId, schoolId });
+    if (!classDoc) {
+      return res.status(404).json({ success: false, message: 'Class not found in your school' });
+    }
+
+    // ── Duplicate check ──────────────────────────────────────────
+    const existing = await Exam.findOne({
+      name: name.trim(), classId, sessionId, schoolId
+    });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: `An exam named "${name.trim()}" already exists for this class in the current session`
+      });
+    }
 
     const exam = await Exam.create({
-      ...safeBody,
+      name: name.trim(),
+      classId,
+      startDate: start,
+      endDate: end,
       schoolId,
       sessionId,
-      createdBy: userId
+      createdBy: userId,
+      status: 'Draft',
     });
 
+    const populated = await Exam.findById(exam._id).populate('classId', 'name');
+
     _audit('EXAM_CREATED', 'EXAM', exam._id,
-      `Exam "${exam.name}" created`, {}, req);
-    res.status(201).json(exam);
+      `Exam "${exam.name}" created for class "${classDoc.name}"`, { classId }, req);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Exam created successfully',
+      data: populated,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'An exam with this name already exists for this class and session'
+      });
+    }
+    console.error('[createExam] Error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to create exam. Please try again.' });
   }
 };
 
@@ -53,14 +105,31 @@ const getExamsByClass = async (req, res) => {
     const { schoolId, sessionId } = req.user;
 
     const query = { schoolId, sessionId };
-    if (classId) {
-      query.classId = classId;
-    }
+    if (classId) query.classId = classId;
 
-    const exams = await Exam.find(query).sort({ startDate: 1 });
-    res.json({ success: true, data: exams });
+    const exams = await Exam.find(query)
+      .populate('classId', 'name')
+      .populate('createdBy', 'name')
+      .sort({ startDate: 1 });
+
+    // Attach subject count to each exam
+    const examIds = exams.map(e => e._id);
+    const subjectCounts = await ExamSubject.aggregate([
+      { $match: { examId: { $in: examIds }, schoolId } },
+      { $group: { _id: '$examId', count: { $sum: 1 } } },
+    ]);
+    const countMap = {};
+    for (const sc of subjectCounts) countMap[sc._id.toString()] = sc.count;
+
+    const data = exams.map(e => ({
+      ...e.toObject(),
+      subjectCount: countMap[e._id.toString()] || 0,
+    }));
+
+    return res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[getExamsByClass] Error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load exams' });
   }
 };
 
@@ -136,19 +205,48 @@ const updateExam = async (req, res) => {
 
     const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
     if (!exam) {
-      return res.status(404).json({ message: 'Exam not found' });
+      return res.status(404).json({ success: false, message: 'Exam not found' });
     }
-
     if (exam.status !== 'Draft') {
-      return res.status(403).json({ message: 'Cannot update published exam' });
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot edit a published exam. Only Draft exams can be modified.'
+      });
     }
 
-    const { schoolId: _, sessionId: __, createdBy: ___, ...updateData } = req.body;
+    const { name, startDate, endDate } = req.body;
+    const updateData = {};
 
-    const updatedExam = await Exam.findByIdAndUpdate(examId, updateData, { new: true });
-    res.json(updatedExam);
+    if (name !== undefined) {
+      if (!name.trim()) return res.status(400).json({ success: false, message: 'Exam name cannot be empty' });
+      updateData.name = name.trim();
+    }
+    if (startDate !== undefined) {
+      const start = new Date(startDate);
+      if (isNaN(start.getTime())) return res.status(400).json({ success: false, message: 'Invalid start date' });
+      updateData.startDate = start;
+    }
+    if (endDate !== undefined) {
+      const end = new Date(endDate);
+      if (isNaN(end.getTime())) return res.status(400).json({ success: false, message: 'Invalid end date' });
+      updateData.endDate = end;
+    }
+
+    const startToCheck = updateData.startDate || exam.startDate;
+    const endToCheck = updateData.endDate || exam.endDate;
+    if (endToCheck < startToCheck) {
+      return res.status(400).json({ success: false, message: 'End date must be after start date' });
+    }
+
+    const updated = await Exam.findByIdAndUpdate(examId, updateData, { new: true })
+      .populate('classId', 'name');
+
+    _audit('EXAM_UPDATED', 'EXAM', examId, `Exam "${updated.name}" updated`, updateData, req);
+
+    return res.json({ success: true, message: 'Exam updated successfully', data: updated });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[updateExam] Error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update exam' });
   }
 };
 
