@@ -90,4 +90,75 @@ const getActiveExamForms = async (req, res) => {
   }
 };
 
-module.exports = { createExamForm, getActiveExamForms };
+const createExamFormsBulk = async (req, res) => {
+  try {
+    const { examId, classFees, endDate, isPaymentRequired } = req.body;
+    // classFees: [{ classId, feeAmount }]
+    const { schoolId, sessionId, _id: userId } = req.user;
+
+    if (!examId) {
+      return res.status(400).json({ success: false, message: 'examId is required' });
+    }
+    if (!Array.isArray(classFees) || classFees.length === 0) {
+      return res.status(400).json({ success: false, message: 'classFees array is required' });
+    }
+    if (!endDate) {
+      return res.status(400).json({ success: false, message: 'endDate is required' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const cf of classFees) {
+      const { classId, feeAmount } = cf;
+      if (!classId || feeAmount == null) {
+        errors.push({ classId, reason: 'Missing classId or feeAmount' });
+        continue;
+      }
+      const fee = Number(feeAmount);
+      if (isNaN(fee) || fee < 0) {
+        errors.push({ classId, reason: 'Invalid feeAmount' });
+        continue;
+      }
+      try {
+        // Skip if active form already exists for this exam+class
+        const existing = await ExamForm.findOne({
+          examId, classId, schoolId, sessionId, status: 'ACTIVE'
+        });
+        if (existing) {
+          errors.push({ classId, reason: 'Active form already exists for this class' });
+          continue;
+        }
+        const form = await ExamForm.create({
+          examId,
+          classId,
+          feeAmount: fee,
+          endDate,
+          isPaymentRequired: isPaymentRequired !== false,
+          status: 'ACTIVE',
+          sessionId,
+          schoolId,
+          createdBy: userId,
+        });
+        results.push(form);
+      } catch (err) {
+        if (err.code === 11000) {
+          errors.push({ classId, reason: 'Form already exists for this class' });
+        } else {
+          errors.push({ classId, reason: err.message });
+        }
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `Created ${results.length} form(s).${errors.length > 0 ? ` ${errors.length} skipped.` : ''}`,
+      data: results,
+      errors,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { createExamForm, createExamFormsBulk, getActiveExamForms };
