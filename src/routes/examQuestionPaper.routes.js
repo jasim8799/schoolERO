@@ -5,6 +5,7 @@ const {
   getMyQuestionPaper,
   getQuestionPapersByExam,
   getQuestionPaperDetail,
+  principalEditQuestionPaper,
 } = require('../controllers/examQuestionPaper.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
@@ -18,25 +19,19 @@ router.get(
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   getQuestionPapersByExam
 );
-
 router.get(
   '/detail/:paperId',
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   getQuestionPaperDetail
 );
+router.patch(
+  '/detail/:paperId/edit',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  principalEditQuestionPaper
+);
 
 router.post('/', requireRole(USER_ROLES.TEACHER), saveQuestionPaper);
-
-router.get(
-  '/:examId/:subjectId/my',
-  requireRole(USER_ROLES.TEACHER),
-  getMyQuestionPaper
-);
-
-router.patch(
-  '/:examId/:subjectId/submit',
-  requireRole(USER_ROLES.TEACHER),
-  submitQuestionPaper
-);
+router.get('/:examId/:subjectId/my', requireRole(USER_ROLES.TEACHER), getMyQuestionPaper);
+router.patch('/:examId/:subjectId/submit', requireRole(USER_ROLES.TEACHER), submitQuestionPaper);
 
 module.exports = router;
