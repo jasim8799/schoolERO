@@ -1,5 +1,5 @@
 const express = require('express');
-const { payExamFee, manualExamPayment, getMyExamPayments, getAllExamPayments } = require('../controllers/examPayment.controller.js');
+const { payExamFee, manualExamPayment, getMyExamPayments, getAllExamPayments, getExamPaymentStatus } = require('../controllers/examPayment.controller.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
 
@@ -10,6 +10,12 @@ router.get(
   '/',
   requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL),
   getAllExamPayments
+);
+
+router.get(
+  '/status',
+  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL),
+  getExamPaymentStatus
 );
 
 router.post(

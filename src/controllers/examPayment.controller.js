@@ -338,4 +338,112 @@ const getMyExamPayments = async (req, res) => {
   }
 };
 
-module.exports = { payExamFee, manualExamPayment, getMyExamPayments, getAllExamPayments };
+const getExamPaymentStatus = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const { examId, classId } = req.query;
+
+    const AcademicSession = require('../models/AcademicSession.js');
+    const activeSession = await AcademicSession.findOne({
+      schoolId,
+      isActive: true,
+    });
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found',
+      });
+    }
+    const sessionId = activeSession._id;
+
+    // ── 1. Load active exam forms (optionally filtered) ───────────────
+    const ExamForm = require('../models/ExamForm.js');
+    const formQuery = { schoolId, sessionId, status: 'ACTIVE' };
+    if (examId) formQuery.examId = examId;
+    if (classId) formQuery.classId = classId;
+
+    const examForms = await ExamForm.find(formQuery)
+      .populate('examId', 'name startDate endDate status')
+      .populate('classId', 'name')
+      .lean();
+
+    if (examForms.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // ── 2. Load all payments for these exam forms ─────────────────────
+    const examFormIds = examForms.map((f) => f._id);
+    const payments = await ExamPayment.find({
+      schoolId,
+      sessionId,
+      examFormId: { $in: examFormIds },
+    }).lean();
+
+    // Map: examFormId_studentId → payment
+    const paymentMap = {};
+    for (const p of payments) {
+      const key = `${p.examFormId}_${p.studentId}`;
+      paymentMap[key] = p;
+    }
+
+    // ── 3. For each exam form, load students in that class ────────────
+    const Student = require('../models/Student.js');
+    const result = [];
+
+    for (const form of examForms) {
+      const students = await Student.find({
+        classId: form.classId._id || form.classId,
+        schoolId,
+        status: 'ACTIVE',
+      })
+        .select('_id name rollNumber userId classId')
+        .populate('userId', 'name')
+        .lean();
+
+      for (const student of students) {
+        const key = `${form._id}_${student._id}`;
+        const payment = paymentMap[key] || null;
+        const studentName =
+          student.name ||
+          student.userId?.name ||
+          'Unknown';
+
+        result.push({
+          examFormId: form._id,
+          examId: form.examId,
+          classId: form.classId,
+          feeAmount: form.feeAmount,
+          endDate: form.endDate,
+          isPaymentRequired: form.isPaymentRequired,
+          studentId: {
+            _id: student._id,
+            name: studentName,
+            rollNumber: student.rollNumber,
+          },
+          status: payment ? payment.status : 'Pending',
+          receiptNumber: payment?.receiptNumber ?? null,
+          paymentId: payment?._id ?? null,
+          paymentMode: payment?.paymentMode ?? null,
+          paidAt: payment?.createdAt ?? null,
+        });
+      }
+    }
+
+    // Sort: pending first, then by exam name, then student name
+    result.sort((a, b) => {
+      if (a.status === 'Pending' && b.status !== 'Pending') return -1;
+      if (a.status !== 'Pending' && b.status === 'Pending') return 1;
+      const aExam = a.examId?.name ?? '';
+      const bExam = b.examId?.name ?? '';
+      if (aExam !== bExam) return aExam.localeCompare(bExam);
+      return (a.studentId?.name ?? '').localeCompare(b.studentId?.name ?? '');
+    });
+
+    return res.json({ success: true, data: result, total: result.length });
+  } catch (err) {
+    console.error('[getExamPaymentStatus] error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { payExamFee, manualExamPayment, getMyExamPayments, getAllExamPayments, getExamPaymentStatus };
