@@ -321,25 +321,49 @@ const getMyAdmitCardByExamId = async (req, res) => {
     if (!exam) {
       return res.status(404).json({ success: false, message: 'Exam not found' });
     }
-    if (!exam.isAdmitCardPublished) {
-      return res.status(403).json({
-        success: false,
-        message: 'Admit cards have not been released yet. Please check back later.'
-      });
-    }
 
+    // Resolve student IDs first so we can check individual card release
     let studentIds = [];
     if (role === 'STUDENT') {
       const student = await Student.findOne({ userId, schoolId });
-      if (!student) return res.status(404).json({ success: false, message: 'Student profile not found.' });
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: 'Student profile not found.'
+        });
+      }
       studentIds = [student._id];
     } else if (role === 'PARENT') {
       const Parent = require('../models/Parent.js');
       const parent = await Parent.findOne({ userId, schoolId });
-      if (!parent?.children?.length) return res.status(404).json({ success: false, message: 'No children associated.' });
+      if (!parent?.children?.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'No children associated.'
+        });
+      }
       studentIds = parent.children;
     } else {
       return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    // Allow access if either exam bulk-released OR individual card released
+    const examReleased = exam.isAdmitCardPublished === true;
+    if (!examReleased) {
+      const individualCard = await AdmitCard.findOne({
+        studentId: { $in: studentIds },
+        examId,
+        schoolId,
+        isPublished: true,
+        ...sessionFilter(req),
+      }).lean();
+
+      if (!individualCard) {
+        return res.status(403).json({
+          success: false,
+          message: 'Admit cards have not been released yet. Please check back later.'
+        });
+      }
     }
 
     const filter = { studentId: { $in: studentIds }, examId, schoolId, ...sessionFilter(req) };
@@ -360,6 +384,7 @@ const getMyAdmitCardByExamId = async (req, res) => {
     const enriched = card ? await _enrichCards(card, schoolId) : null;
     res.json({ success: true, data: enriched });
   } catch (err) {
+    console.error('getMyAdmitCardByExamId error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
