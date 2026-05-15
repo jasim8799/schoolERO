@@ -156,7 +156,9 @@ const getMyAssignedExams = async (req, res) => {
       _id: { $in: examIds },
       schoolId,
       sessionId,
-    }).sort({ startDate: 1 });
+    })
+      .populate('classId', 'name')
+      .sort({ startDate: 1 });
 
     // For each exam, attach only THIS teacher's subjects + paper status
     const result = await Promise.all(
@@ -177,6 +179,8 @@ const getMyAssignedExams = async (req, res) => {
             return {
               subjectId: sub.subjectId._id,
               subjectName: sub.subjectId?.name ?? '',
+              classId: exam.classId ?? null,
+              className: exam.classId?.name ?? '',
               maxMarks: sub.maxMarks,
               passMarks: sub.passMarks,
               examDate: sub.examDate,
