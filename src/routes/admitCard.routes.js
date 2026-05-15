@@ -17,12 +17,6 @@ router.post(
   bulkGenerateAdmitCards
 );
 
-router.patch(
-  '/:id/publish',
-  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
-  publishAdmitCard
-);
-
 router.get(
   '/exam/:examId',
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
@@ -44,6 +38,12 @@ router.get(
 router.get(
   '/:id/pdf',
   getAdmitCardPDF
+);
+
+router.patch(
+  '/:id/publish',
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  publishAdmitCard
 );
 
 module.exports = router;

@@ -354,14 +354,30 @@ const publishAdmitCard = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
+    // Use $set explicitly and runValidators: false to be safe
     const card = await AdmitCard.findOneAndUpdate(
       { _id: id, schoolId },
-      { isPublished: true, publishedAt: new Date() },
-      { new: true }
+      { $set: { isPublished: true, publishedAt: new Date() } },
+      { new: true, runValidators: false }
     );
-    if (!card) return res.status(404).json({ success: false, message: 'Admit card not found.' });
-    res.json({ success: true, data: card });
+    if (!card) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admit card not found. Check that the card ID is correct and belongs to this school.'
+      });
+    }
+    _audit('ADMIT_CARD_PUBLISHED', 'ADMIT_CARD', card._id,
+      'Individual admit card published', { cardId: id }, req);
+    res.json({
+      success: true,
+      data: {
+        _id: card._id,
+        isPublished: card.isPublished,
+        publishedAt: card.publishedAt,
+      },
+    });
   } catch (err) {
+    console.error('publishAdmitCard error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };

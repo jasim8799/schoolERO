@@ -49,6 +49,14 @@ const AdmitCardSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  isPublished: {
+    type: Boolean,
+    default: false
+  },
+  publishedAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
