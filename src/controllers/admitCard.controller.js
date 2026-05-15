@@ -35,32 +35,37 @@ const sessionFilter = (req) => {
 
 const generateAdmitCard = async (req, res) => {
   try {
-    const { studentId, examId, rollNumber, examCenter, centerNumber, schoolNumber, admitCardId, shift } = req.body;
+    const {
+      studentId, examId, rollNumber, examCenter,
+      centerNumber, schoolNumber, admitCardId, shift,
+      skipPaymentCheck
+    } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
 
-    // Find the exam form for this exam
-    const examForm = await ExamForm.findOne({ examId, schoolId, sessionId });
-    if (!examForm) {
-      return res.status(404).json({ message: 'Exam form not found for this exam.' });
-    }
-
-    // Check if payment exists
-    const payment = await ExamPayment.findOne({
-      studentId,
-      examFormId: examForm._id,
-      status: 'Paid',
-      schoolId,
-      sessionId
-    });
-    if (!payment) {
-      return res.status(403).json({ message: 'Exam fee not paid.' });
+    if (!skipPaymentCheck) {
+      const examForm = await ExamForm.findOne({ examId, schoolId, sessionId });
+      if (examForm) {
+        const payment = await ExamPayment.findOne({
+          studentId,
+          examFormId: examForm._id,
+          status: 'Paid',
+          schoolId,
+          sessionId
+        });
+        if (!payment) {
+          return res.status(403).json({
+            success: false,
+            message: 'Exam fee not paid for this student. Use "Skip Payment Check" to generate anyway.'
+          });
+        }
+      }
     }
 
     const admitCard = await AdmitCard.create({
       studentId,
       examId,
       rollNumber,
-      examCenter,
+      examCenter: examCenter || '',
       centerNumber: centerNumber || '',
       schoolNumber: schoolNumber || '',
       admitCardId: admitCardId || `AC${Date.now().toString().slice(-8)}`,
@@ -69,14 +74,19 @@ const generateAdmitCard = async (req, res) => {
       schoolId,
       createdBy: userId,
     });
+
     _audit('ADMIT_CARD_GENERATED', 'ADMIT_CARD', admitCard._id,
       `Admit card generated`, { examId }, req);
-    res.status(201).json(admitCard);
+
+    res.status(201).json({ success: true, data: admitCard });
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(409).json({ message: 'Admit card already exists for this student, exam, session, and school.' });
+      return res.status(409).json({
+        success: false,
+        message: 'Admit card already exists for this student and exam.'
+      });
     }
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
