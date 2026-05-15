@@ -126,15 +126,13 @@ const getMyAdmitCard = async (req, res) => {
         .populate({
           path: 'studentId',
           select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
-          populate: { path: 'userId', select: 'name' }
+          strictPopulate: false,
         })
         .populate({
           path: 'examId',
           select: 'name startDate endDate subjects classId',
-          populate: [
-            { path: 'subjects.subjectId', select: 'name code' },
-            { path: 'classId', select: 'name' }
-          ]
+          strictPopulate: false,
+          populate: { path: 'classId', select: 'name' }
         })
         .populate('schoolId', 'name address phone logoBase64');
     } else {
@@ -143,15 +141,13 @@ const getMyAdmitCard = async (req, res) => {
         .populate({
           path: 'studentId',
           select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
-          populate: { path: 'userId', select: 'name' }
+          strictPopulate: false,
         })
         .populate({
           path: 'examId',
           select: 'name startDate endDate subjects classId',
-          populate: [
-            { path: 'subjects.subjectId', select: 'name code' },
-            { path: 'classId', select: 'name' }
-          ]
+          strictPopulate: false,
+          populate: { path: 'classId', select: 'name' }
         })
         .populate('schoolId', 'name address phone logoBase64')
         .sort({ createdAt: -1 }); // Get the most recent one
@@ -174,14 +170,13 @@ const getAdmitCardPDF = async (req, res) => {
       .populate({
         path: 'studentId',
         select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
+        strictPopulate: false,
       })
       .populate({
         path: 'examId',
         select: 'name startDate endDate subjects classId',
-        populate: [
-          { path: 'subjects.subjectId', select: 'name code' },
-          { path: 'classId', select: 'name' }
-        ]
+        strictPopulate: false,
+        populate: { path: 'classId', select: 'name' }
       })
       .populate('schoolId', 'name address phone email logoBase64');
 
@@ -242,15 +237,13 @@ const getAdmitCardsByExam = async (req, res) => {
       .populate({
         path: 'studentId',
         select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
-        populate: { path: 'userId', select: 'name' }
+        strictPopulate: false,
       })
       .populate({
         path: 'examId',
         select: 'name startDate endDate subjects classId',
-        populate: [
-          { path: 'subjects.subjectId', select: 'name code' },
-          { path: 'classId', select: 'name' }
-        ]
+        strictPopulate: false,
+        populate: { path: 'classId', select: 'name' }
       })
       .populate('schoolId', 'name address phone logoBase64')
       .sort({ createdAt: -1 });
@@ -306,15 +299,13 @@ const getMyAdmitCardByExamId = async (req, res) => {
       .populate({
         path: 'studentId',
         select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
-        populate: { path: 'userId', select: 'name' }
+        strictPopulate: false,
       })
       .populate({
         path: 'examId',
         select: 'name startDate endDate subjects classId',
-        populate: [
-          { path: 'subjects.subjectId', select: 'name code' },
-          { path: 'classId', select: 'name' }
-        ]
+        strictPopulate: false,
+        populate: { path: 'classId', select: 'name' }
       })
       .populate('schoolId', 'name address phone logoBase64');
 
