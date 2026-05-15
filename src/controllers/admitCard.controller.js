@@ -108,6 +108,21 @@ const _enrichCards = async (cards, schoolId) => {
       }
     } catch (_) {}
 
+    // Ensure _id is always a plain string (never ObjectId or nested object)
+    if (obj._id) {
+      obj._id = obj._id.toString();
+    }
+    if (obj.studentId && typeof obj.studentId === 'object' && obj.studentId._id) {
+      obj.studentId._id = obj.studentId._id.toString();
+    }
+    if (obj.examId && typeof obj.examId === 'object' && obj.examId._id) {
+      obj.examId._id = obj.examId._id.toString();
+    }
+    if (obj.schoolId && typeof obj.schoolId === 'object' && obj.schoolId._id) {
+      obj.schoolId._id = obj.schoolId._id.toString();
+    }
+    // Ensure isPublished is always present (defaults to false if missing)
+    obj.isPublished = obj.isPublished === true;
     return obj;
   }));
 
@@ -354,30 +369,53 @@ const publishAdmitCard = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.user;
-    // Use $set explicitly and runValidators: false to be safe
+
+    // Debug log -- visible in Render/server logs
+    console.log(`[publishAdmitCard] id=${id} schoolId=${schoolId} user=${req.user?._id} role=${req.user?.role}`);
+
+    // Validate id looks like a MongoDB ObjectId
+    if (!id || id.length !== 24) {
+      console.warn(`[publishAdmitCard] Invalid card ID: "${id}"`);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid admit card ID: "${id}". Expected a 24-character MongoDB ObjectId.`
+      });
+    }
+
     const card = await AdmitCard.findOneAndUpdate(
       { _id: id, schoolId },
       { $set: { isPublished: true, publishedAt: new Date() } },
       { new: true, runValidators: false }
     );
+
+    console.log(`[publishAdmitCard] result: ${card ? 'found+updated' : 'NOT FOUND'}`);
+
     if (!card) {
+      // Try without schoolId filter to see if it exists at all
+      const exists = await AdmitCard.findById(id).lean();
+      const reason = exists
+        ? `Card exists but belongs to a different school (card.schoolId=${exists.schoolId}, req.schoolId=${schoolId})`
+        : `No admit card with _id=${id} exists in the database`;
+      console.warn(`[publishAdmitCard] 404 reason: ${reason}`);
       return res.status(404).json({
         success: false,
-        message: 'Admit card not found. Check that the card ID is correct and belongs to this school.'
+        message: `Admit card not found. ${reason}`
       });
     }
+
     _audit('ADMIT_CARD_PUBLISHED', 'ADMIT_CARD', card._id,
       'Individual admit card published', { cardId: id }, req);
+
     res.json({
       success: true,
       data: {
-        _id: card._id,
+        _id: card._id.toString(),
         isPublished: card.isPublished,
         publishedAt: card.publishedAt,
       },
     });
   } catch (err) {
-    console.error('publishAdmitCard error:', err);
+    console.error('[publishAdmitCard] error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
