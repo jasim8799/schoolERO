@@ -607,11 +607,136 @@ const calculateExamRanks = async (examId, schoolId, sessionId) => {
   }
 };
 
+const principalUpdateResult = async (req, res) => {
+  try {
+    const { resultId } = req.params;
+    const { marks } = req.body;
+    const { schoolId } = req.user;
+
+    if (!marks || typeof marks !== 'object' || Array.isArray(marks)) {
+      return res.status(400).json({
+        success: false,
+        message: 'marks must be an object mapping subject names to marks'
+      });
+    }
+
+    const existing = await Result.findOne({ _id: resultId, schoolId });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Result not found.' });
+    }
+    if (existing.status === 'Published') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot edit a published result. It is already visible to students.'
+      });
+    }
+
+    const entries = Object.entries(marks);
+    if (entries.length === 0) {
+      return res.status(400).json({ success: false, message: 'No marks provided' });
+    }
+
+    const maxPerSubject = 100;
+    const passMarkPerSubject = 33;
+    let totalObtained = 0;
+    let anyFail = false;
+
+    const processedMarks = entries.map(([subjectName, rawMarks]) => {
+      const obtained = Math.max(0, Math.min(maxPerSubject, Number(rawMarks) || 0));
+      const isPass = obtained >= passMarkPerSubject;
+      if (!isPass) anyFail = true;
+      totalObtained += obtained;
+      return { subjectName, marksObtained: obtained, isPass };
+    });
+
+    const totalMaxMarks = entries.length * maxPerSubject;
+    const percentage = Number(((totalObtained / totalMaxMarks) * 100).toFixed(2));
+
+    let grade;
+    if (anyFail || percentage < 40) grade = 'F';
+    else if (percentage >= 90) grade = 'A+';
+    else if (percentage >= 80) grade = 'A';
+    else if (percentage >= 70) grade = 'B+';
+    else if (percentage >= 60) grade = 'B';
+    else if (percentage >= 50) grade = 'C';
+    else grade = 'D';
+
+    const overallStatus = (anyFail || percentage < 40) ? 'FAIL' : 'PASS';
+    const promotionStatus = overallStatus === 'PASS' ? 'ELIGIBLE' : 'NOT_ELIGIBLE';
+
+    const updated = await Result.findByIdAndUpdate(
+      resultId,
+      {
+        $set: {
+          marks: processedMarks,
+          totalMarks: totalObtained,
+          percentage,
+          grade,
+          overallStatus,
+          promotionStatus,
+          status: 'Draft',
+        }
+      },
+      { new: true, runValidators: false }
+    ).populate('studentId', 'name rollNumber')
+     .populate('examId', 'name');
+
+    _audit('RESULT_EDITED_BY_PRINCIPAL', 'RESULT', updated._id,
+      'Result edited by principal', { resultId }, req);
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('principalUpdateResult error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const publishOneResult = async (req, res) => {
+  try {
+    const { resultId } = req.params;
+    const { schoolId, sessionId } = req.user;
+
+    const result = await Result.findOneAndUpdate(
+      { _id: resultId, schoolId, status: 'Draft' },
+      { $set: { status: 'Published' } },
+      { new: true }
+    ).populate('studentId', 'name rollNumber')
+     .populate('examId', 'name');
+
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Result not found or already published.'
+      });
+    }
+
+    await calculateExamRanks(result.examId?._id || result.examId, schoolId, sessionId);
+
+    _audit('RESULT_PUBLISHED_ONE', 'RESULT', result._id,
+      'Individual result published', { resultId }, req);
+
+    res.json({
+      success: true,
+      data: {
+        _id: result._id.toString(),
+        status: result.status,
+        studentName: result.studentId?.name,
+      }
+    });
+  } catch (err) {
+    console.error('publishOneResult error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createOrUpdateResult,
   submitSimpleMarks,
+  principalUpdateResult,
+  publishOneResult,
   publishResult,
   publishAllResults,
+  calculateExamRanks,
   getAllResults,
   getMyResult,
   getResultsByExam,

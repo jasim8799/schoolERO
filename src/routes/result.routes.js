@@ -1,5 +1,5 @@
 const express = require('express');
-const { createOrUpdateResult, submitSimpleMarks, publishResult, publishAllResults, getAllResults, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
+const { createOrUpdateResult, submitSimpleMarks, principalUpdateResult, publishOneResult, publishResult, publishAllResults, getAllResults, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
@@ -45,6 +45,26 @@ router.post(
   enforceSchoolIsolation,
   requireRole(USER_ROLES.TEACHER, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
   createOrUpdateResult
+);
+
+// PATCH /api/results/:resultId/edit — principal edits a draft result
+router.patch(
+  '/:resultId/edit',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  principalUpdateResult
+);
+
+// PATCH /api/results/:resultId/publish-one — publish single result
+router.patch(
+  '/:resultId/publish-one',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  publishOneResult
 );
 
 router.patch(
