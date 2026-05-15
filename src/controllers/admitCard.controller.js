@@ -35,7 +35,7 @@ const sessionFilter = (req) => {
 
 const generateAdmitCard = async (req, res) => {
   try {
-    const { studentId, examId, rollNumber, examCenter } = req.body;
+    const { studentId, examId, rollNumber, examCenter, centerNumber, schoolNumber, admitCardId, shift } = req.body;
     const { schoolId, sessionId, _id: userId } = req.user;
 
     // Find the exam form for this exam
@@ -61,6 +61,10 @@ const generateAdmitCard = async (req, res) => {
       examId,
       rollNumber,
       examCenter,
+      centerNumber: centerNumber || '',
+      schoolNumber: schoolNumber || '',
+      admitCardId: admitCardId || `AC${Date.now().toString().slice(-8)}`,
+      shift: shift || 'Morning',
       sessionId,
       schoolId,
       createdBy: userId,
@@ -109,13 +113,37 @@ const getMyAdmitCard = async (req, res) => {
     if (examId) {
       // If examId is provided, find specific admit card for the student(s)
       admitCard = await AdmitCard.findOne({ ...filter, examId })
-        .populate('studentId', 'name rollNumber')
-        .populate('examId', 'name');
+        .populate({
+          path: 'studentId',
+          select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
+          populate: { path: 'userId', select: 'name' }
+        })
+        .populate({
+          path: 'examId',
+          select: 'name startDate endDate subjects classId',
+          populate: [
+            { path: 'subjects.subjectId', select: 'name code' },
+            { path: 'classId', select: 'name' }
+          ]
+        })
+        .populate('schoolId', 'name address phone logoBase64');
     } else {
       // If no examId, fetch the latest admit card for the student(s)
       admitCard = await AdmitCard.findOne(filter)
-        .populate('studentId', 'name rollNumber')
-        .populate('examId', 'name')
+        .populate({
+          path: 'studentId',
+          select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
+          populate: { path: 'userId', select: 'name' }
+        })
+        .populate({
+          path: 'examId',
+          select: 'name startDate endDate subjects classId',
+          populate: [
+            { path: 'subjects.subjectId', select: 'name code' },
+            { path: 'classId', select: 'name' }
+          ]
+        })
+        .populate('schoolId', 'name address phone logoBase64')
         .sort({ createdAt: -1 }); // Get the most recent one
     }
 
@@ -133,9 +161,19 @@ const getAdmitCardPDF = async (req, res) => {
     const { id } = req.params;
     const { schoolId } = req.user;
     const admitCard = await AdmitCard.findOne({ _id: id, schoolId, ...sessionFilter(req) })
-      .populate('studentId', 'name rollNumber')
-      .populate('examId', 'name')
-      .populate('schoolId', 'name address phone email');
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
+      })
+      .populate({
+        path: 'examId',
+        select: 'name startDate endDate subjects classId',
+        populate: [
+          { path: 'subjects.subjectId', select: 'name code' },
+          { path: 'classId', select: 'name' }
+        ]
+      })
+      .populate('schoolId', 'name address phone email logoBase64');
 
     if (!admitCard) {
       return res.status(404).json({ message: 'Admit card not found.' });
@@ -191,8 +229,20 @@ const getAdmitCardsByExam = async (req, res) => {
     const filter = { examId, schoolId, ...sessionFilter(req) };
 
     const cards = await AdmitCard.find(filter)
-      .populate('studentId', 'name rollNumber')
-      .populate('examId', 'name')
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
+        populate: { path: 'userId', select: 'name' }
+      })
+      .populate({
+        path: 'examId',
+        select: 'name startDate endDate subjects classId',
+        populate: [
+          { path: 'subjects.subjectId', select: 'name code' },
+          { path: 'classId', select: 'name' }
+        ]
+      })
+      .populate('schoolId', 'name address phone logoBase64')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, data: cards });
@@ -243,8 +293,20 @@ const getMyAdmitCardByExamId = async (req, res) => {
     const filter = { studentId: { $in: studentIds }, examId, schoolId, ...sessionFilter(req) };
 
     const card = await AdmitCard.findOne(filter)
-      .populate('studentId', 'name rollNumber')
-      .populate('examId', 'name');
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber dateOfBirth photoBase64 fatherName motherName',
+        populate: { path: 'userId', select: 'name' }
+      })
+      .populate({
+        path: 'examId',
+        select: 'name startDate endDate subjects classId',
+        populate: [
+          { path: 'subjects.subjectId', select: 'name code' },
+          { path: 'classId', select: 'name' }
+        ]
+      })
+      .populate('schoolId', 'name address phone logoBase64');
 
     res.json({ success: true, data: card || null });
   } catch (err) {

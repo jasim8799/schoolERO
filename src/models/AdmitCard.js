@@ -18,6 +18,19 @@ const AdmitCardSchema = new mongoose.Schema({
   examCenter: {
     type: String
   },
+  centerNumber: {
+    type: String
+  },
+  schoolNumber: {
+    type: String
+  },
+  admitCardId: {
+    type: String
+  },
+  shift: {
+    type: String,
+    default: 'Morning'
+  },
   generatedAt: {
     type: Date,
     default: Date.now
