@@ -562,14 +562,16 @@ const publishAllResults = async (req, res) => {
       console.error('[automation] RESULT_PUBLISHED dispatch failed:', automationErr.message);
     }
 
-    // Recalculate ranks after bulk publish
-    await calculateExamRanks(examId, schoolId, sessionId);
-
+    // Respond immediately — don't block on rank calculation
     res.json({
       success: true,
       message: `${updated.modifiedCount} result(s) published successfully`,
       data: { modifiedCount: updated.modifiedCount }
     });
+    // Recalculate ranks in background (fire-and-forget)
+    calculateExamRanks(examId, schoolId, sessionId).catch((err) =>
+      console.error('[bg] calculateExamRanks failed:', err.message)
+    );
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -710,8 +712,7 @@ const publishOneResult = async (req, res) => {
       });
     }
 
-    await calculateExamRanks(result.examId?._id || result.examId, schoolId, sessionId);
-
+    // Respond immediately — rank recalculation is fire-and-forget
     _audit('RESULT_PUBLISHED_ONE', 'RESULT', result._id,
       'Individual result published', { resultId }, req);
 
@@ -723,6 +724,9 @@ const publishOneResult = async (req, res) => {
         studentName: result.studentId?.name,
       }
     });
+    // Recalculate ranks in background
+    calculateExamRanks(result.examId?._id || result.examId, schoolId, sessionId)
+      .catch((err) => console.error('[bg] calculateExamRanks failed:', err.message));
   } catch (err) {
     console.error('publishOneResult error:', err);
     res.status(500).json({ success: false, message: err.message });
