@@ -1,5 +1,5 @@
 const express = require('express');
-const { createOrUpdateResult, submitSimpleMarks, principalUpdateResult, publishOneResult, publishResult, publishAllResults, getAllResults, getMyResult, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
+const { createOrUpdateResult, submitSimpleMarks, principalUpdateResult, publishOneResult, publishResult, publishAllResults, getAllResults, getMyResult, getMyEnteredSubjects, getResultPDF, getResultsByExam, getChildrenResults, getMyResults, getResultsByStudentId } = require('../controllers/result.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
@@ -119,6 +119,16 @@ router.get(
   enforceSchoolIsolation,
   requireRole(USER_ROLES.STUDENT),
   getMyResult
+);
+
+// GET /api/results/my-entered?examId=X - teacher checks entered subjects.
+router.get(
+  '/my-entered',
+  authenticate,
+  attachActiveSession,
+  enforceSchoolIsolation,
+  requireRole(USER_ROLES.TEACHER),
+  getMyEnteredSubjects
 );
 
 router.get(

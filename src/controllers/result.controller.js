@@ -729,6 +729,52 @@ const publishOneResult = async (req, res) => {
   }
 };
 
+// ── Teacher: get which subjects they have entered marks for ─────────────────
+// Used by Flutter Enter Marks tab to restore progress state on refresh.
+const getMyEnteredSubjects = async (req, res) => {
+  try {
+    const { schoolId, _id: userId } = req.user;
+    const { examId } = req.query;
+
+    if (!examId) {
+      return res.status(400).json({
+        success: false,
+        message: 'examId query param is required'
+      });
+    }
+
+    const results = await Result.find({
+      examId,
+      schoolId,
+      ...sessionFilter(req),
+      createdBy: userId,
+    }).select('marks').lean();
+
+    const enteredSubjectNames = new Set();
+    for (const result of results) {
+      for (const mark of (result.marks || [])) {
+        if (mark.subjectName) {
+          enteredSubjectNames.add(mark.subjectName.toLowerCase().trim());
+        }
+        if (mark.subjectId) {
+          enteredSubjectNames.add(mark.subjectId.toString());
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        examId,
+        enteredSubjectNames: [...enteredSubjectNames],
+        resultCount: results.length,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createOrUpdateResult,
   submitSimpleMarks,
@@ -739,6 +785,7 @@ module.exports = {
   calculateExamRanks,
   getAllResults,
   getMyResult,
+  getMyEnteredSubjects,
   getResultsByExam,
   getChildrenResults,
   getMyResults,
