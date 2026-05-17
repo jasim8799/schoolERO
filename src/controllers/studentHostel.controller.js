@@ -158,7 +158,11 @@ const getAllStudentHostels = async (req, res) => {
     const { schoolId } = req.user;
 
     const assignments = await StudentHostel.find({ schoolId, status: 'ACTIVE' })
-      .populate('studentId', 'name rollNumber')
+      .populate({
+        path: 'studentId',
+        select: 'name rollNumber classId',
+        populate: { path: 'classId', select: 'name' },
+      })
       .populate('hostelId', 'name monthlyFee gender address capacity wardenName wardenPhone wardenEmail')
       .populate('roomId', 'roomNumber totalBeds availableBeds wardenName wardenPhone wardenEmail')
       .sort({ createdAt: -1 });
