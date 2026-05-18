@@ -68,6 +68,8 @@ const questionRoutes = require('./routes/question.routes');
 const ptmRoutes = require('./routes/ptm.routes');
 const noticeRoutes = require('./routes/notice.routes');
 const leaveRoutes = require('./routes/leave.routes');
+const subscriptionRoutes = require('./routes/subscription.routes');
+const revenueRoutes = require('./routes/revenue.routes');
 
 const app = express();
 const path = require('path');
@@ -100,8 +102,11 @@ app.use('/api/auth', authRateLimit, authRoutes);
 
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
+app.use('/api/revenue', revenueRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/version', versionRoutes);
+const subscriptionRoutes = require('./routes/subscription.routes');
+app.use('/api/subscriptions', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('subscriptions'), subscriptionRoutes);
 
 // Global middleware for tenant routes: authenticate -> checkMaintenanceMode
 app.use('/api', authenticate, checkMaintenanceMode);
@@ -218,6 +223,7 @@ app.use('/api/questions', attachSchoolId, attachActiveSession, checkSubscription
 app.use('/api/ptm', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), ptmRoutes);
 app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), noticeRoutes);
 app.use('/api/leave', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), leaveRoutes);
+app.use('/api/subscriptions', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('subscriptions'), subscriptionRoutes);
 
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');
