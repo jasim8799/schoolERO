@@ -371,7 +371,6 @@ const getStudentDashboard = async (req, res) => {
 // Get Super Admin dashboard data
 const getSuperAdminDashboard = async (req, res) => {
   try {
-    // Only Super Admin can access
     if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
       return res.status(403).json({
         success: false,
@@ -379,67 +378,141 @@ const getSuperAdminDashboard = async (req, res) => {
       });
     }
 
-    // Total schools
     const School = require('../models/School');
-    const totalSchools = await School.countDocuments();
+    const AuditLog = require('../models/AuditLog');
+    const Backup = require('../models/Backup');
+    const AcademicSession = require('../models/AcademicSession');
+    const mongoose = require('mongoose');
 
-    // Total users across all schools
-    const totalUsers = await User.countDocuments();
+    const now = new Date();
+    const yesterday = new Date(now - 24 * 60 * 60 * 1000);
+    const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    // Total students across all schools
-    const totalStudents = await Student.countDocuments();
-
-    // Total teachers across all schools
-    const totalTeachers = await User.countDocuments({ role: USER_ROLES.TEACHER });
-
-    // Recent audit logs (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const recentLogs = await require('../models/AuditLog').countDocuments({
-      createdAt: { $gte: yesterday }
-    });
-
-    // System health metrics
-    const activeSessions = await require('../models/AcademicSession').countDocuments({ status: 'ACTIVE' });
-
-    // API health metrics
-    const dbStatus = require('mongoose').connection.readyState === 1 ? 'healthy' : 'unhealthy';
-    const uptime = Math.floor(process.uptime()); // Uptime in seconds
-
-    // Recent backups count (last 7 days)
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const recentBackups = await require('../models/Backup').countDocuments({
-      createdAt: { $gte: weekAgo }
-    });
-
-    // Schools with issues (no recent backup)
-    const schoolsWithoutRecentBackup = await School.find({
-      _id: {
-        $nin: await require('../models/Backup').distinct('schoolId', {
-          createdAt: { $gte: weekAgo }
-        })
-      }
-    });
-    const schoolsWithIssues = schoolsWithoutRecentBackup.length;
-
-    res.json({
+    const [
       totalSchools,
       totalUsers,
       totalStudents,
       totalTeachers,
-      recentLogs,
       activeSessions,
-      recentBackups,
-      schoolsWithIssues,
-      systemHealth: {
-        database: dbStatus,
-        uptime: uptime,
-        api: 'healthy'
+      recentLogs,
+    ] = await Promise.all([
+      School.countDocuments(),
+      User.countDocuments(),
+      Student.countDocuments(),
+      User.countDocuments({ role: USER_ROLES.TEACHER }),
+      AcademicSession.countDocuments({ status: 'ACTIVE' }),
+      AuditLog.countDocuments({ createdAt: { $gte: yesterday } }),
+    ]);
+
+    const [
+      activeSubscriptions,
+      expiredSubscriptions,
+      expiringIn30Days,
+      expiringIn7Days,
+      freeTrialSchools,
+    ] = await Promise.all([
+      School.countDocuments({
+        'subscription.status': 'active',
+        'subscription.endDate': { $gte: now }
+      }),
+      School.countDocuments({
+        $or: [
+          { 'subscription.status': 'expired' },
+          { 'subscription.endDate': { $lt: now } }
+        ]
+      }),
+      School.countDocuments({
+        'subscription.endDate': { $gte: now, $lte: thirtyDaysLater },
+        'subscription.status': 'active'
+      }),
+      School.countDocuments({
+        'subscription.endDate': { $gte: now, $lte: sevenDaysLater },
+        'subscription.status': 'active'
+      }),
+      School.countDocuments({ 'subscription.plan': 'trial' }),
+    ]);
+
+    const [recentBackupsCount, schoolsWithRecentBackupIds] = await Promise.all([
+      Backup.countDocuments({ createdAt: { $gte: weekAgo } }),
+      Backup.distinct('schoolId', { createdAt: { $gte: weekAgo } }),
+    ]);
+    const schoolsWithIssues = totalSchools - schoolsWithRecentBackupIds.length;
+
+    const [failedLogins, suspiciousActivity] = await Promise.all([
+      AuditLog.countDocuments({
+        action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN', 'UNAUTHORIZED_ACCESS'] },
+        createdAt: { $gte: yesterday }
+      }),
+      AuditLog.countDocuments({
+        severity: { $in: ['WARNING', 'CRITICAL', 'ERROR'] },
+        createdAt: { $gte: yesterday }
+      }),
+    ]);
+
+    const newSchoolsThisMonth = await School.countDocuments({
+      createdAt: { $gte: monthAgo }
+    });
+
+    const dbStatus = mongoose.connection.readyState === 1 ? 'healthy' : 'unhealthy';
+    const uptime = Math.floor(process.uptime());
+
+    const recentActivity = await AuditLog.find({ createdAt: { $gte: yesterday } })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select('action entityType details severity createdAt ipAddress')
+      .populate('userId', 'name role')
+      .lean();
+
+    const schoolsList = await School.find()
+      .select('name subscription createdAt isActive')
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    res.json({
+      success: true,
+      data: {
+        totalSchools,
+        totalUsers,
+        totalStudents,
+        totalTeachers,
+        activeSessions,
+        recentLogs,
+        newSchoolsThisMonth,
+
+        activeSubscriptions,
+        expiredSubscriptions,
+        expiringIn30Days,
+        expiringIn7Days,
+        freeTrialSchools,
+        pendingRenewals: expiringIn30Days,
+
+        recentBackups: recentBackupsCount,
+        schoolsWithIssues,
+        failedLogins,
+        suspiciousActivityCount: suspiciousActivity,
+
+        systemHealth: {
+          database: dbStatus,
+          uptime,
+          api: 'healthy',
+          memory: process.memoryUsage().heapUsed,
+          memoryTotal: process.memoryUsage().heapTotal,
+        },
+
+        recentActivity,
+        schools: schoolsList,
       }
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[SuperAdminDashboard]', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error'
+    });
   }
 };
 
