@@ -103,6 +103,7 @@ app.use('/api/auth', authRateLimit, authRoutes);
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
 app.use('/api/revenue', revenueRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/version', versionRoutes);
 
@@ -221,7 +222,6 @@ app.use('/api/questions', attachSchoolId, attachActiveSession, checkSubscription
 app.use('/api/ptm', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), ptmRoutes);
 app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), noticeRoutes);
 app.use('/api/leave', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), leaveRoutes);
-app.use('/api/subscriptions', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('subscriptions'), subscriptionRoutes);
 
 // Start cron jobs
 const { startRecurringBillsCron } = require('./cron/recurringBills');
