@@ -105,8 +105,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/revenue', revenueRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/version', versionRoutes);
-const subscriptionRoutes = require('./routes/subscription.routes');
-app.use('/api/subscriptions', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('subscriptions'), subscriptionRoutes);
 
 // Global middleware for tenant routes: authenticate -> checkMaintenanceMode
 app.use('/api', authenticate, checkMaintenanceMode);
