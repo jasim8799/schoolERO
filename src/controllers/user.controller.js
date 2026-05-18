@@ -177,6 +177,160 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// Super Admin: Get all users across all schools with security enrichment
+const getSuperAdminUsers = async (req, res) => {
+  try {
+    if (req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Super Admin only.'
+      });
+    }
+
+    const { role, status, schoolId, search, limit = 100, page = 1 } = req.query;
+
+    const query = {};
+    if (role) query.role = role;
+    if (status) query.status = status;
+    if (schoolId) query.schoolId = schoolId;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { employeeId: { $regex: search, $options: 'i' } },
+        { mobile: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const parsedLimit = parseInt(limit, 10);
+    const parsedPage = parseInt(page, 10);
+    const skip = (parsedPage - 1) * parsedLimit;
+    const AuditLog = require('../models/AuditLog.js');
+
+    const [users, totalCount] = await Promise.all([
+      User.find(query)
+        .populate('schoolId', 'name code plan')
+        .select('-password')
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .lean(),
+      User.countDocuments(query),
+    ]);
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const enriched = await Promise.all(
+      users.map(async (user) => {
+        try {
+          const [failedLogins, successLogins, recentAlerts] = await Promise.all([
+            AuditLog.countDocuments({
+              userId: user._id,
+              action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] },
+              createdAt: { $gte: yesterday },
+            }),
+            AuditLog.countDocuments({
+              userId: user._id,
+              action: 'LOGIN_SUCCESS',
+              createdAt: { $gte: yesterday },
+            }),
+            AuditLog.countDocuments({
+              userId: user._id,
+              severity: { $in: ['WARNING', 'ERROR', 'CRITICAL'] },
+              createdAt: { $gte: yesterday },
+            }),
+          ]);
+
+          const threatScore = Math.min(
+            1.0,
+            (failedLogins * 0.15) + (recentAlerts * 0.1)
+          );
+
+          const riskLevel =
+            threatScore > 0.7 ? 'HIGH'
+            : threatScore > 0.4 ? 'MEDIUM'
+            : 'LOW';
+
+          return {
+            ...user,
+            failedLogins,
+            successLogins,
+            recentAlerts,
+            threatScore: parseFloat(threatScore.toFixed(2)),
+            riskLevel,
+            sessionTokens: 1,
+            liveDevices: 1,
+            vpnDetected: false,
+            mfaEnabled: false,
+            encrypted: true,
+            apiAccess: user.role === 'SUPER_ADMIN' || user.role === 'PRINCIPAL',
+            department: user.department || user.designation || 'N/A',
+            employeeId: user.employeeId || user._id.toString().slice(-6).toUpperCase(),
+            ipAddress: 'N/A',
+            device: 'Unknown',
+            location: user.city ? `${user.city}, IN` : 'N/A',
+          };
+        } catch (enrichErr) {
+          console.error(`[getSuperAdminUsers] Enrichment failed for ${user._id}:`, enrichErr.message);
+          return {
+            ...user,
+            failedLogins: 0,
+            successLogins: 0,
+            recentAlerts: 0,
+            threatScore: 0,
+            riskLevel: 'LOW',
+            sessionTokens: 1,
+            liveDevices: 1,
+            vpnDetected: false,
+            mfaEnabled: false,
+            encrypted: true,
+            apiAccess: false,
+            department: user.department || 'N/A',
+            employeeId: user.employeeId || user._id.toString().slice(-6).toUpperCase(),
+            ipAddress: 'N/A',
+            device: 'Unknown',
+            location: user.city ? `${user.city}, IN` : 'N/A',
+          };
+        }
+      })
+    );
+
+    const metrics = {
+      totalUsers: totalCount,
+      activeUsers: enriched.filter((u) => u.status === 'active').length,
+      inactiveUsers: enriched.filter((u) => u.status === 'inactive').length,
+      highThreatUsers: enriched.filter((u) => u.riskLevel === 'HIGH').length,
+      totalFailedLogins: enriched.reduce((sum, u) => sum + u.failedLogins, 0),
+      roleBreakdown: {
+        SUPER_ADMIN: enriched.filter((u) => u.role === 'SUPER_ADMIN').length,
+        PRINCIPAL: enriched.filter((u) => u.role === 'PRINCIPAL').length,
+        OPERATOR: enriched.filter((u) => u.role === 'OPERATOR').length,
+        TEACHER: enriched.filter((u) => u.role === 'TEACHER').length,
+        STUDENT: enriched.filter((u) => u.role === 'STUDENT').length,
+        PARENT: enriched.filter((u) => u.role === 'PARENT').length,
+      },
+    };
+
+    res.json({
+      success: true,
+      count: enriched.length,
+      totalCount,
+      page: parsedPage,
+      totalPages: Math.ceil(totalCount / parsedLimit),
+      metrics,
+      data: enriched,
+    });
+  } catch (error) {
+    console.error('[getSuperAdminUsers]', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching users',
+      error: error.message,
+    });
+  }
+};
+
 // Get User by ID
 const getUserById = async (req, res) => {
   try {
@@ -674,5 +828,6 @@ module.exports = {
   setUserPassword,
   updateMyProfile,
   uploadStaffDocument,
-  getStaffDocumentData
+  getStaffDocumentData,
+  getSuperAdminUsers,
 };

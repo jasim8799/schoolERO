@@ -2,6 +2,7 @@ const express = require('express');
 const {
   createUser,
   getAllUsers,
+  getSuperAdminUsers,
   getUserById,
   updateUser,
   deleteUser,
@@ -18,6 +19,15 @@ const { checkStudentLimit, checkTeacherLimit } = require('../middlewares/schoolL
 const { USER_ROLES } = require('../config/constants.js');
 
 const router = express.Router();
+
+// GET /api/users/super-admin - Get ALL users across all schools (SUPER_ADMIN only)
+// Must come BEFORE the /:id route to avoid path conflict
+router.get(
+  '/super-admin',
+  authenticate,
+  requireRole(USER_ROLES.SUPER_ADMIN),
+  getSuperAdminUsers
+);
 
 // POST /api/users - Create user
 // Only PRINCIPAL and OPERATOR can create users
