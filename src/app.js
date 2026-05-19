@@ -38,6 +38,10 @@ const expenseRoutes = require('./routes/expense.routes');
 const salaryRoutes = require('./routes/salary.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
+const activityRoutes = require('./routes/activity.routes');
+const securityRoutes = require('./routes/security.routes');
+const jobsRoutes = require('./routes/jobs.routes');
 const systemRoutes = require('./routes/system.routes');
 const auditRoutes = require('./routes/audit.routes');
 const homeworkRoutes = require('./routes/homework.routes');
@@ -106,6 +110,10 @@ app.use('/api/revenue', revenueRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/version', versionRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/security', securityRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // Global middleware for tenant routes: authenticate -> checkMaintenanceMode
 app.use('/api', authenticate, checkMaintenanceMode);
