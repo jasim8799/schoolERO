@@ -24,7 +24,15 @@ require('./src/jobs/scheduler');
 
 // Start Server
 const PORT = config.port;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.success(`🚀 Server running on port ${PORT}`);
   logger.info(`Environment: ${config.nodeEnv}`);
 });
+
+// Initialize backup Socket.IO namespace for real-time backup telemetry
+try {
+  app.initBackupSocket && app.initBackupSocket(server);
+  logger.info('Socket.IO backup telemetry enabled');
+} catch (err) {
+  logger.error('Socket.IO backup telemetry failed to start:', err.message);
+}

@@ -1,0 +1,1 @@
+// SecurityThreat mongoose schema placeholder

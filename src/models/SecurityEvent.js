@@ -1,0 +1,1 @@
+// SecurityEvent mongoose schema placeholder

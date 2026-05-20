@@ -1,0 +1,1 @@
+// SecurityIncident mongoose schema placeholder

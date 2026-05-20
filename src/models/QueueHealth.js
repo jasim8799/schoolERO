@@ -1,0 +1,1 @@
+// QueueHealth mongoose schema placeholder

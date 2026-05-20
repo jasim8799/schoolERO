@@ -1,0 +1,1 @@
+// DeviceFingerprint mongoose schema placeholder

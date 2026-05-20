@@ -56,6 +56,13 @@ const studentTransportRoutes = require('./routes/studentTransport.routes');
 const transportFeeRoutes = require('./routes/transportFee.routes');
 const hostelFeeRoutes = require('./routes/hostelFee.routes');
 const backupRoutes = require('./routes/backup.routes');
+const restoreRoutes = require('./routes/restore.routes');
+
+// Backup/restore platform imports
+const { startBackupWorker } = require('./backup/workers/backupWorker');
+const { startRestoreWorker } = require('./backup/workers/restoreWorker');
+const { initBackupSocket } = require('./backup/sockets/backupSocket');
+const { registerBackupSchedulers } = require('./backup/schedulers/backupScheduler');
 const inventoryRoutes = require('./routes/inventory.routes');
 const workflowRoutes = require('./routes/workflow.routes');
 const eventRoutes = require('./routes/event.routes');
@@ -76,6 +83,7 @@ const subscriptionRoutes = require('./routes/subscription.routes');
 const revenueRoutes = require('./routes/revenue.routes');
 
 const app = express();
+let io;
 const path = require('path');
 
 // Middlewares
@@ -118,8 +126,10 @@ app.use('/api/jobs', jobsRoutes);
 // Global middleware for tenant routes: authenticate -> checkMaintenanceMode
 app.use('/api', authenticate, checkMaintenanceMode);
 
-// Backup routes (authenticated)
+
+// Backup & Restore routes (authenticated)
 app.use('/api/backup', backupRoutes);
+app.use('/api/restore', restoreRoutes);
 
 // Inventory routes (authenticated, Principal only)
 app.use('/api/inventory', attachSchoolId, inventoryRoutes);
@@ -231,9 +241,20 @@ app.use('/api/ptm', attachSchoolId, attachActiveSession, checkSubscriptionStatus
 app.use('/api/notices', attachSchoolId, checkSubscriptionStatus(), noticeRoutes);
 app.use('/api/leave', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), leaveRoutes);
 
-// Start cron jobs
-const { startRecurringBillsCron } = require('./cron/recurringBills');
-startRecurringBillsCron();
+
+// --- Backup/Restore Platform Bootstrap ---
+// Only run once per process (not in test)
+if (process.env.NODE_ENV !== 'test') {
+  // Start BullMQ workers
+  startBackupWorker();
+  startRestoreWorker();
+
+  // Register backup schedulers
+  registerBackupSchedulers();
+}
+
+// Socket.IO integration (if server is created here)
+// To be initialized in server.js if needed
 
 // Catch-all: return JSON 404 for any unmatched route (must be before error handler)
 app.use((req, res) => {
@@ -244,3 +265,10 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
+module.exports.initBackupSocket = (server) => {
+  const { Server } = require('socket.io');
+  io = new Server(server, { cors: { origin: '*' } });
+  global.io = io;
+  initBackupSocket(io);
+  return io;
+};

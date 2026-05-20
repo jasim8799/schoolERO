@@ -1,0 +1,1 @@
+// QueueMetric mongoose schema placeholder

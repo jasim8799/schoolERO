@@ -1,0 +1,1 @@
+// SystemEvent mongoose schema placeholder

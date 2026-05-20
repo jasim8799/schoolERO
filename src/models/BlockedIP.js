@@ -1,0 +1,1 @@
+// BlockedIP mongoose schema placeholder

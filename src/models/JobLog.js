@@ -1,0 +1,1 @@
+// JobLog mongoose schema placeholder

@@ -1,0 +1,1 @@
+// GeoAnomaly mongoose schema placeholder

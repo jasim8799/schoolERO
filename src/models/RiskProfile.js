@@ -1,0 +1,1 @@
+// RiskProfile mongoose schema placeholder

@@ -1,0 +1,1 @@
+// WorkerNode mongoose schema placeholder

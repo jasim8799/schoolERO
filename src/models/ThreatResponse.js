@@ -1,0 +1,1 @@
+// ThreatResponse mongoose schema placeholder
