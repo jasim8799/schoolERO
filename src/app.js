@@ -58,11 +58,23 @@ const hostelFeeRoutes = require('./routes/hostelFee.routes');
 const backupRoutes = require('./routes/backup.routes');
 const restoreRoutes = require('./routes/restore.routes');
 
-// Backup/restore platform imports
-const { startBackupWorker } = require('./backup/workers/backupWorker');
-const { startRestoreWorker } = require('./backup/workers/restoreWorker');
-const { initBackupSocket } = require('./backup/sockets/backupSocket');
-const { registerBackupSchedulers } = require('./backup/schedulers/backupScheduler');
+// Backup/restore platform imports (optional until module is fully provisioned)
+let backupPlatform = {
+  startBackupWorker: null,
+  startRestoreWorker: null,
+  initBackupSocket: null,
+  registerBackupSchedulers: null,
+};
+try {
+  backupPlatform = {
+    startBackupWorker: require('./backup/workers/backupWorker').startBackupWorker,
+    startRestoreWorker: require('./backup/workers/restoreWorker').startRestoreWorker,
+    initBackupSocket: require('./backup/sockets/backupSocket').initBackupSocket,
+    registerBackupSchedulers: require('./backup/schedulers/backupScheduler').registerBackupSchedulers,
+  };
+} catch (_) {
+  // Keep server boot resilient if backup module files are unavailable.
+}
 const inventoryRoutes = require('./routes/inventory.routes');
 const workflowRoutes = require('./routes/workflow.routes');
 const eventRoutes = require('./routes/event.routes');
@@ -246,11 +258,11 @@ app.use('/api/leave', attachSchoolId, attachActiveSession, checkSubscriptionStat
 // Only run once per process (not in test)
 if (process.env.NODE_ENV !== 'test') {
   // Start BullMQ workers
-  startBackupWorker();
-  startRestoreWorker();
+  backupPlatform.startBackupWorker && backupPlatform.startBackupWorker();
+  backupPlatform.startRestoreWorker && backupPlatform.startRestoreWorker();
 
   // Register backup schedulers
-  registerBackupSchedulers();
+  backupPlatform.registerBackupSchedulers && backupPlatform.registerBackupSchedulers();
 }
 
 // Socket.IO integration (if server is created here)
@@ -266,9 +278,10 @@ app.use(errorHandler);
 
 module.exports = app;
 module.exports.initBackupSocket = (server) => {
+  if (!backupPlatform.initBackupSocket) return null;
   const { Server } = require('socket.io');
   io = new Server(server, { cors: { origin: '*' } });
   global.io = io;
-  initBackupSocket(io);
+  backupPlatform.initBackupSocket(io);
   return io;
 };
