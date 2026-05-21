@@ -144,6 +144,10 @@ const schoolSchema = new mongoose.Schema({
     onlineUsers: { type: Number, default: 0 },
     lastAnalyticsSync: { type: Date, default: null }
   },
+  lastHeartbeat: {
+    type: Date,
+    default: null
+  },
   healthScore: {
     type: Number,
     default: 100,

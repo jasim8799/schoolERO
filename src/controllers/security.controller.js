@@ -4,6 +4,7 @@ const LoginSession = require('../models/LoginSession');
 const User = require('../models/User');
 const { USER_ROLES } = require('../config/constants');
 const redis = require('../config/redis');
+const crypto = require('crypto');
 
 function _relativeTime(date) {
   if (!date) return 'N/A';
@@ -36,6 +37,11 @@ const safeQuery = (promise, fallback) => Promise.race([
   promise,
   new Promise((resolve) => setTimeout(() => resolve(fallback), 8000)),
 ]).catch(() => fallback);
+
+function _hashIpToRadar(ip) {
+  const hash = crypto.createHash('sha1').update(String(ip || '')).digest('hex');
+  return parseInt(hash.slice(0, 8), 16);
+}
 
 const getSecurityData = async (req, res) => {
   try {
@@ -390,6 +396,7 @@ const blockThreat = async (req, res) => {
     }).catch(() => {});
 
     global.io?.of('/security').emit('threat:blocked', { threatId, ipAddress, by: req.user.name });
+    global.io?.emit('security:threat_blocked', { threatId, ipAddress });
 
     const keys = await redis.keys('security:dashboard:*').catch(() => []);
     if (keys.length > 0) {
@@ -397,6 +404,87 @@ const blockThreat = async (req, res) => {
     }
 
     return res.json({ success: true, message: `Threat ${threatId} blocked successfully` });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getRadarData = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const cacheKey = 'security:radar:v1';
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) return res.json({ success: true, data: JSON.parse(cached), cached: true });
+
+    const start = Date.now();
+    const now = new Date();
+    const hourAgo = new Date(now.getTime() - 3600000);
+
+    const [failedLogs, secLogs, blockedEvents] = await Promise.all([
+      safeQuery(
+        AuditLog.find({ createdAt: { $gte: hourAgo }, action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN', 'UNAUTHORIZED_ACCESS'] } })
+          .select('ipAddress severity action createdAt')
+          .lean(),
+        []
+      ),
+      safeQuery(
+        SecurityLog.find({ createdAt: { $gte: hourAgo } })
+          .select('ipAddress severity eventType createdAt')
+          .lean(),
+        []
+      ),
+      safeQuery(
+        AuditLog.countDocuments({ createdAt: { $gte: hourAgo }, action: { $in: ['IP_BLOCKED', 'RATE_LIMIT_EXCEEDED', 'BRUTE_FORCE_DETECTED'] } }),
+        0
+      ),
+    ]);
+
+    const allIps = [...new Set([
+      ...failedLogs.map((e) => e.ipAddress).filter(Boolean),
+      ...secLogs.map((e) => e.ipAddress).filter(Boolean),
+    ])];
+
+    const activeThreats = failedLogs.length + secLogs.filter((e) => /CRITICAL|ERROR/i.test(e.severity || '')).length;
+    const suspiciousIps = allIps.length;
+    const failedLogins1h = failedLogs.length;
+    const inferenceMs = Math.max(1, Date.now() - start);
+    const threatLevel = activeThreats > 25 ? 'CRITICAL' : activeThreats > 12 ? 'HIGH' : activeThreats > 5 ? 'MEDIUM' : 'LOW';
+
+    const severityToRadius = (severity) => {
+      const s = String(severity || '').toUpperCase();
+      if (s === 'CRITICAL') return 0.92;
+      if (s === 'HIGH') return 0.74;
+      if (s === 'MEDIUM') return 0.54;
+      return 0.34;
+    };
+
+    const radarPoints = allIps.slice(0, 20).map((ip, index) => {
+      const pointSeed = _hashIpToRadar(ip);
+      const angle = ((pointSeed % 360) / 360);
+      const severity = index < 3 ? 'HIGH' : index < 10 ? 'MEDIUM' : 'LOW';
+      return {
+        angle,
+        radius: severityToRadius(severity),
+        severity,
+      };
+    });
+
+    const data = {
+      threatLevel,
+      activeThreats,
+      suspiciousIps,
+      failedLogins1h,
+      blockedEvents,
+      inferenceMs,
+      radarPoints,
+      lastSweep: now.toISOString(),
+    };
+
+    await redis.setex(cacheKey, 30, JSON.stringify(data)).catch(() => {});
+    return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -556,4 +644,5 @@ module.exports = {
   getActiveSessions,
   revokeSession,
   blockIP,
+  getRadarData,
 };

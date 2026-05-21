@@ -102,6 +102,7 @@ const noticeRoutes = require('./routes/notice.routes');
 const leaveRoutes = require('./routes/leave.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
 const revenueRoutes = require('./revenue/revenue.routes');
+const searchRoutes = require('./routes/search.routes');
 const debugRoutes = require('./routes/debug.routes');
 
 const app = express();
@@ -170,6 +171,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/revenue', revenueRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/security', securityRoutes);

@@ -13,6 +13,8 @@ const Exam = require('../models/Exam');
 const Result = require('../models/Result');
 const Bill = require('../models/Bill');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
+const AuditLog = require('../models/AuditLog');
+const redis = require('../config/redis');
 const { USER_ROLES } = require('../config/constants');
 
 function sessionFilter(req) {
@@ -721,10 +723,62 @@ const getSuperAdminDashboard = async (req, res) => {
   }
 };
 
+const getNavBadges = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied. Super Admin only.' });
+    }
+
+    const cacheKey = 'dashboard:nav-badges:v1';
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json({ success: true, data: JSON.parse(cached), cached: true });
+    }
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
+    const thirtyDaysLater = new Date(now.getTime() + 30 * 86400000);
+
+    const [schools, inactiveSchools, expiringSoon, highRiskSchools, pendingUsers, securityEvents, activityEvents] = await Promise.all([
+      School.countDocuments({ isDeleted: { $ne: true } }).catch(() => 0),
+      School.countDocuments({ isDeleted: { $ne: true }, status: { $ne: 'ACTIVE' } }).catch(() => 0),
+      School.countDocuments({ isDeleted: { $ne: true }, 'subscription.endDate': { $lte: thirtyDaysLater } }).catch(() => 0),
+      School.countDocuments({ isDeleted: { $ne: true }, riskLevel: { $in: ['HIGH', 'CRITICAL'] } }).catch(() => 0),
+      User.countDocuments({ isDeleted: { $ne: true }, isApproved: false }).catch(() => 0),
+      AuditLog.countDocuments({ createdAt: { $gte: sevenDaysAgo }, severity: { $in: ['HIGH', 'CRITICAL'] } }).catch(() => 0),
+      AuditLog.countDocuments({ createdAt: { $gte: sevenDaysAgo } }).catch(() => 0),
+    ]);
+
+    const data = {
+      dashboard: { count: 1, label: 'overview', severity: 'low' },
+      schools: { count: inactiveSchools + highRiskSchools, label: `${schools} schools`, severity: inactiveSchools + highRiskSchools > 0 ? 'high' : 'low' },
+      users: { count: pendingUsers, label: 'pending users', severity: pendingUsers > 0 ? 'medium' : 'low' },
+      subscriptions: { count: expiringSoon, label: 'renewals due', severity: expiringSoon > 0 ? 'high' : 'low' },
+      revenue: { count: 0, label: 'revenue watch', severity: 'low' },
+      analytics: { count: 0, label: 'analytics stable', severity: 'low' },
+      activity: { count: Math.min(99, Math.round(activityEvents / 25)), label: 'activity load', severity: activityEvents > 100 ? 'medium' : 'low' },
+      auditLogs: { count: securityEvents, label: 'security events', severity: securityEvents > 0 ? 'high' : 'low' },
+      security: { count: securityEvents + highRiskSchools, label: 'security center', severity: securityEvents > 0 || highRiskSchools > 0 ? 'high' : 'low' },
+      backup: { count: 0, label: 'backup jobs', severity: 'low' },
+      jobs: { count: 0, label: 'queue jobs', severity: 'low' },
+      reports: { count: 0, label: 'reports', severity: 'low' },
+      announcements: { count: 0, label: 'announcements', severity: 'low' },
+      settings: { count: 0, label: 'settings', severity: 'low' },
+      system: { count: inactiveSchools + highRiskSchools + expiringSoon, label: 'system watch', severity: inactiveSchools + highRiskSchools + expiringSoon > 0 ? 'medium' : 'low' },
+    };
+
+    await redis.setex(cacheKey, 60, JSON.stringify(data)).catch(() => {});
+    return res.json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getPrincipalDashboard,
   getOperatorDashboard,
   getTeacherDashboard,
   getStudentDashboard,
-  getSuperAdminDashboard
+  getSuperAdminDashboard,
+  getNavBadges
 };

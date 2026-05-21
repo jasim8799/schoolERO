@@ -1,13 +1,9 @@
 const express = require('express');
 const { getSystemMetrics, getSystemHealth, getBackupStatus, getMaintenanceMode, toggleMaintenanceMode, createSystemAnnouncement, getSystemAnnouncements } = require('../controllers/system.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
-
-// All routes require authentication
-router.use(authenticate);
 
 // Public system routes (all authenticated users)
 router.get('/announcements', getSystemAnnouncements);

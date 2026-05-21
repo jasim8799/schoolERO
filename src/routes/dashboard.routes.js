@@ -1,17 +1,14 @@
 const express = require('express');
-const { getPrincipalDashboard, getOperatorDashboard, getTeacherDashboard, getStudentDashboard, getSuperAdminDashboard } = require('../controllers/dashboard.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
+const { getPrincipalDashboard, getOperatorDashboard, getTeacherDashboard, getStudentDashboard, getSuperAdminDashboard, getNavBadges } = require('../controllers/dashboard.controller');
 const { requireRole } = require('../middlewares/role.middleware');
 const { checkSchoolStatus } = require('../middlewares/school.middleware');
 const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authenticate);
-
 // Super Admin dashboard (no school validation needed)
 router.get('/super-admin', requireRole(USER_ROLES.SUPER_ADMIN), getSuperAdminDashboard);
+router.get('/nav-badges', requireRole(USER_ROLES.SUPER_ADMIN), getNavBadges);
 
 // School-specific routes require school validation
 router.use(checkSchoolStatus);
