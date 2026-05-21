@@ -3,6 +3,7 @@ const Student = require('../models/Student.js');
 const AcademicSession = require('../models/AcademicSession.js');
 const { hashPassword, comparePassword } = require('../utils/password.js');
 const { generateToken } = require('../utils/jwt.js');
+const { _postLoginActions, _handleFailedLogin } = require('../middlewares/auth.middleware');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog');
@@ -114,6 +115,7 @@ const login = async (req, res) => {
 
     if (!user) {
       console.log('LOGIN FAILURE: User not found');
+      await _handleFailedLogin(req, null, null);
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Invalid mobile or password'
@@ -144,6 +146,7 @@ const login = async (req, res) => {
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
       console.log('LOGIN FAILURE: Invalid password');
+      await _handleFailedLogin(req, user.schoolId?._id || user.schoolId || null, user._id);
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Invalid mobile or password'
@@ -191,6 +194,8 @@ const login = async (req, res) => {
       schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null,
       sessionId: activeSession ? activeSession._id.toString() : null
     });
+
+    await _postLoginActions(user, req, token);
 
     logger.success(`User logged in: ${user.name} (${user.role})`);
 

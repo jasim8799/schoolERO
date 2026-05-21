@@ -208,12 +208,127 @@ const userSchema = new mongoose.Schema({
     enum: Object.values(USER_STATUS),
     default: USER_STATUS.ACTIVE
   },
+  // Security intelligence
+  mfaEnabled: {
+    type: Boolean,
+    default: false
+  },
+  mfaSecret: {
+    type: String,
+    select: false
+  },
+  encrypted: {
+    type: Boolean,
+    default: true
+  },
+  apiAccess: {
+    type: Boolean,
+    default: false
+  },
+  vpnDetected: {
+    type: Boolean,
+    default: false
+  },
+  lastKnownIp: {
+    type: String,
+    default: null
+  },
+  lastKnownDevice: {
+    type: String,
+    default: 'Unknown'
+  },
+  lastKnownLocation: {
+    type: String,
+    default: 'N/A'
+  },
+  // Threat intelligence
+  threatScore: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: 0
+  },
+  riskLevel: {
+    type: String,
+    enum: ['LOW', 'MEDIUM', 'HIGH'],
+    default: 'LOW'
+  },
+  threatLastChecked: {
+    type: Date,
+    default: null
+  },
+  // Session tracking
+  activeSessions: {
+    type: Number,
+    default: 0
+  },
+  sessionTokens: {
+    type: Number,
+    default: 0
+  },
+  liveDevices: {
+    type: Number,
+    default: 0
+  },
+  // Login analytics
+  successLogins: {
+    type: Number,
+    default: 0
+  },
+  failedLogins: {
+    type: Number,
+    default: 0
+  },
+  totalLogins: {
+    type: Number,
+    default: 0
+  },
+  lastFailedLogin: {
+    type: Date,
+    default: null
+  },
+  lockedUntil: {
+    type: Date,
+    default: null
+  },
+  lastLogin: {
+    type: Date,
+    default: null,
+    index: true
+  },
+  loginHistory: [{
+    at: { type: Date, default: Date.now },
+    ipAddress: { type: String },
+    userAgent: { type: String },
+    status: { type: String, enum: ['SUCCESS', 'FAILED'], default: 'SUCCESS' }
+  }],
+  deviceTracking: [{
+    deviceHash: { type: String, required: true },
+    userAgent: { type: String },
+    firstSeenAt: { type: Date, default: Date.now },
+    lastSeenAt: { type: Date, default: Date.now },
+    ipAddress: { type: String }
+  }],
   deactivatedAt: {
     type: Date
   },
   deactivatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+  // Soft delete
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   }
 }, {
   timestamps: true
@@ -222,6 +337,15 @@ const userSchema = new mongoose.Schema({
 // Compound index for email and mobile uniqueness
 userSchema.index({ email: 1 }, { unique: true, sparse: true });
 userSchema.index({ mobile: 1 }, { unique: true, sparse: true });
+userSchema.index({ schoolId: 1, role: 1, status: 1 });
+userSchema.index({ schoolId: 1, lastLogin: -1 });
+userSchema.index({ isDeleted: 1, status: 1, role: 1 });
+userSchema.index({ threatScore: -1 });
+userSchema.index({ riskLevel: 1 });
+userSchema.index({ mfaEnabled: 1, role: 1 });
+userSchema.index({ schoolId: 1, role: 1, status: 1, isDeleted: 1 });
+userSchema.index({ 'deviceTracking.deviceHash': 1 });
+userSchema.index({ lastLogin: -1 });
 
 // Ensure at least email or mobile is provided
 userSchema.pre('save', function(next) {

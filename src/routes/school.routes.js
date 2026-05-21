@@ -17,7 +17,7 @@ router.get('/my/subscription', authenticate, getCurrentUserSchoolSubscription);
 router.get('/my/online-payments', authenticate, getCurrentUserSchoolOnlinePayments);
 
 // POST /api/schools/:id/operator - Create operator for school (authenticated principals only)
-router.post('/:id/operator', authenticate, createOperator);
+router.post('/:id/operator', authenticate, requireRole(USER_ROLES.PRINCIPAL), createOperator);
 
 // POST /api/schools/:id/parent - Create parent for school (SUPER_ADMIN only)
 router.post('/:id/parent', authenticate, requireRole(USER_ROLES.SUPER_ADMIN), createParent);

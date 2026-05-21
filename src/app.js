@@ -57,6 +57,10 @@ const transportFeeRoutes = require('./routes/transportFee.routes');
 const hostelFeeRoutes = require('./routes/hostelFee.routes');
 const backupRoutes = require('./routes/backup.routes');
 const restoreRoutes = require('./routes/restore.routes');
+const { startReportWorker } = require('./reports/workers/reportWorker');
+const { startExportWorker } = require('./reports/workers/exportWorker');
+const { registerReportSchedulers } = require('./reports/schedulers/reportScheduler');
+const { initReportSocket } = require('./reports/sockets/reportSocket');
 
 // Backup/restore platform imports (optional until module is fully provisioned)
 let backupPlatform = {
@@ -92,7 +96,7 @@ const ptmRoutes = require('./routes/ptm.routes');
 const noticeRoutes = require('./routes/notice.routes');
 const leaveRoutes = require('./routes/leave.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
-const revenueRoutes = require('./routes/revenue.routes');
+const revenueRoutes = require('./revenue/revenue.routes');
 
 const app = express();
 let io;
@@ -261,8 +265,15 @@ if (process.env.NODE_ENV !== 'test') {
   backupPlatform.startBackupWorker && backupPlatform.startBackupWorker();
   backupPlatform.startRestoreWorker && backupPlatform.startRestoreWorker();
 
+  // Enterprise report workers
+  startReportWorker();
+  startExportWorker();
+
   // Register backup schedulers
   backupPlatform.registerBackupSchedulers && backupPlatform.registerBackupSchedulers();
+
+  // Register enterprise report schedulers
+  registerReportSchedulers().catch(() => {});
 }
 
 // Socket.IO integration (if server is created here)
@@ -278,10 +289,23 @@ app.use(errorHandler);
 
 module.exports = app;
 module.exports.initBackupSocket = (server) => {
-  if (!backupPlatform.initBackupSocket) return null;
   const { Server } = require('socket.io');
+  const { initDashboardSocket } = require('./socket/dashboard.socket');
+  const { initSchoolSocket } = require('./socket/school.socket');
+  const { initAlertSocket, broadcastSecurityAlert } = require('./socket/alert.socket');
+  const { initSubscriptionSocket } = require('./websocket/subscription.socket');
+  const { initRevenueSocket } = require('./websocket/revenue.socket');
+  const { initUsersSocket } = require('./websocket/users.socket');
   io = new Server(server, { cors: { origin: '*' } });
   global.io = io;
-  backupPlatform.initBackupSocket(io);
+  global.broadcastSecurityAlert = broadcastSecurityAlert;
+  backupPlatform.initBackupSocket && backupPlatform.initBackupSocket(io);
+  initReportSocket(io);
+  initDashboardSocket(io);
+  initSchoolSocket(io);
+  initAlertSocket(io);
+  initSubscriptionSocket(io);
+  initRevenueSocket(io);
+  initUsersSocket(io);
   return io;
 };

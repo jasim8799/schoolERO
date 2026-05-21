@@ -458,6 +458,76 @@ const getModuleAnalytics = async (req, res) => {
   }
 };
 
+const getOverview = async (req, res) => getAnalytics(req, res);
+
+const getRevenueAnalytics = async (_req, res) => {
+  try {
+    const rows = await School.find({ isDeleted: false })
+      .select('name code analytics.todayFeeCollection analytics.studentsCount')
+      .sort({ 'analytics.todayFeeCollection': -1 })
+      .lean();
+
+    const totalRevenueToday = rows.reduce((sum, r) => sum + (r.analytics?.todayFeeCollection || 0), 0);
+    return res.json({
+      success: true,
+      data: {
+        totalRevenueToday,
+        schools: rows.map((r) => ({
+          schoolId: r._id,
+          name: r.name,
+          code: r.code,
+          todayCollection: r.analytics?.todayFeeCollection || 0,
+          studentsCount: r.analytics?.studentsCount || 0
+        }))
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getAttendanceAnalytics = async (_req, res) => {
+  try {
+    const rows = await School.find({ isDeleted: false })
+      .select('name code analytics.todayAttendancePct analytics.onlineUsers')
+      .sort({ 'analytics.todayAttendancePct': -1 })
+      .lean();
+
+    const averageAttendance = rows.length
+      ? Math.round(rows.reduce((sum, r) => sum + (r.analytics?.todayAttendancePct || 0), 0) / rows.length)
+      : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        averageAttendance,
+        schools: rows.map((r) => ({
+          schoolId: r._id,
+          name: r.name,
+          code: r.code,
+          todayAttendancePct: r.analytics?.todayAttendancePct || 0,
+          onlineUsers: r.analytics?.onlineUsers || 0
+        }))
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getSchoolAnalytics = async (req, res) => {
+  try {
+    const school = await School.findById(req.params.id)
+      .select('name code analytics healthScore riskLevel')
+      .lean();
+
+    if (!school) return res.status(404).json({ success: false, message: 'School not found' });
+    return res.json({ success: true, data: school });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 function _relativeTime(date) {
   if (!date) return 'N/A';
   const diff = Date.now() - new Date(date).getTime();
@@ -468,4 +538,11 @@ function _relativeTime(date) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-module.exports = { getAnalytics, getModuleAnalytics };
+module.exports = {
+  getAnalytics,
+  getModuleAnalytics,
+  getOverview,
+  getRevenueAnalytics,
+  getAttendanceAnalytics,
+  getSchoolAnalytics
+};

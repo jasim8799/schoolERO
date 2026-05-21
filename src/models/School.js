@@ -28,6 +28,41 @@ const schoolSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  city: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  state: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  pincode: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  board: {
+    type: String,
+    trim: true,
+    default: 'CBSE'
+  },
+  affiliation: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  website: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  timezone: {
+    type: String,
+    trim: true,
+    default: 'Asia/Kolkata'
+  },
   contact: {
     phone: String,
     email: String
@@ -94,6 +129,72 @@ const schoolSchema = new mongoose.Schema({
     system: { type: Boolean, default: false },
     expenses: { type: Boolean, default: false }
   },
+  analytics: {
+    studentsCount: { type: Number, default: 0 },
+    teachersCount: { type: Number, default: 0 },
+    activeUsersToday: { type: Number, default: 0 },
+    todayAttendancePct: { type: Number, default: 0 },
+    todayFeeCollection: { type: Number, default: 0 },
+    alertsCount: { type: Number, default: 0 },
+    apiRequestsToday: { type: Number, default: 0 },
+    storageUsedBytes: { type: Number, default: 0 },
+    securityScore: { type: Number, default: 94 },
+    cpuUsagePct: { type: Number, default: 0.4 },
+    apiLatencyMs: { type: Number, default: 24 },
+    onlineUsers: { type: Number, default: 0 },
+    lastAnalyticsSync: { type: Date, default: null }
+  },
+  healthScore: {
+    type: Number,
+    default: 100,
+    min: 0,
+    max: 100
+  },
+  riskLevel: {
+    type: String,
+    enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
+    default: 'LOW'
+  },
+  healthLastChecked: {
+    type: Date,
+    default: null
+  },
+  healthFactors: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  securitySettings: {
+    failedLoginCount: { type: Number, default: 0 },
+    lastFailedLogin: { type: Date, default: null },
+    blockedUntil: { type: Date, default: null },
+    mfaEnabled: { type: Boolean, default: false },
+    allowedIpRanges: [{ type: String }],
+    passwordPolicy: {
+      minLength: { type: Number, default: 8 },
+      requireUppercase: { type: Boolean, default: true },
+      requireNumbers: { type: Boolean, default: true },
+      expiryDays: { type: Number, default: 90 }
+    }
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   onlinePaymentsEnabled: {
     type: Boolean,
     default: true // Default to enabled, but will be controlled by plan and admin toggle
@@ -105,6 +206,11 @@ const schoolSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+schoolSchema.index({ isDeleted: 1, status: 1, 'subscription.endDate': 1 });
+schoolSchema.index({ plan: 1, healthScore: -1 });
+schoolSchema.index({ riskLevel: 1 });
+schoolSchema.index({ 'analytics.lastAnalyticsSync': -1 });
 
 const School = mongoose.model('School', schoolSchema);
 

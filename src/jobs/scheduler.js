@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const mongoose = require('mongoose');
+const { registerAllCronJobs } = require('./index');
 const {
   runAutomations,
   checkAttendanceNotMarked,
@@ -84,3 +85,6 @@ cron.schedule('0 22 * * *', async () => {
 });
 
 console.log('[Scheduler] Cron jobs registered');
+
+// Register enterprise monitoring and analytics jobs as well.
+registerAllCronJobs();

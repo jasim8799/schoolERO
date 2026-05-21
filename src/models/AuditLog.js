@@ -203,6 +203,14 @@ const AuditLogSchema = new mongoose.Schema({
       'BILL_PAID',
       'BILL_CANCELLED',
 
+      // Subscription billing (enterprise)
+      'SUBSCRIPTION_RENEWED',
+      'SUBSCRIPTION_SUSPENDED',
+      'SUBSCRIPTION_REACTIVATED',
+      'PAYMENT_RETRY_SCHEDULED',
+      'PLAN_UPGRADED',
+      'PLAN_DOWNGRADED',
+
       // Error logs
       'ERROR_OCCURRED',
       'VALIDATION_FAILED',
@@ -260,7 +268,8 @@ const AuditLogSchema = new mongoose.Schema({
       'ERROR',
       'LOGIN_SESSION',
       'ATTENDANCE_DAILY',
-      'ATTENDANCE_SUBJECT'
+      'ATTENDANCE_SUBJECT',
+      'BILLING'
     ]
   },
   entityId: {

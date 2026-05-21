@@ -4,6 +4,8 @@ const { BlockedIP } = require('../models/BlockedIP');
 const { GeoAnomaly } = require('../models/GeoAnomaly');
 const { SessionLog } = require('../models/SessionLog');
 const { RiskProfile } = require('../models/RiskProfile');
+const SecurityLog = require('../models/SecurityLog');
+const LoginSession = require('../models/LoginSession');
 const AuditLog = require('../models/AuditLog');
 const { securityQueues } = require('../security/queues');
 const { generateThreatId } = require('../security/ai/threatScoring');
@@ -407,8 +409,93 @@ function _relativeTime(date) {
   return `${Math.floor(mins / 1440)}d ago`;
 }
 
-module.exports = { getSecurityData, blockThreat, blockIP, forceLogout, getDiagnostics, getSecurityEventById: async (req, res) => {
-  const threat = await SecurityThreat.findById(req.params.id).lean();
-  if (!threat) return res.status(404).json({ success: false, message: 'Not found' });
-  res.json({ success: true, data: threat });
-} };
+const getSecurityLogs = async (req, res) => {
+  try {
+    const { limit = 100, severity, eventType } = req.query;
+    const query = {};
+    if (severity) query.severity = severity;
+    if (eventType) query.eventType = eventType;
+
+    const logs = await SecurityLog.find(query)
+      .sort({ createdAt: -1 })
+      .limit(Math.min(500, Math.max(1, parseInt(limit, 10))))
+      .lean();
+
+    return res.json({ success: true, count: logs.length, data: logs });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getSchoolSecurityLogs = async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    const { limit = 100 } = req.query;
+    const logs = await SecurityLog.find({ schoolId })
+      .sort({ createdAt: -1 })
+      .limit(Math.min(500, Math.max(1, parseInt(limit, 10))))
+      .lean();
+
+    return res.json({ success: true, count: logs.length, data: logs });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getActiveSessions = async (req, res) => {
+  try {
+    const { schoolId, limit = 200 } = req.query;
+    const query = { isActive: true };
+    if (schoolId) query.schoolId = schoolId;
+
+    const sessions = await LoginSession.find(query)
+      .sort({ lastActiveAt: -1 })
+      .limit(Math.min(500, Math.max(1, parseInt(limit, 10))))
+      .populate('userId', 'name role schoolId')
+      .lean();
+
+    return res.json({ success: true, count: sessions.length, data: sessions });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const revokeSession = async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId is required' });
+
+    const session = await LoginSession.findByIdAndUpdate(
+      sessionId,
+      { $set: { isActive: false, forceLoggedOut: true, logoutAt: new Date() } },
+      { new: true }
+    ).lean();
+
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+
+    if (session.sessionToken) {
+      await redis.setex(`blacklist:token:${session.sessionToken}`, 86400, '1');
+    }
+
+    return res.json({ success: true, message: 'Session revoked', data: session });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = {
+  getSecurityData,
+  blockThreat,
+  blockIP,
+  forceLogout,
+  getDiagnostics,
+  getSecurityLogs,
+  getSchoolSecurityLogs,
+  getActiveSessions,
+  revokeSession,
+  getSecurityEventById: async (req, res) => {
+    const threat = await SecurityThreat.findById(req.params.id).lean();
+    if (!threat) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, data: threat });
+  }
+};

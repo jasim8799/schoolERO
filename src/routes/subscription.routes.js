@@ -5,6 +5,12 @@ const {
   renewSubscription,
   suspendSubscription,
   getSubscriptionMetrics,
+  getRevenueAnalytics,
+  getBillingHistory,
+  retryBilling,
+  updatePlan,
+  getFraudAlerts,
+  resolveFraudAlert,
 } = require('../controllers/subscription.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
@@ -15,19 +21,24 @@ const router = express.Router();
 router.use(authenticate);
 router.use(requireRole(USER_ROLES.SUPER_ADMIN));
 
-// GET /api/subscriptions - list all with filters + metrics
+// ── Dashboard + list ───────────────────────────────────────────────────
 router.get('/', getSubscriptions);
-
-// GET /api/subscriptions/metrics - aggregated dashboard metrics
 router.get('/metrics', getSubscriptionMetrics);
+router.get('/analytics/revenue', getRevenueAnalytics);
 
-// GET /api/subscriptions/:schoolId - single school subscription detail
+// ── Fraud ──────────────────────────────────────────────────────────────
+router.get('/fraud/alerts', getFraudAlerts);
+router.post('/fraud/alerts/:alertId/resolve', resolveFraudAlert);
+
+// ── Billing actions ────────────────────────────────────────────────────
+router.post('/billing/retry', retryBilling);
+
+// ── School-specific (must come after named routes) ─────────────────────
 router.get('/:schoolId', getSubscriptionBySchool);
-
-// PUT /api/subscriptions/:schoolId/renew - renew subscription
+router.get('/:schoolId/billing-history', getBillingHistory);
 router.put('/:schoolId/renew', renewSubscription);
-
-// PUT /api/subscriptions/:schoolId/suspend - toggle suspend/activate
 router.put('/:schoolId/suspend', suspendSubscription);
+router.put('/:schoolId/plan', updatePlan);
 
 module.exports = router;
+

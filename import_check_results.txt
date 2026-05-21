@@ -1,0 +1,51 @@
+﻿✅ PASS  1. BillingHistory
+✅ PASS  2. FraudAlert
+✅ PASS  3. UsageSnapshot
+✅ PASS  4. RevenueSnapshot
+✅ PASS  5. RenewalReminder
+✅ PASS  6. billing.engine
+✅ PASS  7. threat.scorer
+✅ PASS  8. fraud.detector
+✅ PASS  9. subscription.cron
+✅ PASS  10. subscription.socket
+❌ FAIL  11. subscription.controller
+--- ERROR ---
+E:\SCHOOL PROJECT\schoolerp\backend\src\controllers\subscription.controller.js:536
+}
+^
+System.Management.Automation.RemoteException
+SyntaxError: Unexpected token '}'
+    at wrapSafe (node:internal/modules/cjs/loader:1692:18)
+    at Module._compile (node:internal/modules/cjs/loader:1735:20)
+    at Object..js (node:internal/modules/cjs/loader:1893:10)
+    at Module.load (node:internal/modules/cjs/loader:1481:32)
+    at Module._load (node:internal/modules/cjs/loader:1300:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)
+    at Module.require (node:internal/modules/cjs/loader:1504:12)
+    at require (node:internal/modules/helpers:152:16)
+    at [eval]:1:1
+System.Management.Automation.RemoteException
+Node.js v24.12.0
+-------------
+❌ FAIL  12. subscription.routes
+--- ERROR ---
+E:\SCHOOL PROJECT\schoolerp\backend\src\controllers\subscription.controller.js:536
+}
+^
+System.Management.Automation.RemoteException
+SyntaxError: Unexpected token '}'
+    at wrapSafe (node:internal/modules/cjs/loader:1692:18)
+    at Module._compile (node:internal/modules/cjs/loader:1735:20)
+    at Object..js (node:internal/modules/cjs/loader:1893:10)
+    at Module.load (node:internal/modules/cjs/loader:1481:32)
+    at Module._load (node:internal/modules/cjs/loader:1300:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)
+    at Module.require (node:internal/modules/cjs/loader:1504:12)
+    at require (node:internal/modules/helpers:152:16)
+    at Object.<anonymous> (E:\SCHOOL PROJECT\schoolerp\backend\src\routes\subscription.routes.js:14:5)
+System.Management.Automation.RemoteException
+Node.js v24.12.0
+-------------
+✅ PASS  13. jobs.index

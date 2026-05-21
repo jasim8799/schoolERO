@@ -10,7 +10,11 @@ const {
   setUserPassword,
   updateMyProfile,
   uploadStaffDocument,
-  getStaffDocumentData
+  getStaffDocumentData,
+  forceLogoutUser,
+  enableMfa,
+  disableMfa,
+  getUserAnalytics,
 } = require('../controllers/user.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
@@ -62,6 +66,39 @@ router.get(
 
 // PATCH /api/users/me - update own profile (email/photo)
 router.patch('/me', authenticate, updateMyProfile);
+
+// GET /api/users/analytics - User IAM analytics (SUPER_ADMIN)
+// Must come BEFORE /:id
+router.get(
+  '/analytics',
+  authenticate,
+  requireRole(USER_ROLES.SUPER_ADMIN),
+  getUserAnalytics
+);
+
+// PATCH /api/users/:id/force-logout - Revoke all active sessions for a user
+router.patch(
+  '/:id/force-logout',
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  enforceSchoolIsolation,
+  forceLogoutUser
+);
+
+// PATCH /api/users/:id/enable-mfa - Enable MFA
+router.patch(
+  '/:id/enable-mfa',
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  enforceSchoolIsolation,
+  enableMfa
+);
+
+// PATCH /api/users/:id/disable-mfa - Disable MFA
+router.patch(
+  '/:id/disable-mfa',
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  enforceSchoolIsolation,
+  disableMfa
+);
 
 // GET /api/users/:id - Get user by ID
 router.get('/:id', enforceSchoolIsolation, getUserById);

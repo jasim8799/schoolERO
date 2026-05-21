@@ -1,9 +1,14 @@
 const User = require('../models/User.js');
 const School = require('../models/School.js');
+const LoginSession = require('../models/LoginSession.js');
+const UserActivityLog = require('../models/UserActivityLog.js');
 const { hashPassword } = require('../utils/password.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
+const redis = require('../config/redis.js');
+const { enrichUserForDashboard } = require('../users/user.enricher.js');
+const { calculateUserThreatScore } = require('../security/user.threat.scorer.js');
 
 // Create User
 const createUser = async (req, res) => {
@@ -189,7 +194,7 @@ const getSuperAdminUsers = async (req, res) => {
 
     const { role, status, schoolId, search, limit = 100, page = 1 } = req.query;
 
-    const query = {};
+    const query = { isDeleted: { $ne: true } };
     if (role) query.role = role;
     if (status) query.status = status;
     if (schoolId) query.schoolId = schoolId;
@@ -202,10 +207,15 @@ const getSuperAdminUsers = async (req, res) => {
       ];
     }
 
-    const parsedLimit = parseInt(limit, 10);
-    const parsedPage = parseInt(page, 10);
+    const parsedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 100));
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
     const skip = (parsedPage - 1) * parsedLimit;
-    const AuditLog = require('../models/AuditLog.js');
+
+    const cacheKey = `users:dashboard:${JSON.stringify({ role, status, schoolId, search, parsedLimit, parsedPage })}`;
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.status(HTTP_STATUS.OK).json(JSON.parse(cached));
+    }
 
     const [users, totalCount] = await Promise.all([
       User.find(query)
@@ -218,101 +228,10 @@ const getSuperAdminUsers = async (req, res) => {
       User.countDocuments(query),
     ]);
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    const enriched = await Promise.all(users.map((user) => enrichUserForDashboard(user)));
+    const metrics = _buildUserMetrics(enriched, totalCount);
 
-    const enriched = await Promise.all(
-      users.map(async (user) => {
-        try {
-          const [failedLogins, successLogins, recentAlerts] = await Promise.all([
-            AuditLog.countDocuments({
-              userId: user._id,
-              action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] },
-              createdAt: { $gte: yesterday },
-            }),
-            AuditLog.countDocuments({
-              userId: user._id,
-              action: 'LOGIN_SUCCESS',
-              createdAt: { $gte: yesterday },
-            }),
-            AuditLog.countDocuments({
-              userId: user._id,
-              severity: { $in: ['WARNING', 'ERROR', 'CRITICAL'] },
-              createdAt: { $gte: yesterday },
-            }),
-          ]);
-
-          const threatScore = Math.min(
-            1.0,
-            (failedLogins * 0.15) + (recentAlerts * 0.1)
-          );
-
-          const riskLevel =
-            threatScore > 0.7 ? 'HIGH'
-            : threatScore > 0.4 ? 'MEDIUM'
-            : 'LOW';
-
-          return {
-            ...user,
-            failedLogins,
-            successLogins,
-            recentAlerts,
-            threatScore: parseFloat(threatScore.toFixed(2)),
-            riskLevel,
-            sessionTokens: 1,
-            liveDevices: 1,
-            vpnDetected: false,
-            mfaEnabled: false,
-            encrypted: true,
-            apiAccess: user.role === 'SUPER_ADMIN' || user.role === 'PRINCIPAL',
-            department: user.department || user.designation || 'N/A',
-            employeeId: user.employeeId || user._id.toString().slice(-6).toUpperCase(),
-            ipAddress: 'N/A',
-            device: 'Unknown',
-            location: user.city ? `${user.city}, IN` : 'N/A',
-          };
-        } catch (enrichErr) {
-          console.error(`[getSuperAdminUsers] Enrichment failed for ${user._id}:`, enrichErr.message);
-          return {
-            ...user,
-            failedLogins: 0,
-            successLogins: 0,
-            recentAlerts: 0,
-            threatScore: 0,
-            riskLevel: 'LOW',
-            sessionTokens: 1,
-            liveDevices: 1,
-            vpnDetected: false,
-            mfaEnabled: false,
-            encrypted: true,
-            apiAccess: false,
-            department: user.department || 'N/A',
-            employeeId: user.employeeId || user._id.toString().slice(-6).toUpperCase(),
-            ipAddress: 'N/A',
-            device: 'Unknown',
-            location: user.city ? `${user.city}, IN` : 'N/A',
-          };
-        }
-      })
-    );
-
-    const metrics = {
-      totalUsers: totalCount,
-      activeUsers: enriched.filter((u) => u.status === 'active').length,
-      inactiveUsers: enriched.filter((u) => u.status === 'inactive').length,
-      highThreatUsers: enriched.filter((u) => u.riskLevel === 'HIGH').length,
-      totalFailedLogins: enriched.reduce((sum, u) => sum + u.failedLogins, 0),
-      roleBreakdown: {
-        SUPER_ADMIN: enriched.filter((u) => u.role === 'SUPER_ADMIN').length,
-        PRINCIPAL: enriched.filter((u) => u.role === 'PRINCIPAL').length,
-        OPERATOR: enriched.filter((u) => u.role === 'OPERATOR').length,
-        TEACHER: enriched.filter((u) => u.role === 'TEACHER').length,
-        STUDENT: enriched.filter((u) => u.role === 'STUDENT').length,
-        PARENT: enriched.filter((u) => u.role === 'PARENT').length,
-      },
-    };
-
-    res.json({
+    const payload = {
       success: true,
       count: enriched.length,
       totalCount,
@@ -320,7 +239,10 @@ const getSuperAdminUsers = async (req, res) => {
       totalPages: Math.ceil(totalCount / parsedLimit),
       metrics,
       data: enriched,
-    });
+    };
+
+    await redis.setex(cacheKey, 60, JSON.stringify(payload)).catch(() => {});
+    res.status(HTTP_STATUS.OK).json(payload);
   } catch (error) {
     console.error('[getSuperAdminUsers]', error.message);
     res.status(500).json({
@@ -345,9 +267,19 @@ const getUserById = async (req, res) => {
       });
     }
 
+    const [latestThreat, enriched, recentActivity] = await Promise.all([
+      calculateUserThreatScore(user._id, user.schoolId).catch(() => null),
+      enrichUserForDashboard(user.toObject()),
+      UserActivityLog.find({ userId: user._id }).sort({ createdAt: -1 }).limit(20).lean(),
+    ]);
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      data: user
+      data: {
+        ...enriched,
+        ...(latestThreat ? { threatScore: latestThreat.score, riskLevel: latestThreat.riskLevel } : {}),
+        recentActivity,
+      }
     });
   } catch (error) {
     logger.error('Get user error:', error.message);
@@ -599,18 +531,35 @@ const deleteUser = async (req, res) => {
     }
 
     // Check if already inactive
-    if (user.status === 'inactive') {
+    if (user.status === 'inactive' || user.isDeleted) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'User is already deactivated'
       });
     }
 
-    // Soft delete: set status to inactive
+    // Soft delete with hard session revocation
     user.status = 'inactive';
+    user.isDeleted = true;
+    user.deletedAt = new Date();
+    user.deletedBy = req.user.userId;
     user.deactivatedAt = new Date();
     user.deactivatedBy = req.user.userId;
     await user.save();
+
+    await LoginSession.updateMany(
+      { userId: user._id, isActive: true },
+      {
+        $set: {
+          isActive: false,
+          logoutAt: new Date(),
+          logoutReason: 'ADMIN_DEACTIVATED',
+        },
+      }
+    );
+
+    await redis.setex(`blacklist:user:${user._id}`, 86400, '1').catch(() => {});
+    await _invalidateUserCaches(user._id);
 
     logger.success(`User deactivated: ${user.name} by ${req.user.role}`);
 
@@ -660,7 +609,7 @@ const reactivateUser = async (req, res) => {
     }
 
     // Check if already active
-    if (user.status === 'active') {
+    if (user.status === 'active' && !user.isDeleted) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'User is already active'
@@ -669,9 +618,13 @@ const reactivateUser = async (req, res) => {
 
     // Reactivate user
     user.status = 'active';
+    user.isDeleted = false;
+    user.deletedAt = null;
+    user.deletedBy = null;
     user.deactivatedAt = null;
     user.deactivatedBy = null;
     await user.save();
+    await _invalidateUserCaches(user._id);
 
     logger.success(`User reactivated: ${user.name} by ${req.user.role}`);
 
@@ -745,7 +698,21 @@ const setUserPassword = async (req, res) => {
 
     // Update password
     user.password = hashedPassword;
+    user.lockedUntil = null;
+    user.failedLogins = 0;
     await user.save();
+
+    await LoginSession.updateMany(
+      { userId: user._id, isActive: true },
+      {
+        $set: {
+          isActive: false,
+          logoutAt: new Date(),
+          logoutReason: 'PASSWORD_RESET',
+        },
+      }
+    );
+    await _invalidateUserCaches(user._id);
 
     logger.success(`Password reset for user: ${user.name} by ${req.user.role}`);
 
@@ -818,6 +785,161 @@ const updateMyProfile = async (req, res) => {
   }
 };
 
+const forceLogoutUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('_id schoolId name');
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'User not found' });
+    }
+
+    const logoutResult = await LoginSession.updateMany(
+      { userId: user._id, isActive: true },
+      {
+        $set: {
+          isActive: false,
+          logoutAt: new Date(),
+          logoutReason: 'FORCE_LOGOUT',
+        },
+      }
+    );
+
+    await redis.setex(`blacklist:user:${user._id}`, 3600, '1').catch(() => {});
+    await _invalidateUserCaches(user._id);
+
+    await auditLog({
+      action: 'USER_UPDATED',
+      userId: req.user.userId,
+      schoolId: user.schoolId,
+      targetUserId: user._id,
+      details: { action: 'force_logout', affectedSessions: logoutResult.modifiedCount || 0 },
+      req,
+    });
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'User forcefully logged out',
+      data: {
+        userId: user._id,
+        affectedSessions: logoutResult.modifiedCount || 0,
+      },
+    });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error forcing logout',
+      error: error.message,
+    });
+  }
+};
+
+const enableMfa = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { mfaEnabled: true } },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'User not found' });
+    }
+
+    await _invalidateUserCaches(user._id);
+    return res.status(HTTP_STATUS.OK).json({ success: true, message: 'MFA enabled', data: user });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
+  }
+};
+
+const disableMfa = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { mfaEnabled: false, mfaSecret: null } },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'User not found' });
+    }
+
+    await _invalidateUserCaches(user._id);
+    return res.status(HTTP_STATUS.OK).json({ success: true, message: 'MFA disabled', data: user });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
+  }
+};
+
+const getUserAnalytics = async (req, res) => {
+  try {
+    const cacheKey = 'users:analytics:summary';
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.status(HTTP_STATUS.OK).json(JSON.parse(cached));
+    }
+
+    const [allUsers, activeSessions, mfaEnabledUsers, apiAccessUsers, deletedUsers] = await Promise.all([
+      User.find({ isDeleted: { $ne: true } }).select('_id threatScore riskLevel').lean(),
+      LoginSession.countDocuments({ isActive: true }),
+      User.countDocuments({ mfaEnabled: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ apiAccess: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ isDeleted: true }),
+    ]);
+
+    const highThreatUsers = allUsers.filter((u) => (u.riskLevel || 'LOW') === 'HIGH').length;
+    const mediumThreatUsers = allUsers.filter((u) => (u.riskLevel || 'LOW') === 'MEDIUM').length;
+
+    const payload = {
+      success: true,
+      data: {
+        totalUsers: allUsers.length,
+        activeSessions,
+        mfaEnabledUsers,
+        apiAccessUsers,
+        highThreatUsers,
+        mediumThreatUsers,
+        deletedUsers,
+      },
+    };
+
+    await redis.setex(cacheKey, 120, JSON.stringify(payload)).catch(() => {});
+    return res.status(HTTP_STATUS.OK).json(payload);
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
+  }
+};
+
+const _buildUserMetrics = (users, totalUsers) => ({
+  totalUsers,
+  activeUsers: users.filter((u) => u.status === 'active').length,
+  inactiveUsers: users.filter((u) => u.status !== 'active').length,
+  highThreatUsers: users.filter((u) => u.riskLevel === 'HIGH').length,
+  mediumThreatUsers: users.filter((u) => u.riskLevel === 'MEDIUM').length,
+  mfaEnabledUsers: users.filter((u) => u.mfaEnabled).length,
+  apiAccessUsers: users.filter((u) => u.apiAccess).length,
+  totalFailedLogins: users.reduce((sum, u) => sum + (u.failedLogins || 0), 0),
+  roleBreakdown: {
+    SUPER_ADMIN: users.filter((u) => u.role === 'SUPER_ADMIN').length,
+    PRINCIPAL: users.filter((u) => u.role === 'PRINCIPAL').length,
+    OPERATOR: users.filter((u) => u.role === 'OPERATOR').length,
+    TEACHER: users.filter((u) => u.role === 'TEACHER').length,
+    STUDENT: users.filter((u) => u.role === 'STUDENT').length,
+    PARENT: users.filter((u) => u.role === 'PARENT').length,
+  },
+});
+
+async function _invalidateUserCaches(userId) {
+  await Promise.all([
+    redis.del('users:analytics:summary').catch(() => {}),
+    redis.del(`threat:user:${userId}`).catch(() => {}),
+  ]);
+
+  const keys = await redis.keys('users:dashboard:*').catch(() => []);
+  if (keys && keys.length) {
+    await Promise.all(keys.map((key) => redis.del(key).catch(() => {})));
+  }
+}
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -830,4 +952,8 @@ module.exports = {
   uploadStaffDocument,
   getStaffDocumentData,
   getSuperAdminUsers,
+  forceLogoutUser,
+  enableMfa,
+  disableMfa,
+  getUserAnalytics,
 };

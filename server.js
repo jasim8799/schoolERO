@@ -15,6 +15,9 @@ connectDB();
 
 // 🔴 THIS LINE IS REQUIRED (YOU ARE MISSING IT)
 require('./src/models'); // 👈 registers ALL mongoose schemas
+require('./src/config/database').createIndexes().catch((err) => {
+  console.error('[Database] Index creation error:', err.message);
+});
 
 // Start cron-based automation scheduler (after DB and models are loaded)
 require('./src/jobs/scheduler');
