@@ -1,19 +1,22 @@
 const express = require('express');
-const { getAuditLogsController, getAuditStatsController } = require('../controllers/audit.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
-
 const router = express.Router();
+const { authenticate } = require('../middlewares/auth.middleware');
+const {
+	getAuditLogsController,
+	getAuditStatsController,
+	getInfrastructureController,
+	getThreatsController,
+	exportLogsController,
+} = require('../controllers/audit.controller');
 
-// All audit routes require authentication
 router.use(authenticate);
 
-// Get audit logs (Principal and Super Admin only)
-router.get('/', getAuditLogsController);
+router.get('/',               getAuditLogsController);
+router.get('/logs',           getAuditLogsController);
+router.get('/stats',          getAuditStatsController);
+router.get('/infrastructure', getInfrastructureController);
+router.get('/threats',        getThreatsController);
 
-// Alias route for logs
-router.get('/logs', getAuditLogsController);
-
-// Get audit statistics (Super Admin only)
-router.get('/stats', getAuditStatsController);
+router.post('/export',        exportLogsController);
 
 module.exports = router;

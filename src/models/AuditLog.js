@@ -285,6 +285,104 @@ const AuditLogSchema = new mongoose.Schema({
     type: Object,
     default: {}
   },
+  severity: {
+    type: String,
+    enum: ['INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+    default: 'INFO',
+    index: true
+  },
+  category: {
+    type: String,
+    enum: ['Security', 'Auth', 'Database', 'API', 'Firewall', 'Backup', 'Compliance', 'System'],
+    default: 'System'
+  },
+  requestId: {
+    type: String,
+    index: true
+  },
+  traceId: {
+    type: String
+  },
+  endpoint: {
+    type: String
+  },
+  method: {
+    type: String
+  },
+  statusCode: {
+    type: Number
+  },
+  latencyMs: {
+    type: Number
+  },
+  responseSize: {
+    type: Number
+  },
+  payloadSize: {
+    type: Number
+  },
+  region: {
+    type: String,
+    default: 'MUM'
+  },
+  browser: {
+    type: String
+  },
+  os: {
+    type: String
+  },
+  device: {
+    type: String
+  },
+  deviceId: {
+    type: String
+  },
+  fingerprint: {
+    type: String
+  },
+  riskScore: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: 0
+  },
+  aiThreatScore: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: 0
+  },
+  anomalyScore: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: 0
+  },
+  isSuspicious: {
+    type: Boolean,
+    default: false
+  },
+  isBlocked: {
+    type: Boolean,
+    default: false
+  },
+  environment: {
+    type: String,
+    enum: ['PROD', 'STAGING', 'DEV'],
+    default: 'PROD'
+  },
+  serverNode: {
+    type: String
+  },
+  sourceService: {
+    type: String
+  },
+  tags: [{
+    type: String
+  }],
+  message: {
+    type: String
+  },
   ipAddress: {
     type: String,
     required: true
@@ -309,6 +407,12 @@ AuditLogSchema.index({ schoolId: 1, createdAt: -1 });
 AuditLogSchema.index({ action: 1, createdAt: -1 });
 AuditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
 AuditLogSchema.index({ createdAt: -1 }); // For date range queries
+AuditLogSchema.index({ severity: 1, createdAt: -1 });
+AuditLogSchema.index({ category: 1, createdAt: -1 });
+AuditLogSchema.index({ riskScore: -1 });
+AuditLogSchema.index({ ipAddress: 1, createdAt: -1 });
+AuditLogSchema.index({ requestId: 1 }, { unique: true, sparse: true });
+AuditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
 
 // Prevent any updates or deletes - logs are immutable
 AuditLogSchema.pre('findOneAndUpdate', function(next) {

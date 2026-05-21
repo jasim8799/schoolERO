@@ -61,6 +61,11 @@ const { startReportWorker } = require('./reports/workers/reportWorker');
 const { startExportWorker } = require('./reports/workers/exportWorker');
 const { registerReportSchedulers } = require('./reports/schedulers/reportScheduler');
 const { initReportSocket } = require('./reports/sockets/reportSocket');
+const { firewallMiddleware }       = require('./firewall/firewall.monitor');
+const { registerActivityCronJobs } = require('./cron/activity.cron');
+const { auditEnrichMiddleware } = require('./middlewares/auditEnrich.middleware');
+const { registerAuditCronJobs } = require('./cron/audit.cron');
+const { registerDashboardCronJobs } = require('./cron/dashboard.cron');
 
 // Backup/restore platform imports (optional until module is fully provisioned)
 let backupPlatform = {
@@ -125,6 +130,10 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+// Apply firewall middleware to all API routes
+app.use('/api', firewallMiddleware());
+app.use('/api', auditEnrichMiddleware());
+
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/auth', authRateLimit, authRoutes);
 
@@ -279,6 +288,13 @@ if (process.env.NODE_ENV !== 'test') {
 // Socket.IO integration (if server is created here)
 // To be initialized in server.js if needed
 
+// Register SIEM/activity cron jobs (runs after io is available)
+if (process.env.NODE_ENV !== 'test') {
+  setImmediate(() => registerActivityCronJobs());
+  setImmediate(() => registerAuditCronJobs());
+  setImmediate(() => registerDashboardCronJobs());
+}
+
 // Catch-all: return JSON 404 for any unmatched route (must be before error handler)
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Cannot ${req.method} ${req.originalUrl}` });
@@ -290,7 +306,7 @@ app.use(errorHandler);
 module.exports = app;
 module.exports.initBackupSocket = (server) => {
   const { Server } = require('socket.io');
-  const { initDashboardSocket } = require('./socket/dashboard.socket');
+  const { initDashboardSocket } = require('./websocket/dashboard.socket');
   const { initSchoolSocket } = require('./socket/school.socket');
   const { initAlertSocket, broadcastSecurityAlert } = require('./socket/alert.socket');
   const { initSubscriptionSocket } = require('./websocket/subscription.socket');
@@ -307,5 +323,9 @@ module.exports.initBackupSocket = (server) => {
   initSubscriptionSocket(io);
   initRevenueSocket(io);
   initUsersSocket(io);
+  const { initActivitySocket } = require('./websocket/activity.socket');
+  const { initAuditSocket } = require('./websocket/audit.socket');
+  initActivitySocket(io);
+  initAuditSocket(io);
   return io;
 };

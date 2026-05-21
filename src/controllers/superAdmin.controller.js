@@ -195,6 +195,10 @@ const getAllSchoolsEnhanced = async (req, res) => {
 
       return {
         ...s,
+        subscription: {
+          ...(s.subscription || {}),
+          status: subscriptionStatus,
+        },
         studentsCount: s.analytics?.studentsCount || 0,
         teachersCount: s.analytics?.teachersCount || 0,
         onlineUsers: s.analytics?.onlineUsers || 0,

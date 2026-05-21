@@ -1,5 +1,6 @@
 const AuditLog = require('../models/AuditLog');
 const { logger } = require('./logger');
+const { buildEnrichedAuditPayload } = require('../middlewares/auditEnrich.middleware');
 
 /**
  * Create an audit log entry
@@ -49,8 +50,11 @@ const auditLog = async (options) => {
       details: details || {}
     };
 
-    await AuditLog.create(auditData);
+    const savedLog = await AuditLog.create(buildEnrichedAuditPayload(auditData, req));
     logger.info(`Audit log created: ${action} by ${role} ${userId}`);
+    global.streamAuditLog?.(savedLog);
+    global.streamAuditEvent?.(savedLog);
+    return savedLog;
   } catch (error) {
     logger.error('Error creating audit log:', error.message);
     // Don't throw error - audit log failure shouldn't break the main operation
