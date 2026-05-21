@@ -521,12 +521,29 @@ const getStaffDocumentData = async (req, res) => {
 // Delete User (Soft Delete)
 const deleteUser = async (req, res) => {
   try {
+    const requestingUserId = (req.user?._id || req.user?.userId)?.toString();
+    if (requestingUserId && requestingUserId === req.params.id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'You cannot deactivate your own account.'
+      });
+    }
+
     const user = await User.findById(req.params.id);
 
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    const targetRole = (user.role || '').toString().toUpperCase();
+    const requesterRole = (req.user?.role || '').toString().toUpperCase();
+    if (targetRole === USER_ROLES.SUPER_ADMIN && requesterRole !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Only Super Admin can deactivate another Super Admin.'
       });
     }
 

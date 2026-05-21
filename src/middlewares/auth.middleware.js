@@ -9,13 +9,11 @@ const UserActivityLog = require('../models/UserActivityLog');
 const redis = require('../config/redis');
 const { config } = require('../config/env');
 
-// Verify JWT token and attach user to request
+// authenticate optimized for minimal blocking I/O on the request path
 const authenticate = async (req, res, next) => {
   try {
-    // Get token from header
     const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Access denied. No token provided.'
@@ -24,45 +22,77 @@ const authenticate = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
 
-    // Blocked IP check (brute-force protection)
-    const blocked = await redis.get(`blocked:ip:${req.ip}`);
-    if (blocked) {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, config.jwt.secret);
+    } catch (_) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Access blocked due to suspicious activity'
+        message: 'Invalid or expired token'
       });
     }
 
-    // Verify token
-    const decoded = jwt.verify(token, config.jwt.secret);
-
-    // Token blacklist check
-    if (decoded.jti) {
-      const blacklistedToken = await redis.get(`blacklist:token:${decoded.jti}`);
-      if (blacklistedToken) {
-        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-          success: false,
-          message: 'Session has been terminated'
-        });
-      }
+    const userId = decoded.userId || decoded.id;
+    if (!userId) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: 'Invalid token payload'
+      });
     }
 
-    // Check if user exists and is active
-    const userId = decoded.userId || decoded.id;
+    let tokenBlacklisted = false;
+    let userBlacklisted = false;
+    let ipBlocked = false;
 
-    const userBlacklisted = await redis.get(`blacklist:user:${userId}`);
+    try {
+      const [tokenBl, userBl, ipBl] = await Promise.all([
+        decoded.jti ? redis.get(`blacklist:token:${decoded.jti}`) : Promise.resolve(null),
+        redis.get(`blacklist:user:${userId}`),
+        redis.get(`blocked:ip:${req.ip}`)
+      ]);
+      tokenBlacklisted = !!tokenBl;
+      userBlacklisted = !!userBl;
+      ipBlocked = !!ipBl;
+    } catch (_) {
+      // Fail open if Redis is slow/unavailable so auth doesn't stall.
+    }
+
+    if (ipBlocked) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: 'Access blocked due to suspicious activity. Try again later.'
+      });
+    }
+
+    if (tokenBlacklisted) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: 'Session has been terminated. Please login again.'
+      });
+    }
+
     if (userBlacklisted) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Session revoked. Please login again.'
+        message: 'Account suspended. Please contact your administrator.'
       });
     }
 
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId)
+      .select('_id name role schoolId status isDeleted lockedUntil')
+      .lean();
+
     if (!user) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    if (user.isDeleted) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Account has been deactivated. Contact your administrator.'
       });
     }
 
@@ -73,7 +103,14 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Attach user info to request
+    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      const minutesLeft = Math.ceil((new Date(user.lockedUntil) - Date.now()) / 60000);
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: `Account temporarily locked. Try again in ${minutesLeft} minute(s).`
+      });
+    }
+
     req.user = {
       _id: user._id,
       userId: user._id,
@@ -83,66 +120,81 @@ const authenticate = async (req, res, next) => {
       sessionId: decoded.sessionId || null,
       jti: decoded.jti || null
     };
+    req.deviceHash = _getDeviceHash(req);
 
-    // Check for force logout (skip for SUPER_ADMIN and users without schoolId)
     if (req.user.role !== USER_ROLES.SUPER_ADMIN && req.user.schoolId) {
-      const school = await School.findById(req.user.schoolId);
-      if (
-        school &&
-        school.forceLogoutAt &&
-        decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()
-      ) {
-        return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-          success: false,
-          message: 'You have been logged out by the school administrator'
-        });
-      }
+      _checkSchoolForceLogout(req, decoded, res, next);
+      return;
     }
 
-    const deviceHash = getDeviceHash(req);
-    req.deviceHash = deviceHash;
-
-    // Session heartbeat update (non-blocking)
-    if (decoded.jti) {
-      LoginSession.findOneAndUpdate(
-        { sessionToken: decoded.jti, isActive: true },
-        {
-          $set: {
-            lastActiveAt: new Date(),
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'] || ''
-          }
-        }
-      ).catch(() => {});
-    }
-
-    // Throttle user last-login writes via Redis (5 minute window)
-    const activeKey = `user:lastActive:${user._id}`;
-    const recentlyUpdated = await redis.get(activeKey);
-    if (!recentlyUpdated) {
-      User.findByIdAndUpdate(user._id, { lastLogin: new Date() }).catch(() => {});
-      await redis.setex(activeKey, 300, '1');
-    }
-
-    // Track per-school API request counters for dashboard analytics
-    if (req.user.schoolId) {
-      const dayKey = new Date().toISOString().split('T')[0];
-      const reqKey = `apiRequests:${req.user.schoolId}:${dayKey}`;
-      redis.incr(reqKey).catch(() => {});
-      redis.expire(reqKey, 86400).catch(() => {});
-    }
-
+    _runBackgroundTasks(req.user, req, decoded).catch(() => {});
     next();
   } catch (error) {
+    console.error('[authenticate]', error.message);
     return res.status(HTTP_STATUS.UNAUTHORIZED).json({
       success: false,
-      message: 'Invalid or expired token'
-      // Remove error details in production for security
+      message: 'Authentication failed. Please login again.'
     });
   }
 };
 
-function getDeviceHash(req) {
+async function _checkSchoolForceLogout(req, decoded, res, next) {
+  try {
+    const school = await School.findById(req.user.schoolId)
+      .select('forceLogoutAt')
+      .lean();
+
+    if (
+      school?.forceLogoutAt &&
+      decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()
+    ) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: 'You have been logged out by the school administrator'
+      });
+    }
+  } catch (_) {
+    // Do not block request on school lookup failure.
+  }
+
+  _runBackgroundTasks(req.user, req, decoded).catch(() => {});
+  next();
+}
+
+async function _runBackgroundTasks(user, req, decoded) {
+  const userId = user._id || user.userId;
+  const schoolId = user.schoolId ? user.schoolId.toString() : null;
+
+  if (decoded?.jti) {
+    LoginSession.findOneAndUpdate(
+      { sessionToken: decoded.jti, isActive: true },
+      {
+        $set: {
+          lastActiveAt: new Date(),
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'] || ''
+        }
+      }
+    ).catch(() => {});
+  }
+
+  const activeKey = `user:lastActive:${userId}`;
+  redis.get(activeKey).then((recent) => {
+    if (!recent) {
+      User.findByIdAndUpdate(userId, { lastLogin: new Date() }).catch(() => {});
+      redis.setex(activeKey, 300, '1').catch(() => {});
+    }
+  }).catch(() => {});
+
+  if (schoolId) {
+    const dayKey = new Date().toISOString().split('T')[0];
+    const reqKey = `apiRequests:${schoolId}:${dayKey}`;
+    redis.incr(reqKey).catch(() => {});
+    redis.expire(reqKey, 86400).catch(() => {});
+  }
+}
+
+function _getDeviceHash(req) {
   const ua = req.headers['user-agent'] || '';
   const ip = req.ip || '';
   return crypto.createHash('sha256').update(`${ua}${ip}`).digest('hex').substring(0, 16);
@@ -150,10 +202,13 @@ function getDeviceHash(req) {
 
 async function postLoginActions(user, req, token) {
   const payload = jwt.decode(token) || {};
-  const deviceHash = getDeviceHash(req);
+  const deviceHash = _getDeviceHash(req);
   const userAgent = req.headers['user-agent'] || '';
 
-  const existingDevice = await LoginSession.findOne({ userId: user._id, deviceHash }).lean();
+  const existingDevice = await LoginSession.findOne({ userId: user._id, deviceHash })
+    .select('_id')
+    .lean()
+    .catch(() => null);
   const isNewDevice = !existingDevice;
 
   await LoginSession.create({
@@ -164,10 +219,12 @@ async function postLoginActions(user, req, token) {
     deviceName: userAgent.substring(0, 100),
     ipAddress: req.ip,
     userAgent,
-    expiresAt: payload.exp ? new Date(payload.exp * 1000) : new Date(Date.now() + 7 * 86400000)
-  });
+    expiresAt: payload.exp
+      ? new Date(payload.exp * 1000)
+      : new Date(Date.now() + 7 * 86400000)
+  }).catch(() => {});
 
-  await User.findByIdAndUpdate(user._id, {
+  User.findByIdAndUpdate(user._id, {
     $set: {
       lastLogin: new Date(),
       lastKnownIp: req.ip || null,
@@ -175,32 +232,18 @@ async function postLoginActions(user, req, token) {
       lastKnownLocation: 'N/A',
       lastFailedLogin: null,
       lockedUntil: null,
+      failedLogins: 0
     },
     $inc: {
       successLogins: 1,
       totalLogins: 1,
       activeSessions: 1,
       sessionTokens: 1,
-      liveDevices: isNewDevice ? 1 : 0,
-    },
-    $push: {
-      loginHistory: {
-        ipAddress: req.ip,
-        userAgent,
-        deviceHash,
-        loginAt: new Date(),
-        status: 'SUCCESS',
-      },
-      deviceTracking: {
-        deviceHash,
-        userAgent,
-        ipAddress: req.ip,
-        lastSeen: new Date(),
-      },
-    },
+      liveDevices: isNewDevice ? 1 : 0
+    }
   }).catch(() => {});
 
-  await SecurityLog.create({
+  SecurityLog.create({
     schoolId: user.schoolId,
     userId: user._id,
     eventType: isNewDevice ? 'DEVICE_NEW' : 'LOGIN_SUCCESS',
@@ -209,9 +252,9 @@ async function postLoginActions(user, req, token) {
     userAgent,
     deviceHash,
     details: { role: user.role, newDevice: isNewDevice }
-  });
+  }).catch(() => {});
 
-  await UserActivityLog.create({
+  UserActivityLog.create({
     userId: user._id,
     schoolId: user.schoolId,
     action: 'LOGIN_SUCCESS',
@@ -220,18 +263,32 @@ async function postLoginActions(user, req, token) {
     deviceHash,
     userAgent,
     riskLevel: isNewDevice ? 'MEDIUM' : 'LOW',
-    metadata: { newDevice: isNewDevice },
+    metadata: { newDevice: isNewDevice }
   }).catch(() => {});
 
-  await redis.del(`bruteforce:${req.ip}`);
+  redis.del(`bruteforce:${req.ip}`).catch(() => {});
+
+  global.streamAuditEvent?.({
+    action: 'LOGIN_SUCCESS',
+    severity: 'INFO',
+    description: `${user.name} logged in`,
+    ipAddress: req.ip,
+    createdAt: new Date()
+  });
 }
 
 async function handleFailedLogin(req, schoolId, userId) {
   const bruteKey = `bruteforce:${req.ip}`;
-  const attempts = await redis.incr(bruteKey);
-  await redis.expire(bruteKey, 900);
+  let attempts = 1;
 
-  await SecurityLog.create({
+  try {
+    attempts = await redis.incr(bruteKey);
+    await redis.expire(bruteKey, 900);
+  } catch (_) {
+    // Keep default attempts.
+  }
+
+  SecurityLog.create({
     schoolId,
     userId,
     eventType: 'LOGIN_FAILED',
@@ -239,52 +296,43 @@ async function handleFailedLogin(req, schoolId, userId) {
     ipAddress: req.ip,
     userAgent: req.headers['user-agent'],
     details: { attempts }
-  });
+  }).catch(() => {});
 
   if (userId) {
     const update = {
       $inc: { failedLogins: 1 },
-      $set: { lastFailedLogin: new Date() },
-      $push: {
-        loginHistory: {
-          ipAddress: req.ip,
-          userAgent: req.headers['user-agent'] || '',
-          deviceHash: getDeviceHash(req),
-          loginAt: new Date(),
-          status: 'FAILED',
-        },
-      },
+      $set: { lastFailedLogin: new Date() }
     };
 
     if (attempts >= 5) {
       update.$set.lockedUntil = new Date(Date.now() + 15 * 60000);
     }
 
-    await User.findByIdAndUpdate(userId, update).catch(() => {});
+    User.findByIdAndUpdate(userId, update).catch(() => {});
 
-    await UserActivityLog.create({
+    UserActivityLog.create({
       userId,
       schoolId,
       action: 'LOGIN_FAILED',
       category: 'AUTH',
       ipAddress: req.ip,
-      deviceHash: getDeviceHash(req),
+      deviceHash: _getDeviceHash(req),
       userAgent: req.headers['user-agent'] || '',
       riskLevel: attempts >= 5 ? 'HIGH' : 'MEDIUM',
-      metadata: { attempts },
+      metadata: { attempts }
     }).catch(() => {});
   }
 
   if (attempts >= 10) {
-    await redis.setex(`blocked:ip:${req.ip}`, 3600, '1');
-    await SecurityLog.create({
+    redis.setex(`blocked:ip:${req.ip}`, 3600, '1').catch(() => {});
+    SecurityLog.create({
       schoolId,
       userId,
       eventType: 'BRUTE_FORCE_DETECTED',
       severity: 'CRITICAL',
       ipAddress: req.ip,
       details: { blockedFor: '1h', attempts }
-    });
+    }).catch(() => {});
   }
 }
 

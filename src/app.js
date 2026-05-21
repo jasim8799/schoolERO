@@ -102,6 +102,7 @@ const noticeRoutes = require('./routes/notice.routes');
 const leaveRoutes = require('./routes/leave.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
 const revenueRoutes = require('./revenue/revenue.routes');
+const debugRoutes = require('./routes/debug.routes');
 
 const app = express();
 let io;
@@ -136,6 +137,7 @@ app.use('/api', auditEnrichMiddleware());
 
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/auth', authRateLimit, authRoutes);
+app.use('/api/debug', debugRoutes);
 
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
