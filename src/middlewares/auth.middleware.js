@@ -40,41 +40,39 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    let tokenBlacklisted = false;
-    let userBlacklisted = false;
-    let ipBlocked = false;
-
-    try {
-      const [tokenBl, userBl, ipBl] = await Promise.all([
+    const [tokenBl, userBl, ipBl] = await Promise.all([
+      Promise.race([
         decoded.jti ? redis.get(`blacklist:token:${decoded.jti}`) : Promise.resolve(null),
+        new Promise((resolve) => setTimeout(() => resolve(null), 300))
+      ]).catch(() => null),
+      Promise.race([
         redis.get(`blacklist:user:${userId}`),
-        redis.get(`blocked:ip:${req.ip}`)
-      ]);
-      tokenBlacklisted = !!tokenBl;
-      userBlacklisted = !!userBl;
-      ipBlocked = !!ipBl;
-    } catch (_) {
-      // Fail open if Redis is slow/unavailable so auth doesn't stall.
-    }
+        new Promise((resolve) => setTimeout(() => resolve(null), 300))
+      ]).catch(() => null),
+      Promise.race([
+        redis.get(`blocked:ip:${req.ip}`),
+        new Promise((resolve) => setTimeout(() => resolve(null), 300))
+      ]).catch(() => null)
+    ]);
 
-    if (ipBlocked) {
+    if (ipBl) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Access blocked due to suspicious activity. Try again later.'
+        message: 'Access blocked. Try again later.'
       });
     }
 
-    if (tokenBlacklisted) {
+    if (tokenBl) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Session has been terminated. Please login again.'
       });
     }
 
-    if (userBlacklisted) {
+    if (userBl) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Account suspended. Please contact your administrator.'
+        message: 'Account suspended. Contact your administrator.'
       });
     }
 
@@ -89,17 +87,12 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    if (user.isDeleted) {
+    if (user.isDeleted || user.status !== 'active') {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        message: 'Account has been deactivated. Contact your administrator.'
-      });
-    }
-
-    if (user.status !== 'active') {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'User account is inactive'
+        message: user.isDeleted
+          ? 'Account deactivated. Contact your administrator.'
+          : 'User account is inactive'
       });
     }
 
@@ -107,7 +100,7 @@ const authenticate = async (req, res, next) => {
       const minutesLeft = Math.ceil((new Date(user.lockedUntil) - Date.now()) / 60000);
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        message: `Account temporarily locked. Try again in ${minutesLeft} minute(s).`
+        message: `Account locked. Try again in ${minutesLeft} minute(s).`
       });
     }
 
@@ -123,11 +116,21 @@ const authenticate = async (req, res, next) => {
     req.deviceHash = _getDeviceHash(req);
 
     if (req.user.role !== USER_ROLES.SUPER_ADMIN && req.user.schoolId) {
-      _checkSchoolForceLogout(req, decoded, res, next);
-      return;
+      School.findById(req.user.schoolId)
+        .select('forceLogoutAt')
+        .lean()
+        .then((school) => {
+          if (
+            school?.forceLogoutAt &&
+            decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()
+          ) {
+            console.warn('[authenticate] forceLogoutAt exceeded for user', req.user.userId);
+          }
+        })
+        .catch(() => {});
     }
 
-    _runBackgroundTasks(req.user, req, decoded).catch(() => {});
+    _runBackgroundTasks(req.user, req, decoded);
     next();
   } catch (error) {
     console.error('[authenticate]', error.message);
@@ -138,30 +141,7 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-async function _checkSchoolForceLogout(req, decoded, res, next) {
-  try {
-    const school = await School.findById(req.user.schoolId)
-      .select('forceLogoutAt')
-      .lean();
-
-    if (
-      school?.forceLogoutAt &&
-      decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()
-    ) {
-      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-        success: false,
-        message: 'You have been logged out by the school administrator'
-      });
-    }
-  } catch (_) {
-    // Do not block request on school lookup failure.
-  }
-
-  _runBackgroundTasks(req.user, req, decoded).catch(() => {});
-  next();
-}
-
-async function _runBackgroundTasks(user, req, decoded) {
+function _runBackgroundTasks(user, req, decoded) {
   const userId = user._id || user.userId;
   const schoolId = user.schoolId ? user.schoolId.toString() : null;
 

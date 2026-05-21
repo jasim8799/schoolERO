@@ -18,13 +18,19 @@ function firewallMiddleware() {
     const ip   = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0';
     const path = req.path;
 
-    // ── Rate limit check via Redis ──────────────────────────────────────
-    const rateKey = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW)}`;
     try {
-      const count = await redis.incr(rateKey);
-      if (count === 1) await redis.expire(rateKey, 2);
+      // ── Rate limit check with timeout protection ───────────────────────
+      const rateKey = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW)}`;
+      const redisResult = await Promise.race([
+        redis.incr(rateKey),
+        new Promise((resolve) => setTimeout(() => resolve(0), 500))
+      ]).catch(() => 0);
 
-      if (count > RATE_LIMIT_MAX) {
+      if (redisResult === 1) {
+        redis.expire(rateKey, 2).catch(() => {});
+      }
+
+      if (redisResult > RATE_LIMIT_MAX) {
         _logFirewallEvent(ip, 'RATE_LIMITED', path, req, 0.65, 'RATE_LIMIT_EXCEEDED').catch(() => {});
         global.io?.of('/activity').emit('firewall:event', {
           ip, action: 'RATE_LIMITED', path, timestamp: new Date(),
@@ -34,25 +40,28 @@ function firewallMiddleware() {
           message: 'Rate limit exceeded. Please slow down.',
         });
       }
+
+      // ── Detect injection patterns ─────────────────────────────────────
+      const body    = JSON.stringify(req.body  || {});
+      const query   = JSON.stringify(req.query || {});
+      const combined = `${path}${body}${query}`;
+      if (_detectInjection(combined)) {
+        _logFirewallEvent(ip, 'BLOCKED', path, req, 0.92, 'INJECTION_DETECTED').catch(() => {});
+        return res.status(400).json({ success: false, message: 'Request blocked by firewall' });
+      }
+
+      // ── Blocked IP check with timeout protection ──────────────────────
+      const blocked = await Promise.race([
+        redis.get(`blocked:ip:${ip}`),
+        new Promise((resolve) => setTimeout(() => resolve(null), 300))
+      ]).catch(() => null);
+
+      if (blocked) {
+        _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
     } catch (_) {
-      // Redis unavailable — fail open to preserve availability
-    }
-
-    // ── Detect injection patterns ───────────────────────────────────────
-    // Only inspect safe string representations — never eval input
-    const body    = JSON.stringify(req.body  || {});
-    const query   = JSON.stringify(req.query || {});
-    const combined = `${path}${body}${query}`;
-    if (_detectInjection(combined)) {
-      _logFirewallEvent(ip, 'BLOCKED', path, req, 0.92, 'INJECTION_DETECTED').catch(() => {});
-      return res.status(400).json({ success: false, message: 'Request blocked by firewall' });
-    }
-
-    // ── IP blacklist check ─────────────────────────────────────────────
-    const blocked = await redis.get(`blocked:ip:${ip}`).catch(() => null);
-    if (blocked) {
-      _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
-      return res.status(403).json({ success: false, message: 'Access denied' });
+      // Firewall failure should not block legitimate traffic.
     }
 
     // Track request counts (async, non-blocking)

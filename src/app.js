@@ -131,27 +131,49 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-// Apply firewall middleware to all API routes
-app.use('/api', firewallMiddleware());
-app.use('/api', auditEnrichMiddleware());
-
-app.use('/api/sessions', sessionRoutes);
+// Public routes must be registered before global authentication middleware.
 app.use('/api/auth', authRateLimit, authRoutes);
 app.use('/api/debug', debugRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/version', versionRoutes);
+
+// Skip firewall/audit on auth and debug routes to avoid cold-start delays.
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth') || req.path.startsWith('/debug')) {
+    return next();
+  }
+  return firewallMiddleware()(req, res, next);
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth') || req.path.startsWith('/debug')) {
+    return next();
+  }
+  return auditEnrichMiddleware()(req, res, next);
+});
 
 // Admin routes (SUPER_ADMIN only, no tenant middlewares)
 app.use('/api/admin', adminRoutes);
 app.use('/api/revenue', revenueRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/system', systemRoutes);
-app.use('/api/version', versionRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/jobs', jobsRoutes);
 
-// Global middleware for tenant routes: authenticate -> checkMaintenanceMode
-app.use('/api', authenticate, checkMaintenanceMode);
+// Global authenticate middleware with explicit skips for public routes.
+app.use('/api', (req, res, next) => {
+  if (
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/debug') ||
+    req.path.startsWith('/version') ||
+    req.path.startsWith('/sessions')
+  ) {
+    return next();
+  }
+  return authenticate(req, res, next);
+}, checkMaintenanceMode);
 
 
 // Backup & Restore routes (authenticated)

@@ -195,12 +195,12 @@ const login = async (req, res) => {
       sessionId: activeSession ? activeSession._id.toString() : null
     });
 
-    await _postLoginActions(user, req, token);
+    _postLoginActions(user, req, token).catch((e) => console.error('[postLogin]', e.message));
 
     logger.success(`User logged in: ${user.name} (${user.role})`);
 
     // Create audit log for login
-    await auditLog({
+    auditLog({
       action: 'LOGIN',
       userId: user._id,
       role: user.role,
@@ -211,7 +211,7 @@ const login = async (req, res) => {
       details: { role: user.role, email: user.email || user.mobile },
       ipAddress: req.headers['x-forwarded-for']?.split(',')[0]?.trim()
         || req.socket?.remoteAddress || req.ip || '0.0.0.0',
-    });
+    }).catch(() => {});
 
     // Remove password from response
     const userResponse = user.toObject();
