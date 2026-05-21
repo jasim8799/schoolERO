@@ -17,6 +17,10 @@ const {
 } = require('../utils/revenueHelpers');
 
 const GATEWAYS = ['Razorpay', 'Stripe', 'UPI', 'Bank'];
+const withTimeout = (promise, fallback = null) => Promise.race([
+  promise,
+  new Promise((resolve) => setTimeout(() => resolve(fallback), 8000))
+]).catch(() => fallback);
 
 const getRevenue = async (req, res) => {
   try {
@@ -50,11 +54,14 @@ const getRevenue = async (req, res) => {
     const skip = (parsedPage - 1) * parsedLimit;
 
     const [schools, totalCount] = await Promise.all([
-      School.find(query).sort({ updatedAt: -1 }).skip(skip).limit(parsedLimit).lean(),
-      School.countDocuments(query),
+      withTimeout(School.find(query).sort({ updatedAt: -1 }).skip(skip).limit(parsedLimit).lean(), []),
+      withTimeout(School.countDocuments(query), 0),
     ]);
 
-    let enriched = await Promise.all(schools.map((s) => enrichSchoolRevenue(s, false)));
+    let enriched = await withTimeout(
+      Promise.all(schools.map((s) => enrichSchoolRevenue(s, false))),
+      []
+    );
 
     if (status && status !== 'ALL') {
       enriched = enriched.filter((r) => r.paymentStatus === String(status).toUpperCase());
@@ -64,10 +71,30 @@ const getRevenue = async (req, res) => {
     }
 
     const [mrrData, billingData, dailyStats, forecast] = await Promise.all([
-      calculateRealMRR(),
-      calculateBillingMRR(),
-      getDailyTransactionStats(),
-      generateRevenueForecast(enriched.reduce((s, r) => s + (r.monthlyRevenue || 0), 0)),
+      withTimeout(calculateRealMRR(), {
+        totalMRR: 0,
+        totalARR: 0,
+        grossProfit: 0,
+        netProfit: 0,
+        avgRevenuePerSchool: 0,
+        gstCollected: 0,
+        activeSchools: 0,
+      }),
+      withTimeout(calculateBillingMRR(), { totalRevenue: 0, totalTax: 0, totalRefunds: 0 }),
+      withTimeout(getDailyTransactionStats(), {
+        failedToday: 0,
+        totalTransactionsToday: 0,
+        paymentSuccessRate: 0,
+      }),
+      withTimeout(
+        generateRevenueForecast(enriched.reduce((s, r) => s + (r.monthlyRevenue || 0), 0)),
+        {
+          forecast30d: 0,
+          growthRate: 0,
+          churnRisk: 0,
+          paymentConfidence: 0,
+        }
+      ),
     ]);
 
     const planBreakdown = {};
@@ -89,7 +116,7 @@ const getRevenue = async (req, res) => {
       };
     }
 
-    const liveFeed = await _buildLiveFeed(enriched);
+    const liveFeed = await withTimeout(_buildLiveFeed(enriched), []);
     const cashflowMetrics = calculateCashflowMetrics(enriched);
 
     const metrics = {
@@ -157,13 +184,25 @@ const getRevenueMetrics = async (req, res) => {
     if (cached) return res.json({ success: true, data: JSON.parse(cached), cached: true });
 
     const [mrrData, dailyStats, schools] = await Promise.all([
-      calculateRealMRR(),
-      getDailyTransactionStats(),
-      School.find({ isDeleted: { $ne: true } }).lean(),
+      withTimeout(calculateRealMRR(), {
+        totalMRR: 0,
+        totalARR: 0,
+        grossProfit: 0,
+        netProfit: 0,
+        avgRevenuePerSchool: 0,
+        gstCollected: 0,
+      }),
+      withTimeout(getDailyTransactionStats(), { failedToday: 0, totalTransactionsToday: 0, paymentSuccessRate: 0 }),
+      withTimeout(School.find({ isDeleted: { $ne: true } }).lean(), []),
     ]);
 
-    const enriched = await Promise.all(schools.map((s) => enrichSchoolRevenue(s, false)));
-    const forecast = await generateRevenueForecast(mrrData.totalMRR);
+    const enriched = await withTimeout(Promise.all(schools.map((s) => enrichSchoolRevenue(s, false))), []);
+    const forecast = await withTimeout(generateRevenueForecast(mrrData.totalMRR), {
+      forecast30d: 0,
+      growthRate: 0,
+      churnRisk: 0,
+      paymentConfidence: 0,
+    });
     const cashflowMetrics = calculateCashflowMetrics(enriched);
 
     const result = {

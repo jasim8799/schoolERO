@@ -152,16 +152,6 @@ app.use('/api', (req, res, next) => {
   return auditEnrichMiddleware()(req, res, next);
 });
 
-// Admin routes (SUPER_ADMIN only, no tenant middlewares)
-app.use('/api/admin', adminRoutes);
-app.use('/api/revenue', revenueRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/system', systemRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/activity', activityRoutes);
-app.use('/api/security', securityRoutes);
-app.use('/api/jobs', jobsRoutes);
-
 // Global authenticate middleware with explicit skips for public routes.
 app.use('/api', (req, res, next) => {
   if (
@@ -174,6 +164,16 @@ app.use('/api', (req, res, next) => {
   }
   return authenticate(req, res, next);
 }, checkMaintenanceMode);
+
+// Admin routes (SUPER_ADMIN only)
+app.use('/api/admin', adminRoutes);
+app.use('/api/revenue', revenueRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/system', systemRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/security', securityRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 
 // Backup & Restore routes (authenticated)

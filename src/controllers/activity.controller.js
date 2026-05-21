@@ -1,8 +1,23 @@
 ﻿const AuditLog              = require('../models/AuditLog');
-const SecurityLog           = require('../models/SecurityLog');
 const LoginSession          = require('../models/LoginSession');
-const FirewallEvent         = require('../models/FirewallEvent');
-const ActivityEvent         = require('../models/ActivityEvent');
+let FirewallEvent;
+let SecurityLog;
+let ActivityEvent;
+try {
+  FirewallEvent = require('../models/FirewallEvent');
+} catch (_) {
+  FirewallEvent = { countDocuments: () => Promise.resolve(0) };
+}
+try {
+  SecurityLog = require('../models/SecurityLog');
+} catch (_) {
+  SecurityLog = { countDocuments: () => Promise.resolve(0), findOne: () => Promise.resolve(null) };
+}
+try {
+  ActivityEvent = require('../models/ActivityEvent');
+} catch (_) {
+  ActivityEvent = { findOneAndUpdate: () => Promise.resolve(null) };
+}
 const { analyzeEventForThreats } = require('../ai/threat.analysis.engine');
 const { runDiagnostics }    = require('../diagnostics/infrastructure.diagnostics');
 const { blockIp }           = require('../firewall/firewall.monitor');
@@ -10,6 +25,12 @@ const { auditLog }          = require('../utils/auditLog');
 const { USER_ROLES }        = require('../config/constants');
 const { logger }            = require('../utils/logger');
 const redis                 = require('../config/redis');
+
+const QUERY_TIMEOUT = 8000;
+const withTimeout = (promise, fallback = 0) => Promise.race([
+  promise,
+  new Promise((resolve) => setTimeout(() => resolve(fallback), QUERY_TIMEOUT))
+]).catch(() => fallback);
 
 // ── Pure mappers ──────────────────────────────────────────────────────────────
 
@@ -155,15 +176,33 @@ const getActivityFeed = async (req, res) => {
       recentSecurityEvents,
       weeklyLogCount,
     ] = await Promise.all([
-      AuditLog.find(query).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
-      AuditLog.countDocuments(query),
-      AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $regex: /CRITICAL|BREACH|INJECT/i } }),
-      AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $regex: /FAILED|DELETE|FORCE|EXCEEDED/i } }),
-      AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] } }),
-      LoginSession.countDocuments({ isActive: true }),
-      FirewallEvent.countDocuments({ action: 'BLOCKED', createdAt: { $gte: dayAgo } }),
-      SecurityLog.countDocuments({ severity: { $in: ['ERROR', 'CRITICAL'] }, createdAt: { $gte: dayAgo } }),
-      AuditLog.countDocuments({ createdAt: { $gte: weekAgo } }),
+      withTimeout(
+        AuditLog.find(query).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
+        []
+      ),
+      withTimeout(AuditLog.countDocuments(query), 0),
+      withTimeout(
+        AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, severity: 'CRITICAL' }),
+        0
+      ),
+      withTimeout(
+        AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, severity: { $in: ['WARNING', 'ERROR'] } }),
+        0
+      ),
+      withTimeout(
+        AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] } }),
+        0
+      ),
+      withTimeout(LoginSession.countDocuments({ isActive: true }), 0),
+      withTimeout(
+        FirewallEvent.countDocuments({ action: 'BLOCKED', createdAt: { $gte: dayAgo } }),
+        0
+      ),
+      withTimeout(
+        SecurityLog.countDocuments({ severity: { $in: ['ERROR', 'CRITICAL'] }, createdAt: { $gte: dayAgo } }),
+        0
+      ),
+      withTimeout(AuditLog.countDocuments({ createdAt: { $gte: weekAgo } }), 0),
     ]);
 
     let formatted = auditLogs.map((log, i) => _formatLog(log, i));
@@ -189,8 +228,11 @@ const getActivityFeed = async (req, res) => {
     const incidentReports      = formatted.filter((r) => r.status === 'INVESTIGATING').length;
     const blockedThreats       = formatted.filter((r) => r.status === 'BLOCKED' || r.severity === 'BLOCKED').length + firewallBlocked24h;
 
-    const threats  = await _buildRealThreatCards({ criticalCount24h, failedLoginCount24h, firewallBlocked24h, recentSecurityEvents, suspiciousActivities, formatted });
-    const timeline = await _buildRealTimeline(dayAgo);
+    const threats = await withTimeout(
+      _buildRealThreatCards({ criticalCount24h, failedLoginCount24h, firewallBlocked24h, recentSecurityEvents, suspiciousActivities, formatted }),
+      []
+    );
+    const timeline = await withTimeout(_buildRealTimeline(dayAgo), []);
     const liveFeed = formatted.slice(0, 8);
 
     const metrics = {

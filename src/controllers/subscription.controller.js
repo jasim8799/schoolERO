@@ -15,6 +15,10 @@ const {
   retryFailedPayment,
 } = require('../billing/billing.engine');
 const redis = require('../config/redis');
+const withTimeout = (promise, fallback = null) => Promise.race([
+  promise,
+  new Promise((resolve) => setTimeout(() => resolve(fallback), 8000))
+]).catch(() => fallback);
 
 // â”€â”€ Pure helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -199,11 +203,14 @@ const getSubscriptions = async (req, res) => {
 
     const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
     const [schools, totalCount] = await Promise.all([
-      School.find(query).sort({ updatedAt: -1 }).skip(skip).limit(parseInt(limit, 10)).lean(),
-      School.countDocuments(query),
+      withTimeout(School.find(query).sort({ updatedAt: -1 }).skip(skip).limit(parseInt(limit, 10)).lean(), []),
+      withTimeout(School.countDocuments(query), 0),
     ]);
 
-    let enriched = await Promise.all(schools.map((s) => _enrichSchoolSubscription(s, false)));
+    let enriched = await withTimeout(
+      Promise.all(schools.map((s) => _enrichSchoolSubscription(s, false))),
+      []
+    );
     if (status  && status  !== 'ALL') enriched = enriched.filter((s) => s.status        === status.toUpperCase());
     if (payment && payment !== 'ALL') enriched = enriched.filter((s) => s.paymentStatus === payment.toUpperCase());
 
@@ -232,8 +239,11 @@ const getSubscriptionMetrics = async (req, res) => {
     const cached = await redis.connection.get('subscriptions:metrics').catch(() => null);
     if (cached) return res.json({ success: true, data: JSON.parse(cached), cached: true });
 
-    const schools  = await School.find({ isDeleted: { $ne: true } }).lean();
-    const enriched = await Promise.all(schools.map((s) => _enrichSchoolSubscription(s, false)));
+    const schools  = await withTimeout(School.find({ isDeleted: { $ne: true } }).lean(), []);
+    const enriched = await withTimeout(
+      Promise.all(schools.map((s) => _enrichSchoolSubscription(s, false))),
+      []
+    );
     const metrics  = _buildMetrics(enriched);
     const totalMRR = enriched.reduce((sum, s) => sum + s.monthlyRevenue, 0);
     const planBreakdown = {};

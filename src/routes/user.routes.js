@@ -16,7 +16,6 @@ const {
   disableMfa,
   getUserAnalytics,
 } = require('../controllers/user.controller.js');
-const { authenticate } = require('../middlewares/auth.middleware.js');
 const { requireRole, requireMinRole, canAssignRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation, attachSchoolId, filterBySchool } = require('../middlewares/school.middleware.js');
 const { checkStudentLimit, checkTeacherLimit } = require('../middlewares/schoolLimits.middleware.js');
@@ -28,7 +27,6 @@ const router = express.Router();
 // Must come BEFORE the /:id route to avoid path conflict
 router.get(
   '/super-admin',
-  authenticate,
   requireRole(USER_ROLES.SUPER_ADMIN),
   getSuperAdminUsers
 );
@@ -65,13 +63,12 @@ router.get(
 );
 
 // PATCH /api/users/me - update own profile (email/photo)
-router.patch('/me', authenticate, updateMyProfile);
+router.patch('/me', updateMyProfile);
 
 // GET /api/users/analytics - User IAM analytics (SUPER_ADMIN)
 // Must come BEFORE /:id
 router.get(
   '/analytics',
-  authenticate,
   requireRole(USER_ROLES.SUPER_ADMIN),
   getUserAnalytics
 );

@@ -3,6 +3,11 @@ const LoginSession = require('../models/LoginSession');
 const SecurityLog = require('../models/SecurityLog');
 const redis = require('../config/redis');
 
+const safeQuery = (promise, fallback) => Promise.race([
+  promise,
+  new Promise((resolve) => setTimeout(() => resolve(fallback), 2000))
+]).catch(() => fallback);
+
 async function enrichUserForDashboard(user) {
   const now = new Date();
   const dayAgo = new Date(now - 86400000);
@@ -17,20 +22,20 @@ async function enrichUserForDashboard(user) {
 
   try {
     const [failedCount, successCount, activeSessionDocs, vpnLog] = await Promise.all([
-      AuditLog.countDocuments({
+      safeQuery(AuditLog.countDocuments({
         userId: user._id,
         action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] },
         createdAt: { $gte: dayAgo },
-      }),
-      AuditLog.countDocuments({
+      }), 0),
+      safeQuery(AuditLog.countDocuments({
         userId: user._id,
         action: 'LOGIN_SUCCESS',
         createdAt: { $gte: dayAgo },
-      }),
-      LoginSession.find({ userId: user._id, isActive: true })
+      }), 0),
+      safeQuery(LoginSession.find({ userId: user._id, isActive: true })
         .select('deviceHash ipAddress geoCity geoCountry userAgent loginAt')
-        .lean(),
-      SecurityLog.findOne({ userId: user._id, eventType: 'GEO_ANOMALY' }).sort({ createdAt: -1 }).lean(),
+        .lean(), []),
+      safeQuery(SecurityLog.findOne({ userId: user._id, eventType: 'GEO_ANOMALY' }).sort({ createdAt: -1 }).lean(), null),
     ]);
 
     failedLogins = failedCount;
@@ -49,7 +54,7 @@ async function enrichUserForDashboard(user) {
     console.error(`[enrichUser] ${user._id}:`, err.message);
   }
 
-  const cachedThreats = await redis.get(`threat:user:${user._id}`).catch(() => null);
+  const cachedThreats = await safeQuery(redis.get(`threat:user:${user._id}`), null);
   let threatScore = user.threatScore || 0;
   let riskLevel = user.riskLevel || 'LOW';
 
