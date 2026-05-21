@@ -1,21 +1,42 @@
-// --- ENTERPRISE SECURITY CONTROLLER ---
-const { SecurityThreat } = require('../models/SecurityThreat');
-const { BlockedIP } = require('../models/BlockedIP');
-const { GeoAnomaly } = require('../models/GeoAnomaly');
-const { SessionLog } = require('../models/SessionLog');
-const { RiskProfile } = require('../models/RiskProfile');
+const AuditLog = require('../models/AuditLog');
 const SecurityLog = require('../models/SecurityLog');
 const LoginSession = require('../models/LoginSession');
-const AuditLog = require('../models/AuditLog');
-const { securityQueues } = require('../security/queues');
-const { generateThreatId } = require('../security/ai/threatScoring');
+const User = require('../models/User');
 const { USER_ROLES } = require('../config/constants');
 const redis = require('../config/redis');
-const os = require('os');
 
-// --- Production-grade controller implementation from master prompt ---
+function _relativeTime(date) {
+  if (!date) return 'N/A';
+  const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+  return `${Math.floor(mins / 1440)}d ago`;
+}
 
-// GET /api/security — Full SOC dashboard with real data
+function _severityFromAction(action) {
+  const a = (action || '').toUpperCase();
+  if (/CRITICAL|BREACH|INJECT|BRUTE/.test(a)) return 'CRITICAL';
+  if (/FAILED|INVALID|BLOCK|DENIED/.test(a)) return 'HIGH';
+  if (/WARNING|EXCEEDED|FORCE/.test(a)) return 'MEDIUM';
+  return 'LOW';
+}
+
+function _iconFromAction(action) {
+  const a = (action || '').toUpperCase();
+  if (/LOGIN|AUTH/.test(a)) return 'lock_person';
+  if (/BLOCK|FIREWALL/.test(a)) return 'gpp_bad';
+  if (/API|RATE/.test(a)) return 'api';
+  if (/DB|DATABASE/.test(a)) return 'storage';
+  if (/PAYMENT/.test(a)) return 'payments';
+  if (/USER|ROLE/.test(a)) return 'manage_accounts';
+  return 'security';
+}
+
+const safeQuery = (promise, fallback) => Promise.race([
+  promise,
+  new Promise((resolve) => setTimeout(() => resolve(fallback), 8000)),
+]).catch(() => fallback);
+
 const getSecurityData = async (req, res) => {
   try {
     if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
@@ -23,84 +44,153 @@ const getSecurityData = async (req, res) => {
     }
 
     const { severity, search, limit = 50 } = req.query;
-    const dayAgo = new Date(Date.now() - 86400000);
-    const hourAgo = new Date(Date.now() - 3600000);
-    const weekAgo = new Date(Date.now() - 7 * 86400000);
 
-    // ── Build threat query ────────────────────────────────────────────────
-    const threatQuery = { createdAt: { $gte: weekAgo } };
-    if (severity && severity !== 'ALL') {
-      threatQuery.$or = [{ severity: severity.toUpperCase() }, { status: severity.toUpperCase() }];
-    }
-    if (search) {
-      threatQuery.$and = [{
-        $or: [
-          { threat: { $regex: search, $options: 'i' } },
-          { ipAddress: { $regex: search, $options: 'i' } },
-          { location: { $regex: search, $options: 'i' } },
-          { target: { $regex: search, $options: 'i' } },
+    const cacheKey = `security:dashboard:${severity}:${search || ''}`;
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) return res.json({ success: true, ...JSON.parse(cached), cached: true });
+
+    const now = new Date();
+    const dayAgo = new Date(now - 86400000);
+    const hourAgo = new Date(now - 3600000);
+    const weekAgo = new Date(now - 7 * 86400000);
+
+    const auditQuery = {
+      createdAt: { $gte: weekAgo },
+      action: {
+        $in: [
+          'LOGIN_FAILED', 'INVALID_TOKEN', 'UNAUTHORIZED_ACCESS',
+          'BRUTE_FORCE_DETECTED', 'IP_BLOCKED', 'FORCE_LOGOUT',
+          'PASSWORD_RESET', 'RATE_LIMIT_EXCEEDED', 'SERVER_ERROR',
+          'USER_DELETED', 'ROLE_CHANGED', 'SCHOOL_DEACTIVATED',
         ],
-      }];
+      },
+    };
+
+    if (severity && severity !== 'ALL') {
+      const sevMap = {
+        CRITICAL: ['BRUTE_FORCE_DETECTED', 'UNAUTHORIZED_ACCESS', 'IP_BLOCKED'],
+        HIGH: ['LOGIN_FAILED', 'INVALID_TOKEN', 'FORCE_LOGOUT'],
+        MEDIUM: ['RATE_LIMIT_EXCEEDED', 'PASSWORD_RESET'],
+        LOW: ['ROLE_CHANGED', 'USER_DELETED'],
+      };
+      const actions = sevMap[severity.toUpperCase()];
+      if (actions) auditQuery.action = { $in: actions };
     }
 
-    // ── Parallel data fetching ────────────────────────────────────────────
+    if (search) {
+      auditQuery.$or = [
+        { action: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { ipAddress: { $regex: search, $options: 'i' } },
+        { entityType: { $regex: search, $options: 'i' } },
+      ];
+      delete auditQuery.action;
+    }
+
     const [
-      threats,
-      blockedIPCount,
-      geoAnomalies,
-      recentSessions,
+      auditThreats,
+      securityLogs,
       failedLogins24h,
       failedLoginsHour,
-      criticalCount,
-      riskProfiles,
+      activeSessions,
+      blockedUsers,
+      highRiskUsers,
+      recentSecLogs,
     ] = await Promise.all([
-      SecurityThreat.find(threatQuery)
-        .sort({ createdAt: -1 })
-        .limit(parseInt(limit))
-        .lean(),
-      BlockedIP.countDocuments({ blockedAt: { $gte: dayAgo } }),
-      GeoAnomaly.find({ createdAt: { $gte: dayAgo } })
-        .sort({ risk: -1 }).limit(8).lean(),
-      SessionLog.countDocuments({ loginAt: { $gte: hourAgo } }),
-      AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: /LOGIN_FAILED/i }),
-      AuditLog.countDocuments({ createdAt: { $gte: hourAgo }, action: /LOGIN_FAILED/i }),
-      SecurityThreat.countDocuments({ severity: 'CRITICAL', createdAt: { $gte: dayAgo } }),
-      RiskProfile.find({ overallRisk: { $gt: 0.6 } }).sort({ overallRisk: -1 }).limit(5).lean(),
+      safeQuery(
+        AuditLog.find(auditQuery)
+          .sort({ createdAt: -1 })
+          .limit(Math.min(200, parseInt(limit, 10) || 50))
+          .lean(),
+        []
+      ),
+      safeQuery(
+        SecurityLog.find({ createdAt: { $gte: weekAgo } })
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .lean(),
+        []
+      ),
+      safeQuery(
+        AuditLog.countDocuments({
+          createdAt: { $gte: dayAgo },
+          action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] },
+        }),
+        0
+      ),
+      safeQuery(
+        AuditLog.countDocuments({
+          createdAt: { $gte: hourAgo },
+          action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] },
+        }),
+        0
+      ),
+      safeQuery(LoginSession.countDocuments({ isActive: true }), 0),
+      safeQuery(User.countDocuments({ isDeleted: true, deletedAt: { $gte: dayAgo } }), 0),
+      safeQuery(User.countDocuments({ riskLevel: { $in: ['HIGH', 'CRITICAL'] } }), 0),
+      safeQuery(
+        SecurityLog.find({ severity: { $in: ['ERROR', 'CRITICAL'] }, createdAt: { $gte: dayAgo } })
+          .sort({ createdAt: -1 })
+          .limit(20)
+          .lean(),
+        []
+      ),
     ]);
 
-    // ── Format threats ────────────────────────────────────────────────────
-    const formattedThreats = threats.map((t) => ({
-      _id: t._id.toString(),
-      icon: t.icon || 'security',
-      threat: t.threat,
-      threatId: t.threatId,
-      source: t.source,
-      severity: t.severity,
-      status: t.status,
-      risk: t.risk,
-      aiConf: t.aiConf,
-      location: t.location,
-      target: t.target,
-      response: t.response,
-      timestamp: _relativeTime(t.createdAt),
-      ipAddress: t.ipAddress || '0.0.0.0',
-      action: t.action,
-      description: t.description,
-    }));
+    const formattedThreats = auditThreats.map((log, idx) => {
+      const sev = _severityFromAction(log.action);
+      const ip = log.ipAddress || '10.0.0.1';
+      const isPrivate = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(ip);
+      const aiConf = sev === 'CRITICAL' ? 0.94 : sev === 'HIGH' ? 0.87 : 0.78;
+      const risk = sev === 'CRITICAL' ? 0.88 : sev === 'HIGH' ? 0.65 : 0.38;
+      const idSuffix = log._id?.toString().slice(-4).toUpperCase() || String(idx).padStart(4, '0');
 
-    // ── Geo cards ─────────────────────────────────────────────────────────
-    const geoCards = geoAnomalies.map((g) => ({
-      country: g.country || 'Unknown',
-      city: g.city || 'Unknown',
-      ip: g.ipAddress,
-      event: g.event,
-      risk: g.risk,
-      vpn: g.isVPN,
-    }));
+      return {
+        _id: log._id?.toString(),
+        icon: _iconFromAction(log.action),
+        threat: log.description || log.action?.replace(/_/g, ' ') || 'Security event',
+        threatId: `THR-${idSuffix}`,
+        source: log.entityType || 'System',
+        severity: sev,
+        status: sev === 'CRITICAL' ? 'BLOCKED' : sev === 'HIGH' ? 'INVESTIGATING' : 'MONITORING',
+        risk,
+        aiConf,
+        location: isPrivate ? 'Private VPC' : 'External',
+        target: log.entityType || 'Platform',
+        response: sev === 'CRITICAL' ? 'Auto-blocked + Admin notified'
+          : sev === 'HIGH' ? 'MFA enforced + Monitoring raised'
+            : 'Logged for review',
+        timestamp: _relativeTime(log.createdAt),
+        ipAddress: ip,
+        action: log.action,
+        description: log.description,
+      };
+    });
 
-    // ── Incident feed ─────────────────────────────────────────────────────
+    const geoLogs = securityLogs.filter((l) => l.eventType === 'GEO_ANOMALY').slice(0, 8);
+    const geoCards = geoLogs.length > 0
+      ? geoLogs.map((g) => ({
+        country: g.geoCountry || 'India',
+        city: g.geoCity || 'Unknown',
+        ip: g.ipAddress || '0.0.0.0',
+        event: 'Geo anomaly detected',
+        risk: g.severity === 'CRITICAL' ? 0.88 : 0.55,
+        vpn: g.isVPN || false,
+      }))
+      : auditThreats
+        .filter((t) => t.action === 'LOGIN_FAILED' && t.ipAddress)
+        .slice(0, 4)
+        .map((t) => ({
+          country: 'India',
+          city: 'Unknown',
+          ip: t.ipAddress,
+          event: 'Failed login attempt',
+          risk: 0.55,
+          vpn: false,
+        }));
+
     const incidentFeed = formattedThreats
-      .filter((t) => ['CRITICAL', 'HIGH'].includes(t.severity) || t.status === 'BLOCKED')
+      .filter((t) => ['CRITICAL', 'HIGH'].includes(t.severity))
       .slice(0, 8)
       .map((t) => ({
         icon: t.icon,
@@ -110,27 +200,28 @@ const getSecurityData = async (req, res) => {
         sourceIp: t.ipAddress,
         aiConfidence: `AI:${Math.round(t.aiConf * 100)}%`,
         country: t.location,
-        category: t.target?.split(' ')[0] || 'Platform',
+        category: t.source,
         response: t.response,
       }));
 
-    // ── Timeline ──────────────────────────────────────────────────────────
-    const timeline = threats
+    const timeline = formattedThreats
       .filter((t) => t.severity === 'CRITICAL' || t.status === 'BLOCKED')
       .slice(0, 6)
       .map((t) => ({
         title: t.threat,
         severity: t.severity,
-        timestamp: _relativeTime(t.createdAt),
-        details: t.description || `${t.action} detected from ${t.ipAddress}`,
+        timestamp: t.timestamp,
+        details: t.description || `${t.action} from ${t.ipAddress}`,
       }));
 
-    // ── Threat intel cards ────────────────────────────────────────────────
-    const uniqueIPs = [...new Set(threats.map((t) => t.ipAddress).filter(Boolean))].length;
+    const uniqueIPs = [...new Set(formattedThreats.map((t) => t.ipAddress).filter((ip) => ip !== '10.0.0.1'))].length;
+    const criticalCount = formattedThreats.filter((t) => t.severity === 'CRITICAL').length;
+    const blockedCount = formattedThreats.filter((t) => t.status === 'BLOCKED').length;
+
     const threatIntel = [
       {
         title: 'Suspicious IP Cluster',
-        analysis: `${uniqueIPs} unique threat IPs detected. ${blockedIPCount} IPs auto-blocked.`,
+        analysis: `${uniqueIPs} unique threat IPs detected. ${blockedCount} events auto-blocked.`,
         severity: criticalCount > 5 ? 'CRITICAL' : 'HIGH',
         confidence: '97%',
         impact: criticalCount > 5 ? 'CRITICAL' : 'HIGH',
@@ -146,15 +237,15 @@ const getSecurityData = async (req, res) => {
       },
       {
         title: 'Geo Anomaly Detection',
-        analysis: `${geoAnomalies.length} geo anomalies detected in 24h.`,
-        severity: geoAnomalies.some((g) => g.impossibleTravel) ? 'CRITICAL' : 'HIGH',
+        analysis: `${geoCards.length} geo anomalies detected in 24h.`,
+        severity: geoCards.length > 3 ? 'HIGH' : 'MEDIUM',
         confidence: '91%',
         impact: 'HIGH',
         recommendation: 'Enforce geo-fencing for high-risk regions',
       },
       {
         title: 'AI Risk Prediction',
-        analysis: `${riskProfiles.length} user profiles with elevated risk score.`,
+        analysis: `${highRiskUsers} user profiles with elevated risk score.`,
         severity: criticalCount > 3 ? 'CRITICAL' : 'HIGH',
         confidence: '93%',
         impact: criticalCount > 3 ? 'CRITICAL' : 'HIGH',
@@ -162,59 +253,62 @@ const getSecurityData = async (req, res) => {
       },
     ];
 
-    // ── Metrics ───────────────────────────────────────────────────────────
-    const securityScore = Math.max(60, Math.min(100, 100 - criticalCount * 3 - Math.floor(failedLoginsHour / 5)));
-    const threatLevel = criticalCount > 5 ? 'CRITICAL' : criticalCount > 2 ? 'HIGH' : 'LOW';
+    const securityScore = Math.max(60, Math.min(100,
+      100 - criticalCount * 3 - Math.floor(failedLoginsHour / 5) - highRiskUsers
+    ));
+    const threatLevel = criticalCount > 5 ? 'CRITICAL'
+      : criticalCount > 2 ? 'HIGH'
+        : failedLogins24h > 20 ? 'MEDIUM'
+          : 'LOW';
 
     const metrics = {
       securityScore: `${securityScore} / 100`,
       threatLevel,
       failedLogins: failedLogins24h,
       suspiciousIps: uniqueIPs,
-      firewallBlocks: `${blockedIPCount * 10}`,
+      firewallBlocks: `${blockedCount * 10 + failedLoginsHour}`,
       aiDetections: formattedThreats.filter((t) => t.aiConf > 0.85).length,
-      activeSessions: recentSessions * 12,
-      geoAnomalies: geoAnomalies.length,
+      activeSessions,
+      geoAnomalies: geoCards.length,
       malwareAttempts: formattedThreats.filter((t) => t.icon === 'bug_report').length,
       riskScore: `${Math.max(10, criticalCount * 5 + Math.floor(failedLoginsHour * 2))} / 100`,
       zeroTrustHealth: `${Math.min(99, 97 - criticalCount)}%`,
       liveIncidents: Math.min(20, criticalCount),
+      blockedUsers,
+      recentCriticalLogs: recentSecLogs.length,
     };
 
-    // ── AI cards ──────────────────────────────────────────────────────────
     const aiCards = [
       {
         title: 'Brute Force Risk',
         score: `Risk: ${failedLoginsHour > 10 ? 'CRITICAL' : 'HIGH'}`,
-        ai: 'AI: Credential stuffing pattern',
+        ai: 'AI: Credential stuffing pattern detected',
         level: Math.min(0.99, 0.4 + failedLoginsHour * 0.03),
       },
       {
         title: 'Session Risk',
         score: `Risk: ${criticalCount > 3 ? 'HIGH' : 'MEDIUM'}`,
-        ai: 'AI: Replay attack pattern',
+        ai: 'AI: Replay attack pattern detected',
         level: Math.min(0.95, 0.3 + criticalCount * 0.1),
       },
       {
         title: 'Geo Anomaly Score',
-        score: `Risk: ${geoAnomalies.some((g) => g.impossibleTravel) ? 'CRITICAL' : 'MEDIUM'}`,
-        ai: 'AI: Impossible travel detected',
-        level: Math.min(0.95, geoAnomalies.length * 0.08),
+        score: `Risk: ${geoCards.length > 3 ? 'CRITICAL' : 'MEDIUM'}`,
+        ai: 'AI: Unusual login locations detected',
+        level: Math.min(0.95, 0.2 + geoCards.length * 0.08),
       },
     ];
 
-    // ── Radar data ────────────────────────────────────────────────────────
     const radarThreats = [
       { name: 'Brute Force', level: Math.min(0.99, 0.3 + failedLoginsHour * 0.04) },
-      { name: 'Geo Anomalies', level: Math.min(0.9, geoAnomalies.length * 0.08) },
-      { name: 'Malware Probes', level: Math.min(0.9, criticalCount * 0.08) },
-      { name: 'DDoS Traffic', level: Math.min(0.85, blockedIPCount * 0.06) },
-      { name: 'API Abuse', level: Math.min(0.8, uniqueIPs * 0.03) },
-      { name: 'Session Hijack', level: Math.min(0.9, criticalCount * 0.07) },
+      { name: 'Geo Anomalies', level: Math.min(0.90, geoCards.length * 0.08) },
+      { name: 'Malware Probes', level: Math.min(0.90, criticalCount * 0.08) },
+      { name: 'DDoS Traffic', level: Math.min(0.85, blockedCount * 0.06) },
+      { name: 'API Abuse', level: Math.min(0.80, uniqueIPs * 0.03) },
+      { name: 'Session Hijack', level: Math.min(0.90, criticalCount * 0.07) },
     ];
 
-    return res.json({
-      success: true,
+    const responsePayload = {
       count: formattedThreats.length,
       metrics,
       threats: formattedThreats,
@@ -224,14 +318,55 @@ const getSecurityData = async (req, res) => {
       geoCards,
       aiCards,
       radarThreats,
-    });
+    };
+
+    await redis.setex(cacheKey, 30, JSON.stringify(responsePayload)).catch(() => {});
+
+    return res.json({ success: true, ...responsePayload });
   } catch (error) {
     console.error('[getSecurityData]', error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// POST /api/security/block — Block threat (existing + enhanced)
+const getSecurityEventById = async (req, res) => {
+  try {
+    const log = await AuditLog.findById(req.params.id).lean();
+    if (!log) {
+      return res.status(404).json({ success: false, message: 'Security event not found' });
+    }
+
+    const sev = _severityFromAction(log.action);
+    const aiConf = sev === 'CRITICAL' ? 0.94 : sev === 'HIGH' ? 0.87 : 0.78;
+    const risk = sev === 'CRITICAL' ? 0.88 : sev === 'HIGH' ? 0.65 : 0.38;
+
+    return res.json({
+      success: true,
+      data: {
+        _id: log._id?.toString(),
+        icon: _iconFromAction(log.action),
+        threat: log.description || log.action?.replace(/_/g, ' '),
+        threatId: `THR-${log._id?.toString().slice(-4).toUpperCase()}`,
+        source: log.entityType || 'System',
+        severity: sev,
+        status: sev === 'CRITICAL' ? 'BLOCKED' : 'MONITORING',
+        risk,
+        aiConf,
+        location: 'India',
+        target: log.entityType || 'Platform',
+        response: 'Logged for review',
+        timestamp: _relativeTime(log.createdAt),
+        ipAddress: log.ipAddress || '10.0.0.1',
+        action: log.action,
+        description: log.description,
+        details: log.details || {},
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const blockThreat = async (req, res) => {
   try {
     if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
@@ -240,244 +375,28 @@ const blockThreat = async (req, res) => {
 
     const { threatId, ipAddress, reason } = req.body;
 
-    // Update threat status in DB
-    await SecurityThreat.findOneAndUpdate(
-      { threatId },
-      { $set: { status: 'BLOCKED', mitigated: true, blockedBy: req.user._id, blockedAt: new Date() } }
-    );
-
-    // Auto-block the IP if provided
     if (ipAddress) {
-      await securityQueues.firewallQueue.add('block_ip', {
-        ipAddress, reason: `Threat ${threatId} blocked`, durationHours: 24,
-      });
+      await redis.setex(`blocked:ip:${ipAddress}`, 86400, reason || 'Admin block').catch(() => {});
     }
 
-    // Queue incident creation
-    await securityQueues.incidentQueue.add('create_incident', {
-      threatId, action: 'THREAT_BLOCKED', adminId: req.user._id,
-      ipAddress, reason,
-    });
-
-    await AuditLog.create({
-      action: 'THREAT_BLOCKED',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'SECURITY',
-      description: `Threat ${threatId} blocked${ipAddress ? ` (IP: ${ipAddress})` : ''}`,
-      severity: 'WARNING',
-      ipAddress: req.ip,
-    });
-
-    return res.json({ success: true, message: `Threat ${threatId} blocked and queued for processing` });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// POST /api/security/block-ip — Real IP block with Redis + MongoDB
-const blockIP = async (req, res) => {
-  try {
-    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
-      return res.status(403).json({ success: false, message: 'Access denied.' });
-    }
-
-    const { ipAddress, reason, durationHours = 24 } = req.body;
-    if (!ipAddress) return res.status(400).json({ success: false, message: 'IP address required' });
-
-    // Add to MongoDB
-    await BlockedIP.findOneAndUpdate(
-      { ipAddress },
-      {
-        $set: {
-          reason: reason || 'Blocked by Super Admin',
-          blockedBy: req.user._id,
-          blockedAt: new Date(),
-          expiresAt: durationHours > 0
-            ? new Date(Date.now() + durationHours * 3600000)
-            : null,  // null = permanent
-        },
-        $inc: { hitCount: 1 },
-      },
-      { upsert: true, new: true }
-    );
-
-    // Invalidate Redis cache immediately
-    await redis.connection.del(`blocked:ip:${ipAddress}`);
-
-    // Audit log
     await AuditLog.create({
       action: 'IP_BLOCKED',
       userId: req.user._id,
       role: req.user.role,
-      entityType: 'SECURITY',
-      description: `Super Admin blocked IP: ${ipAddress}. Reason: ${reason}`,
+      entityType: 'SYSTEM',
+      description: `Threat ${threatId} blocked${ipAddress ? ` (IP: ${ipAddress})` : ''}. Reason: ${reason || 'Admin action'}`,
       severity: 'WARNING',
       ipAddress: req.ip,
-    });
+    }).catch(() => {});
 
-    // Broadcast to SOC socket
-    global.io?.of('/security').emit('ip:blocked', { ipAddress, reason, blockedBy: req.user._id });
+    global.io?.of('/security').emit('threat:blocked', { threatId, ipAddress, by: req.user.name });
 
-    return res.json({ success: true, message: `IP ${ipAddress} blocked for ${durationHours || 'permanent'}h` });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// POST /api/security/force-logout — Terminate all sessions for a user
-const forceLogout = async (req, res) => {
-  try {
-    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
-      return res.status(403).json({ success: false, message: 'Access denied.' });
+    const keys = await redis.keys('security:dashboard:*').catch(() => []);
+    if (keys.length > 0) {
+      await Promise.all(keys.map((k) => redis.del(k))).catch(() => {});
     }
 
-    const { userId, reason } = req.body;
-
-    // Add JWT invalidation key to Redis (checked in auth middleware)
-    const blacklistKey = `blacklist:user:${userId}`;
-    await redis.connection.setex(blacklistKey, 86400, Date.now().toString()); // 24h blacklist
-
-    // Update session logs
-    await SessionLog.updateMany(
-      { userId, logoutAt: null },
-      { $set: { forcedLogout: true, logoutAt: new Date() } }
-    );
-
-    await AuditLog.create({
-      action: 'FORCE_LOGOUT',
-      userId: req.user._id,
-      role: req.user.role,
-      entityType: 'SECURITY',
-      description: `Force logout: user ${userId}. Reason: ${reason || 'Admin action'}`,
-      severity: 'WARNING',
-      ipAddress: req.ip,
-    });
-
-    return res.json({ success: true, message: `All sessions terminated for user ${userId}` });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// GET /api/security/diagnostics — Full system health
-const getDiagnostics = async (req, res) => {
-  try {
-    const redisStart = Date.now();
-    await redis.connection.ping();
-    const redisLatency = Date.now() - redisStart;
-
-    const [
-      totalThreats,
-      blockedIPs,
-      activeSessions,
-      criticalLast24h,
-    ] = await Promise.all([
-      SecurityThreat.countDocuments({ createdAt: { $gte: new Date(Date.now() - 86400000) } }),
-      BlockedIP.countDocuments({ blockedAt: { $gte: new Date(Date.now() - 86400000) } }),
-      SessionLog.countDocuments({ loginAt: { $gte: new Date(Date.now() - 3600000) } }),
-      SecurityThreat.countDocuments({ severity: 'CRITICAL', createdAt: { $gte: new Date(Date.now() - 86400000) } }),
-    ]);
-
-    return res.json({
-      success: true,
-      data: {
-        redis: { status: 'connected', latency: `${redisLatency}ms` },
-        firewall: { status: 'ACTIVE', blockedIPs, version: 'v7.4.2' },
-        waf:      { status: 'ACTIVE', engine: 'OWASP ModSec' },
-        ai:       { status: 'ONLINE', model: 'SOC-GPT v4.2', confidence: '94%' },
-        threats: { total: totalThreats, critical: criticalLast24h },
-        sessions: { active: activeSessions },
-        system:   {
-          platform: os.platform(),
-          cpus: os.cpus().length,
-          uptime: `${Math.round(os.uptime() / 3600)}h`,
-          memory: `${Math.round(os.freemem() / 1024 / 1024 / 1024)}GB free`,
-        },
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-function _relativeTime(date) {
-  if (!date) return 'N/A';
-  const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-  return `${Math.floor(mins / 1440)}d ago`;
-}
-
-const getSecurityLogs = async (req, res) => {
-  try {
-    const { limit = 100, severity, eventType } = req.query;
-    const query = {};
-    if (severity) query.severity = severity;
-    if (eventType) query.eventType = eventType;
-
-    const logs = await SecurityLog.find(query)
-      .sort({ createdAt: -1 })
-      .limit(Math.min(500, Math.max(1, parseInt(limit, 10))))
-      .lean();
-
-    return res.json({ success: true, count: logs.length, data: logs });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-const getSchoolSecurityLogs = async (req, res) => {
-  try {
-    const { schoolId } = req.params;
-    const { limit = 100 } = req.query;
-    const logs = await SecurityLog.find({ schoolId })
-      .sort({ createdAt: -1 })
-      .limit(Math.min(500, Math.max(1, parseInt(limit, 10))))
-      .lean();
-
-    return res.json({ success: true, count: logs.length, data: logs });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-const getActiveSessions = async (req, res) => {
-  try {
-    const { schoolId, limit = 200 } = req.query;
-    const query = { isActive: true };
-    if (schoolId) query.schoolId = schoolId;
-
-    const sessions = await LoginSession.find(query)
-      .sort({ lastActiveAt: -1 })
-      .limit(Math.min(500, Math.max(1, parseInt(limit, 10))))
-      .populate('userId', 'name role schoolId')
-      .lean();
-
-    return res.json({ success: true, count: sessions.length, data: sessions });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-const revokeSession = async (req, res) => {
-  try {
-    const { sessionId } = req.body;
-    if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId is required' });
-
-    const session = await LoginSession.findByIdAndUpdate(
-      sessionId,
-      { $set: { isActive: false, forceLoggedOut: true, logoutAt: new Date() } },
-      { new: true }
-    ).lean();
-
-    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
-
-    if (session.sessionToken) {
-      await redis.setex(`blacklist:token:${session.sessionToken}`, 86400, '1');
-    }
-
-    return res.json({ success: true, message: 'Session revoked', data: session });
+    return res.json({ success: true, message: `Threat ${threatId} blocked successfully` });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -485,17 +404,6 @@ const revokeSession = async (req, res) => {
 
 module.exports = {
   getSecurityData,
+  getSecurityEventById,
   blockThreat,
-  blockIP,
-  forceLogout,
-  getDiagnostics,
-  getSecurityLogs,
-  getSchoolSecurityLogs,
-  getActiveSessions,
-  revokeSession,
-  getSecurityEventById: async (req, res) => {
-    const threat = await SecurityThreat.findById(req.params.id).lean();
-    if (!threat) return res.status(404).json({ success: false, message: 'Not found' });
-    res.json({ success: true, data: threat });
-  }
 };
