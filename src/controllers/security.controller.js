@@ -402,8 +402,158 @@ const blockThreat = async (req, res) => {
   }
 };
 
+const getSecurityLogs = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { limit = 100, severity, eventType } = req.query;
+    const query = {};
+    if (severity) query.severity = String(severity).toUpperCase();
+    if (eventType) query.eventType = eventType;
+
+    const logs = await safeQuery(
+      SecurityLog.find(query)
+        .sort({ createdAt: -1 })
+        .limit(Math.min(500, parseInt(limit, 10) || 100))
+        .lean(),
+      []
+    );
+
+    return res.json({ success: true, count: logs.length, data: logs });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getSchoolSecurityLogs = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { schoolId } = req.params;
+    const { limit = 100 } = req.query;
+
+    const logs = await safeQuery(
+      SecurityLog.find({ schoolId })
+        .sort({ createdAt: -1 })
+        .limit(Math.min(500, parseInt(limit, 10) || 100))
+        .lean(),
+      []
+    );
+
+    return res.json({ success: true, count: logs.length, data: logs });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getActiveSessions = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { limit = 200 } = req.query;
+    const sessions = await safeQuery(
+      LoginSession.find({ isActive: true })
+        .sort({ lastActiveAt: -1 })
+        .limit(Math.min(1000, parseInt(limit, 10) || 200))
+        .lean(),
+      []
+    );
+
+    return res.json({ success: true, count: sessions.length, data: sessions });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const revokeSession = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { sessionId, sessionToken } = req.body;
+    if (!sessionId && !sessionToken) {
+      return res.status(400).json({ success: false, message: 'sessionId or sessionToken required' });
+    }
+
+    const filter = sessionToken
+      ? { sessionToken, isActive: true }
+      : { _id: sessionId, isActive: true };
+
+    const updated = await LoginSession.findOneAndUpdate(
+      filter,
+      {
+        $set: {
+          isActive: false,
+          logoutAt: new Date(),
+          logoutReason: 'ADMIN_REVOKED',
+        },
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Active session not found' });
+    }
+
+    await AuditLog.create({
+      action: 'FORCE_LOGOUT',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'LOGIN_SESSION',
+      description: `Session revoked by admin (${updated._id})`,
+      severity: 'WARNING',
+      ipAddress: req.ip,
+    }).catch(() => {});
+
+    return res.json({ success: true, message: 'Session revoked', data: updated });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const blockIP = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { ipAddress, reason, durationHours = 24 } = req.body;
+    if (!ipAddress) {
+      return res.status(400).json({ success: false, message: 'ipAddress is required' });
+    }
+
+    await redis.setex(`blocked:ip:${ipAddress}`, Math.max(1, parseInt(durationHours, 10) || 24) * 3600, reason || 'Admin block').catch(() => {});
+
+    await AuditLog.create({
+      action: 'IP_BLOCKED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SYSTEM',
+      description: `IP ${ipAddress} blocked by admin. Reason: ${reason || 'Admin action'}`,
+      severity: 'WARNING',
+      ipAddress: req.ip,
+    }).catch(() => {});
+
+    return res.json({ success: true, message: `IP ${ipAddress} blocked successfully` });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getSecurityData,
   getSecurityEventById,
   blockThreat,
+  getSecurityLogs,
+  getSchoolSecurityLogs,
+  getActiveSessions,
+  revokeSession,
+  blockIP,
 };
