@@ -1,5 +1,5 @@
 const express = require('express');
-const { getSecurityData, getSecurityEventById, blockThreat, getRadarData } = require('../controllers/security.controller');
+const { getSecurityData, getSecurityEventById, blockThreat, getRadarData, getSecurityMetrics } = require('../controllers/security.controller');
 const { requireRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
 
@@ -12,6 +12,9 @@ router.get('/', getSecurityData);
 
 // GET /api/security/radar     — radar summary for the layout
 router.get('/radar', getRadarData);
+
+// GET /api/security/metrics   — fast metrics-only refresh endpoint
+router.get('/metrics', getSecurityMetrics);
 
 // POST /api/security/block    — block a threat (logs admin action)
 // Must be before /:id to avoid route conflict

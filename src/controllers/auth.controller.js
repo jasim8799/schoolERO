@@ -116,6 +116,10 @@ const login = async (req, res) => {
     if (!user) {
       console.log('LOGIN FAILURE: User not found');
       await _handleFailedLogin(req, null, null);
+      global.io?.emit('security:failed_login', {
+        ipAddress: req.ip,
+        at: new Date(),
+      });
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Invalid mobile or password'
@@ -147,6 +151,10 @@ const login = async (req, res) => {
     if (!isPasswordValid) {
       console.log('LOGIN FAILURE: Invalid password');
       await _handleFailedLogin(req, user.schoolId?._id || user.schoolId || null, user._id);
+      global.io?.emit('security:failed_login', {
+        ipAddress: req.ip,
+        at: new Date(),
+      });
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Invalid mobile or password'
