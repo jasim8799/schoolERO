@@ -7,6 +7,7 @@ const { _postLoginActions, _handleFailedLogin } = require('../middlewares/auth.m
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog');
+const { recordSecurityEvent } = require('../services/security.metrics');
 
 // Register User
 const register = async (req, res) => {
@@ -116,6 +117,10 @@ const login = async (req, res) => {
     if (!user) {
       console.log('LOGIN FAILURE: User not found');
       await _handleFailedLogin(req, null, null);
+      recordSecurityEvent('LOGIN_FAILED', {
+        ipAddress: req.ip,
+        severity: 'HIGH',
+      }).catch(() => {});
       global.io?.emit('security:failed_login', {
         ipAddress: req.ip,
         at: new Date(),
@@ -151,6 +156,10 @@ const login = async (req, res) => {
     if (!isPasswordValid) {
       console.log('LOGIN FAILURE: Invalid password');
       await _handleFailedLogin(req, user.schoolId?._id || user.schoolId || null, user._id);
+      recordSecurityEvent('LOGIN_FAILED', {
+        ipAddress: req.ip,
+        severity: 'HIGH',
+      }).catch(() => {});
       global.io?.emit('security:failed_login', {
         ipAddress: req.ip,
         at: new Date(),

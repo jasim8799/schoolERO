@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { USER_ROLES } = require('../config/constants');
 const redis = require('../config/redis');
 const crypto = require('crypto');
+const { getLiveMetrics, recordSecurityEvent } = require('../services/security.metrics');
 
 function _relativeTime(date) {
   if (!date) return 'N/A';
@@ -225,6 +226,7 @@ const getSecurityData = async (req, res) => {
     ]);
 
     const sparklines = await _buildAllSparklines();
+    const liveMetrics = await getLiveMetrics().catch(() => null);
 
     const formattedThreats = auditThreats.map((log, idx) => {
       const sev = _severityFromAction(log.action);
@@ -358,7 +360,7 @@ const getSecurityData = async (req, res) => {
     const securityScore = Math.max(60, Math.min(100,
       100 - criticalCount * 3 - Math.floor(failedLoginsHour / 5) - highRiskUsers
     ));
-    const threatLevel = criticalCount > 5 ? 'CRITICAL'
+    const computedThreatLevel = criticalCount > 5 ? 'CRITICAL'
       : criticalCount > 2 ? 'HIGH'
         : failedLogins24h > 20 ? 'MEDIUM'
           : 'LOW';
@@ -373,17 +375,17 @@ const getSecurityData = async (req, res) => {
 
     const metrics = {
       securityScore: `${securityScore} / 100`,
-      threatLevel,
-      failedLogins: failedLogins24h,
-      suspiciousIps: uniqueIPs,
-      firewallBlocks: blockedCount,
-      aiDetections: formattedThreats.filter((t) => t.aiConf > 0.85).length,
-      activeSessions,
-      geoAnomalies: geoCards.length,
-      malwareAttempts: formattedThreats.filter((t) => t.icon === 'bug_report').length,
+      threatLevel: liveMetrics?.threatLevel || computedThreatLevel,
+      failedLogins: liveMetrics?.failedLogins ?? failedLogins24h,
+      suspiciousIps: liveMetrics?.suspiciousIps ?? uniqueIPs,
+      firewallBlocks: liveMetrics?.firewallBlocks ?? blockedCount,
+      aiDetections: liveMetrics?.aiDetections ?? formattedThreats.filter((t) => t.aiConf > 0.85).length,
+      activeSessions: liveMetrics?.activeSessions ?? activeSessions,
+      geoAnomalies: liveMetrics?.geoAnomalies ?? geoCards.length,
+      malwareAttempts: liveMetrics?.malwareAttempts ?? formattedThreats.filter((t) => t.icon === 'bug_report').length,
       riskScore: `${Math.max(10, criticalCount * 5 + Math.floor(failedLoginsHour * 2))} / 100`,
       zeroTrustHealth: `${Math.min(99, 97 - criticalCount)}%`,
-      liveIncidents: Math.min(20, criticalCount),
+      liveIncidents: liveMetrics?.liveIncidents ?? Math.min(20, criticalCount),
       blockedUsers,
       recentCriticalLogs: recentSecLogs.length,
       sparklines: {
@@ -511,6 +513,7 @@ const blockThreat = async (req, res) => {
 
     if (ipAddress) {
       await redis.setex(`blocked:ip:${ipAddress}`, 86400, reason || 'Admin block').catch(() => {});
+      recordSecurityEvent('IP_BLOCKED', { ipAddress, severity: 'CRITICAL' }).catch(() => {});
     }
 
     await AuditLog.create({
@@ -548,71 +551,7 @@ const blockThreat = async (req, res) => {
 
 const getSecurityMetrics = async (req, res) => {
   try {
-    const cacheKey = 'security:metrics:v2';
-    const cached = await redis.get(cacheKey).catch(() => null);
-    if (cached) return res.json({ success: true, data: JSON.parse(cached), cached: true });
-
-    const now = new Date();
-    const dayAgo = new Date(now.getTime() - 86400000);
-    const hourAgo = new Date(now.getTime() - 3600000);
-
-    const [
-      failedLogins24h,
-      failedLoginsHour,
-      activeSessions,
-      blockedCount,
-      criticalCount,
-      highRiskUsers,
-      geoCount,
-      apiAbuseCount,
-      malwareCount,
-    ] = await Promise.all([
-      safeQuery(AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] } }), 0),
-      safeQuery(AuditLog.countDocuments({ createdAt: { $gte: hourAgo }, action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] } }), 0),
-      safeQuery(LoginSession.countDocuments({ isActive: true }), 0),
-      safeQuery(AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $in: ['IP_BLOCKED', 'RATE_LIMIT_EXCEEDED'] } }), 0),
-      safeQuery(AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, severity: 'CRITICAL' }), 0),
-      safeQuery(User.countDocuments({ riskLevel: { $in: ['HIGH', 'CRITICAL'] } }), 0),
-      safeQuery(SecurityLog.countDocuments({ eventType: 'GEO_ANOMALY', createdAt: { $gte: dayAgo } }), 0),
-      safeQuery(AuditLog.countDocuments({ createdAt: { $gte: hourAgo }, action: 'RATE_LIMIT_EXCEEDED' }), 0),
-      safeQuery(AuditLog.countDocuments({ createdAt: { $gte: dayAgo }, action: { $regex: /MALWARE|INJECT|PROBE/i } }), 0),
-    ]);
-
-    const uniqueIPs = await safeQuery(
-      AuditLog.distinct('ipAddress', {
-        createdAt: { $gte: dayAgo },
-        action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN', 'UNAUTHORIZED_ACCESS'] }
-      }).then((ips) => ips.filter((ip) => ip && !/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)).length),
-      0
-    );
-
-    const securityScore = Math.max(60, Math.min(100,
-      100 - criticalCount * 3 - Math.floor(failedLoginsHour / 5) - highRiskUsers
-    ));
-    const riskScore = Math.max(10, criticalCount * 5 + Math.floor(failedLoginsHour * 2));
-    const threatLevel = criticalCount > 5 ? 'CRITICAL'
-      : criticalCount > 2 ? 'HIGH'
-        : failedLogins24h > 20 ? 'MEDIUM' : 'LOW';
-
-    const data = {
-      securityScore: `${securityScore} / 100`,
-      threatLevel,
-      failedLogins: failedLogins24h,
-      suspiciousIps: uniqueIPs,
-      firewallBlocks: blockedCount,
-      aiDetections: criticalCount + Math.floor(failedLoginsHour * 0.4),
-      activeSessions,
-      geoAnomalies: geoCount,
-      malwareAttempts: malwareCount,
-      riskScore: `${riskScore} / 100`,
-      zeroTrustHealth: `${Math.min(99, 97 - criticalCount)}%`,
-      liveIncidents: criticalCount,
-      apiAbuse: apiAbuseCount,
-      highRiskUsers,
-      generatedAt: now.toISOString(),
-    };
-
-    await redis.setex(cacheKey, 15, JSON.stringify(data)).catch(() => {});
+    const data = await getLiveMetrics();
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -828,6 +767,7 @@ const blockIP = async (req, res) => {
     }
 
     await redis.setex(`blocked:ip:${ipAddress}`, Math.max(1, parseInt(durationHours, 10) || 24) * 3600, reason || 'Admin block').catch(() => {});
+    recordSecurityEvent('IP_BLOCKED', { ipAddress, severity: 'CRITICAL' }).catch(() => {});
 
     await AuditLog.create({
       action: 'IP_BLOCKED',

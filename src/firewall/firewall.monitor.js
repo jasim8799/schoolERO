@@ -1,6 +1,7 @@
 const FirewallEvent = require('../models/FirewallEvent');
 const redis = require('../config/redis');
 const crypto = require('crypto');
+const { recordSecurityEvent } = require('../services/security.metrics');
 
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const RATE_LIMIT_MAX    = 100;   // 100 requests/minute per IP
@@ -32,6 +33,7 @@ function firewallMiddleware() {
 
       if (redisResult > RATE_LIMIT_MAX) {
         _logFirewallEvent(ip, 'RATE_LIMITED', path, req, 0.65, 'RATE_LIMIT_EXCEEDED').catch(() => {});
+        recordSecurityEvent('RATE_LIMIT_EXCEEDED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
         global.io?.of('/activity').emit('firewall:event', {
           ip, action: 'RATE_LIMITED', path, timestamp: new Date(),
         });
@@ -47,6 +49,7 @@ function firewallMiddleware() {
       const combined = `${path}${body}${query}`;
       if (_detectInjection(combined)) {
         _logFirewallEvent(ip, 'BLOCKED', path, req, 0.92, 'INJECTION_DETECTED').catch(() => {});
+        recordSecurityEvent('INJECTION_DETECTED', { ipAddress: ip, severity: 'CRITICAL' }).catch(() => {});
         return res.status(400).json({ success: false, message: 'Request blocked by firewall' });
       }
 
@@ -58,6 +61,7 @@ function firewallMiddleware() {
 
       if (blocked) {
         _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
+        recordSecurityEvent('IP_BLACKLISTED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
     } catch (_) {
@@ -108,6 +112,7 @@ async function _trackApiRequest() {
  */
 async function blockIp(ipAddress, durationHours = 1, reason = 'Admin block') {
   await redis.setex(`blocked:ip:${ipAddress}`, durationHours * 3600, reason);
+  recordSecurityEvent('IP_BLOCKED', { ipAddress, severity: 'CRITICAL' }).catch(() => {});
   await _logFirewallEvent(
     ipAddress,
     'BLOCKED',

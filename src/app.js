@@ -67,6 +67,7 @@ const { auditEnrichMiddleware } = require('./middlewares/auditEnrich.middleware'
 const { registerAuditCronJobs } = require('./cron/audit.cron');
 const { registerDashboardCronJobs } = require('./cron/dashboard.cron');
 const { registerSchoolAnalyticsCronJobs } = require('./cron/school.analytics.cron');
+const { registerSecurityMetricsCronJobs } = require('./cron/security.metrics.cron');
 
 // Backup/restore platform imports (optional until module is fully provisioned)
 let backupPlatform = {
@@ -321,6 +322,7 @@ if (process.env.NODE_ENV !== 'test') {
   setImmediate(() => registerAuditCronJobs());
   setImmediate(() => registerDashboardCronJobs());
   setImmediate(() => registerSchoolAnalyticsCronJobs());
+  setImmediate(() => registerSecurityMetricsCronJobs());
 }
 
 // Catch-all: return JSON 404 for any unmatched route (must be before error handler)
@@ -336,6 +338,7 @@ module.exports.initBackupSocket = (server) => {
   const { Server } = require('socket.io');
   const { initDashboardSocket } = require('./websocket/dashboard.socket');
   const { initSchoolSocket } = require('./socket/school.socket');
+  const { initSecuritySocket } = require('./socket/security.socket');
   const { initAlertSocket, broadcastSecurityAlert } = require('./socket/alert.socket');
   const { initSubscriptionSocket } = require('./websocket/subscription.socket');
   const { initRevenueSocket } = require('./websocket/revenue.socket');
@@ -347,6 +350,7 @@ module.exports.initBackupSocket = (server) => {
   initReportSocket(io);
   initDashboardSocket(io);
   initSchoolSocket(io);
+  initSecuritySocket(io);
   initAlertSocket(io);
   initSubscriptionSocket(io);
   initRevenueSocket(io);

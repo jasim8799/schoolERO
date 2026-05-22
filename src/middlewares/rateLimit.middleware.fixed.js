@@ -1,5 +1,6 @@
 const { HTTP_STATUS } = require('../config/constants');
 const { auditLog } = require('../utils/auditLog');
+const { recordSecurityEvent } = require('../services/security.metrics');
 
 // Simple in-memory rate limiting (for production, use Redis or similar)
 const rateLimitStore = new Map();
@@ -56,6 +57,11 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
         schoolId: req.user?.schoolId ?? null,
         sessionId: req.user?.sessionId ?? null,
         req
+      }).catch(() => {});
+
+      recordSecurityEvent('RATE_LIMIT_EXCEEDED', {
+        ipAddress: req.ip,
+        severity: 'HIGH',
       }).catch(() => {});
 
       const retryAfterSeconds = Math.ceil((userRequests.resetTime - now) / 1000);
