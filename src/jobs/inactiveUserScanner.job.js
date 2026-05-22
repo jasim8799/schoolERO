@@ -17,7 +17,7 @@ async function runInactiveUserScanner(days = 45) {
       entityType: 'LOGIN_SESSION',
       description: `Inactive users detected: ${users.length}`,
       details: { count: users.length },
-      ipAddress: '127.0.0.1'
+      ipAddress: '0.0.0.0'
     });
   }
 

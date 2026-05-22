@@ -45,6 +45,7 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
     });
 
     if (userRequests.count > maxRequests) {
+      console.warn(`[RATE_LIMIT] Limiter ${limiterName} exceeded for ${req.ip} on ${req.originalUrl}`);
       // Audit log the rate limit hit (fire-and-forget)
       auditLog({
         action: 'RATE_LIMIT_EXCEEDED',

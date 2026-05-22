@@ -513,6 +513,7 @@ const blockThreat = async (req, res) => {
 
     if (ipAddress) {
       await redis.setex(`blocked:ip:${ipAddress}`, 86400, reason || 'Admin block').catch(() => {});
+      console.warn(`[THREAT_TRACKING] Threat ${threatId || 'UNKNOWN'} blocked for IP ${ipAddress}`);
       recordSecurityEvent('IP_BLOCKED', { ipAddress, severity: 'CRITICAL' }).catch(() => {});
     }
 
@@ -767,6 +768,7 @@ const blockIP = async (req, res) => {
     }
 
     await redis.setex(`blocked:ip:${ipAddress}`, Math.max(1, parseInt(durationHours, 10) || 24) * 3600, reason || 'Admin block').catch(() => {});
+    console.warn(`[THREAT_TRACKING] Manual IP block applied for ${ipAddress}`);
     recordSecurityEvent('IP_BLOCKED', { ipAddress, severity: 'CRITICAL' }).catch(() => {});
 
     await AuditLog.create({

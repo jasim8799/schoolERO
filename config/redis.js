@@ -1,5 +1,17 @@
 const { Redis: UpstashRedis } = require('@upstash/redis');
 
+const LOG_THROTTLE_MS = 30000;
+const _lastLogAt = new Map();
+
+function throttledLog(tag, key, message) {
+  const now = Date.now();
+  const last = _lastLogAt.get(key) || 0;
+  if (now - last >= LOG_THROTTLE_MS) {
+    _lastLogAt.set(key, now);
+    console.log(`[${tag}] ${message}`);
+  }
+}
+
 function createMemoryFallback() {
   const store = new Map();
   const lists = new Map();
@@ -379,12 +391,21 @@ function createUpstashAdapter(client) {
 }
 
 function createSafeClient(inner) {
+  const READ_OPS = new Set(['get', 'hget', 'hgetall', 'smembers', 'zrange', 'zscore', 'lrange', 'ttl', 'exists', 'keys']);
+  const WRITE_OPS = new Set(['set', 'setex', 'del', 'incr', 'incrby', 'decr', 'expire', 'hset', 'hincrby', 'hdel', 'sadd', 'srem', 'zadd', 'zincrby', 'zrem', 'lpush', 'rpush', 'ltrim', 'flushall']);
+
   const safe = new Proxy(inner, {
     get(target, prop) {
       const val = target[prop];
       if (typeof val !== 'function') return val;
       return async (...args) => {
         try {
+          const method = String(prop);
+          if (READ_OPS.has(method)) {
+            throttledLog('REDIS_ANALYTICS', `read:${method}`, `Read op ${method} via centralized adapter`);
+          } else if (WRITE_OPS.has(method)) {
+            throttledLog('REDIS_ANALYTICS', `write:${method}`, `Write op ${method} via centralized adapter`);
+          }
           return await val.apply(target, args);
         } catch (err) {
           const msg = err?.message || 'Redis error';
@@ -398,7 +419,9 @@ function createSafeClient(inner) {
   });
 
   safe.client = safe;
-  safe.connection = safe;
+  safe.connection = null;
+  safe.supportsBullmq = false;
+  safe.transport = 'upstash-rest-or-memory';
   safe.on = () => safe;
   return safe;
 }
@@ -411,14 +434,17 @@ if (restUrl && restToken) {
   try {
     const raw = new UpstashRedis({ url: restUrl, token: restToken });
     redisClient = createSafeClient(createUpstashAdapter(raw));
-    console.log('[Redis] Connected to Upstash REST API');
+    redisClient.mode = 'upstash';
+    console.log('[REDIS_CONNECTED] Upstash REST adapter initialized');
   } catch (err) {
-    console.warn('[Redis] Upstash init failed - using in-memory fallback:', err.message);
+    console.warn(`[REDIS_FALLBACK] Upstash init failed, switching to memory fallback: ${err.message}`);
     redisClient = createSafeClient(createMemoryFallback());
+    redisClient.mode = 'memory_fallback';
   }
 } else {
-  console.warn('[Redis] UPSTASH_REDIS_REST_URL/TOKEN not set - using in-memory fallback');
+  console.warn('[REDIS_FALLBACK] UPSTASH_REDIS_REST_URL/TOKEN missing, using memory fallback');
   redisClient = createSafeClient(createMemoryFallback());
+  redisClient.mode = 'memory_fallback';
 }
 
 module.exports = redisClient;

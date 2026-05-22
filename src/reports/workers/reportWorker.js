@@ -4,7 +4,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { Worker } = require('bullmq');
 
-const { connection } = require('../../config/redis');
+const redis = require('../../config/redis');
 const Report = require('../../models/Report');
 const ReportJob = require('../../models/ReportJob');
 const QueryLog = require('../../models/QueryLog');
@@ -54,6 +54,15 @@ function normalizeFilters(filters = {}, schoolId, tenantId) {
 }
 
 function startReportWorker() {
+  const connection = redis?.supportsBullmq ? redis.connection : null;
+  if (!connection) {
+    console.log('[REDIS_FALLBACK] Report worker not started (BullMQ disabled for Upstash REST mode)');
+    return {
+      on() {},
+      async close() {},
+    };
+  }
+
   const worker = new Worker(
     'reportQueue',
     async (job) => {

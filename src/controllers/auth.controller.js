@@ -116,6 +116,7 @@ const login = async (req, res) => {
 
     if (!user) {
       console.log('LOGIN FAILURE: User not found');
+      console.warn(`[LOGIN_FAILURE] Unknown user login failed from IP ${req.ip}`);
       await _handleFailedLogin(req, null, null);
       recordSecurityEvent('LOGIN_FAILED', {
         ipAddress: req.ip,
@@ -155,6 +156,7 @@ const login = async (req, res) => {
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
       console.log('LOGIN FAILURE: Invalid password');
+      console.warn(`[LOGIN_FAILURE] Invalid password attempt for user ${user._id} from IP ${req.ip}`);
       await _handleFailedLogin(req, user.schoolId?._id || user.schoolId || null, user._id);
       recordSecurityEvent('LOGIN_FAILED', {
         ipAddress: req.ip,

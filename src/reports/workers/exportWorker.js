@@ -1,8 +1,17 @@
 const { Worker } = require('bullmq');
-const { connection } = require('../../config/redis');
+const redis = require('../../config/redis');
 const ExportHistory = require('../../models/ExportHistory');
 
 function startExportWorker() {
+  const connection = redis?.supportsBullmq ? redis.connection : null;
+  if (!connection) {
+    console.log('[REDIS_FALLBACK] Export worker not started (BullMQ disabled for Upstash REST mode)');
+    return {
+      on() {},
+      async close() {},
+    };
+  }
+
   return new Worker(
     'exportQueue',
     async (job) => {

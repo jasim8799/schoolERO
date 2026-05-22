@@ -62,8 +62,10 @@ async function recordSecurityEvent(eventType, payload = {}) {
     pipe.expire('security:events:recent', 48 * 3600);
 
     await pipe.exec();
+    console.log(`[SECURITY_METRIC] Recorded ${String(eventType || 'UNKNOWN').toUpperCase()} event`);
     return true;
   } catch (_) {
+    console.warn('[SECURITY_METRIC] Failed to record security event to Redis adapter');
     return false;
   }
 }
@@ -216,8 +218,10 @@ async function getLiveMetrics() {
     };
 
     await redis.setex(cacheKey, 15, JSON.stringify(data)).catch(() => {});
+    console.log('[REDIS_ANALYTICS] Live security metrics refreshed from Redis-backed counters');
     return data;
   } catch (_) {
+    console.warn('[SECURITY_METRIC] Falling back to MongoDB metrics path');
     return buildFallbackMetrics();
   }
 }

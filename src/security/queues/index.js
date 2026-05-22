@@ -11,8 +11,11 @@ function createNoopQueue(name) {
 }
 
 function createQueue(name) {
-  const connection = redisConfig?.connection;
-  if (!connection) return createNoopQueue(name);
+  const connection = redisConfig?.supportsBullmq ? redisConfig.connection : null;
+  if (!connection) {
+    console.log(`[REDIS_FALLBACK] Security queue ${name} disabled (BullMQ not available in Upstash REST mode)`);
+    return createNoopQueue(name);
+  }
   return new Queue(name, {
     connection,
     defaultJobOptions: {

@@ -32,6 +32,7 @@ function firewallMiddleware() {
       }
 
       if (redisResult > RATE_LIMIT_MAX) {
+        console.warn(`[RATE_LIMIT] IP ${ip} exceeded limit on ${path}`);
         _logFirewallEvent(ip, 'RATE_LIMITED', path, req, 0.65, 'RATE_LIMIT_EXCEEDED').catch(() => {});
         recordSecurityEvent('RATE_LIMIT_EXCEEDED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
         global.io?.of('/activity').emit('firewall:event', {
@@ -48,6 +49,7 @@ function firewallMiddleware() {
       const query   = JSON.stringify(req.query || {});
       const combined = `${path}${body}${query}`;
       if (_detectInjection(combined)) {
+        console.warn(`[THREAT_TRACKING] Injection pattern blocked from IP ${ip} on ${path}`);
         _logFirewallEvent(ip, 'BLOCKED', path, req, 0.92, 'INJECTION_DETECTED').catch(() => {});
         recordSecurityEvent('INJECTION_DETECTED', { ipAddress: ip, severity: 'CRITICAL' }).catch(() => {});
         return res.status(400).json({ success: false, message: 'Request blocked by firewall' });
@@ -60,6 +62,7 @@ function firewallMiddleware() {
       ]).catch(() => null);
 
       if (blocked) {
+        console.warn(`[THREAT_TRACKING] Blacklisted IP ${ip} attempted access on ${path}`);
         _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
         recordSecurityEvent('IP_BLACKLISTED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
         return res.status(403).json({ success: false, message: 'Access denied' });
