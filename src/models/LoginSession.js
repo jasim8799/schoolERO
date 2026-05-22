@@ -20,6 +20,8 @@ const LoginSessionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 LoginSessionSchema.index({ userId: 1, isActive: 1 });
+LoginSessionSchema.index({ schoolId: 1, isActive: 1 });
+LoginSessionSchema.index({ isActive: 1, lastActiveAt: -1 });
 LoginSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('LoginSession', LoginSessionSchema);

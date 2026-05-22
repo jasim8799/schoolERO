@@ -1,5 +1,5 @@
 const express = require('express');
-const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, assignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool, createOperator, createParent, createStudent, createTeacher } = require('../controllers/school.controller');
+const { createSchool, getAllSchools, getSchoolById, createSchoolWithLifecycle, toggleSchoolStatus, assignPrincipal, getSchoolLimits, updateSchoolLimits, getSchoolModules, updateSchoolModules, getCurrentUserSchoolModules, updateSchoolPlan, getCurrentUserSchoolSubscription, renewSchoolSubscription, getCurrentUserSchoolOnlinePayments, forceLogoutSchool, createOperator, createParent, createStudent, createTeacher, getSchoolTotals, getSchoolAnalytics, getSchoolSecuritySummary } = require('../controllers/school.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole, requireMinRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
@@ -40,6 +40,15 @@ router.post('/lifecycle', createSchoolWithLifecycle);
 
 // GET /api/schools - Get all schools (SUPER_ADMIN only)
 router.get('/', getAllSchools);
+
+// GET /api/schools/totals - Platform-wide totals for schools dashboard cards
+router.get('/totals', getSchoolTotals);
+
+// GET /api/schools/:id/analytics - Detailed analytics for school detail panel
+router.get('/:id/analytics', getSchoolAnalytics);
+
+// GET /api/schools/:id/security-summary - Detailed security summary for school detail panel
+router.get('/:id/security-summary', getSchoolSecuritySummary);
 
 // GET /api/schools/:id - Get school by ID
 router.get('/:id', getSchoolById);

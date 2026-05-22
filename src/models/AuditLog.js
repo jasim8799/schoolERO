@@ -404,6 +404,8 @@ const AuditLogSchema = new mongoose.Schema({
 // Indexes for efficient queries
 AuditLogSchema.index({ userId: 1, createdAt: -1 });
 AuditLogSchema.index({ schoolId: 1, createdAt: -1 });
+AuditLogSchema.index({ schoolId: 1, severity: 1, createdAt: -1 });
+AuditLogSchema.index({ schoolId: 1, action: 1, createdAt: -1 });
 AuditLogSchema.index({ action: 1, createdAt: -1 });
 AuditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
 AuditLogSchema.index({ createdAt: -1 }); // For date range queries

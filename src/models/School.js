@@ -215,6 +215,12 @@ schoolSchema.index({ isDeleted: 1, status: 1, 'subscription.endDate': 1 });
 schoolSchema.index({ plan: 1, healthScore: -1 });
 schoolSchema.index({ riskLevel: 1 });
 schoolSchema.index({ 'analytics.lastAnalyticsSync': -1 });
+schoolSchema.index({ 'subscription.endDate': 1, isDeleted: 1 });
+schoolSchema.index({ isDeleted: 1, 'analytics.studentsCount': -1 });
+schoolSchema.index({ isDeleted: 1, 'analytics.todayFeeCollection': -1 });
+schoolSchema.index({ isDeleted: 1, healthScore: -1 });
+schoolSchema.index({ status: 1, isDeleted: 1 });
+schoolSchema.index({ code: 1 }, { unique: true });
 
 const School = mongoose.model('School', schoolSchema);
 

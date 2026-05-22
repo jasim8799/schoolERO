@@ -66,6 +66,7 @@ const { registerActivityCronJobs } = require('./cron/activity.cron');
 const { auditEnrichMiddleware } = require('./middlewares/auditEnrich.middleware');
 const { registerAuditCronJobs } = require('./cron/audit.cron');
 const { registerDashboardCronJobs } = require('./cron/dashboard.cron');
+const { registerSchoolAnalyticsCronJobs } = require('./cron/school.analytics.cron');
 
 // Backup/restore platform imports (optional until module is fully provisioned)
 let backupPlatform = {
@@ -319,6 +320,7 @@ if (process.env.NODE_ENV !== 'test') {
   setImmediate(() => registerActivityCronJobs());
   setImmediate(() => registerAuditCronJobs());
   setImmediate(() => registerDashboardCronJobs());
+  setImmediate(() => registerSchoolAnalyticsCronJobs());
 }
 
 // Catch-all: return JSON 404 for any unmatched route (must be before error handler)

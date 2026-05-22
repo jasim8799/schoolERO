@@ -12,6 +12,14 @@ const { hashPassword } = require('../utils/password.js');
 const { createUser } = require('./user.controller.js');
 const { createTeacher: createTeacherProfile } = require('./teacher.controller.js');
 
+const PLAN_PRICES = { BASIC: 9000, STANDARD: 18000, PREMIUM: 32000 };
+
+function addMonths(date, months) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
 // Create School
 const createSchool = async (req, res) => {
   try {
@@ -262,125 +270,106 @@ const updateSchoolLimits = async (req, res) => {
 // Get All Schools
 const getAllSchools = async (req, res) => {
   try {
-    const Student = require('../models/Student.js');
-    const StudentDailyAttendance = require('../models/StudentDailyAttendance.js');
-    const FeePayment = require('../models/FeePayment.js');
-    const AuditLog = require('../models/AuditLog.js');
+    const redis = require('../config/redis');
+    const {
+      status,
+      plan,
+      sort = 'updatedAt',
+      page = 1,
+      limit = 50,
+      search,
+      riskLevel
+    } = req.query;
 
-    const schools = await School.find().sort({ createdAt: -1 }).lean();
+    const cacheKey = `schools:list:${status}:${plan}:${sort}:${page}:${search || ''}:${riskLevel || ''}:${limit}`;
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json({ success: true, ...JSON.parse(cached), cached: true });
+    }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const query = { isDeleted: { $ne: true } };
+    if (status && status !== 'ALL') {
+      const now = new Date();
+      if (status === 'ACTIVE') {
+        query['subscription.endDate'] = { $gt: now };
+      }
+      if (status === 'EXPIRED') {
+        query['subscription.endDate'] = { $lte: new Date(Date.now() - 30 * 86400000) };
+      }
+      if (status === 'GRACE') {
+        query['subscription.endDate'] = {
+          $lte: now,
+          $gt: new Date(Date.now() - 30 * 86400000)
+        };
+      }
+      if (status === 'TRIAL') {
+        query.plan = SAAS_PLANS.BASIC;
+      }
+    }
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    if (plan && plan !== 'ALL') {
+      query.plan = plan;
+    }
+    if (riskLevel && riskLevel !== 'ALL') {
+      query.riskLevel = riskLevel;
+    }
 
-    const enriched = await Promise.all(
-      schools.map(async (school) => {
-        const schoolId = school._id;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } },
+        { city: { $regex: search, $options: 'i' } }
+      ];
+    }
 
-        try {
-          const [
-            studentsCount,
-            teachersCount,
-            todayAttendanceDocs,
-            todayPayments,
-            recentAlerts,
-          ] = await Promise.all([
-            Student.countDocuments({ schoolId }),
-            User.countDocuments({ schoolId, role: USER_ROLES.TEACHER }),
-            StudentDailyAttendance.find({
-              schoolId,
-              date: { $gte: today, $lt: tomorrow },
-            })
-              .select('status')
-              .lean(),
-            FeePayment.find({
-              schoolId,
-              paymentDate: { $gte: today, $lt: tomorrow },
-            })
-              .select('amount')
-              .lean(),
-            AuditLog.countDocuments({
-              schoolId,
-              severity: { $in: ['WARNING', 'ERROR', 'CRITICAL'] },
-              createdAt: { $gte: yesterday },
-            }),
-          ]);
+    const sortMap = {
+      Activity: { 'analytics.lastAnalyticsSync': -1 },
+      Health: { healthScore: -1 },
+      Revenue: { 'analytics.todayFeeCollection': -1 },
+      Security: { 'analytics.securityScore': -1 }
+    };
+    const sortObj = sortMap[sort] || { updatedAt: -1 };
+    const parsedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const skip = (parsedPage - 1) * parsedLimit;
 
-          const presentCount = todayAttendanceDocs.filter(
-            (a) => a.status === 'PRESENT'
-          ).length;
-          const todayAttendance =
-            todayAttendanceDocs.length > 0
-              ? Math.round((presentCount / todayAttendanceDocs.length) * 100)
-              : 0;
+    const [schools, total] = await Promise.all([
+      School.find(query).sort(sortObj).skip(skip).limit(parsedLimit).lean(),
+      School.countDocuments(query)
+    ]);
 
-          const todayCollection = todayPayments.reduce(
-            (sum, p) => sum + (p.amount || 0),
-            0
-          );
+    const data = schools.map((s) => {
+      const now = new Date();
+      const endDate = new Date(s.subscription?.endDate || now);
+      const graceEnd = new Date(endDate.getTime() + ((s.subscription?.gracePeriodDays || 30) * 86400000));
+      const subStatus = now > graceEnd ? 'EXPIRED' : now > endDate ? 'GRACE' : 'ACTIVE';
 
-          const storageUsage = 0;
-          const storageLimit = school.limits?.storageLimit || 1073741824;
-
-          return {
-            ...school,
-            studentsCount,
-            teachersCount,
-            onlineUsers: Math.floor(
-              Math.random() * Math.min(studentsCount + teachersCount, 50)
-            ),
-            todayAttendance,
-            alertsCount: recentAlerts,
-            todayCollection,
-            apiLatencyMs: 18 + Math.floor(Math.random() * 30),
-            securityScore: recentAlerts > 5 ? 72 : recentAlerts > 2 ? 85 : 94,
-            cpuUsage: 0.3 + Math.random() * 0.5,
-            storageUsage,
-            storageLimit,
-            city: school.address?.split(',').pop()?.trim() || 'N/A',
-            board: school.board || 'CBSE',
-          };
-        } catch (enrichErr) {
-          console.error(
-            `[getAllSchools] Enrichment failed for ${school._id}:`,
-            enrichErr.message
-          );
-          return {
-            ...school,
-            studentsCount: 0,
-            teachersCount: 0,
-            onlineUsers: 0,
-            todayAttendance: 0,
-            alertsCount: 0,
-            todayCollection: 0,
-            apiLatencyMs: 0,
-            securityScore: 90,
-            cpuUsage: 0.4,
-            storageUsage: 0,
-            storageLimit: school.limits?.storageLimit || 1073741824,
-            city: 'N/A',
-            board: 'CBSE',
-          };
-        }
-      })
-    );
-
-    res.status(HTTP_STATUS.OK).json({
-      success: true,
-      count: enriched.length,
-      data: enriched,
+      return {
+        ...s,
+        studentsCount: s.analytics?.studentsCount || 0,
+        teachersCount: s.analytics?.teachersCount || 0,
+        onlineUsers: s.analytics?.onlineUsers || 0,
+        todayAttendance: s.analytics?.todayAttendancePct || 0,
+        alertsCount: s.analytics?.alertsCount || 0,
+        todayCollection: s.analytics?.todayFeeCollection || 0,
+        apiRequestsToday: s.analytics?.apiRequestsToday || 0,
+        storageUsage: s.analytics?.storageUsedBytes || 0,
+        storageLimit: s.limits?.storageLimit || 1073741824,
+        apiLatencyMs: s.analytics?.apiLatencyMs || 24,
+        securityScore: s.analytics?.securityScore || 94,
+        cpuUsage: s.analytics?.cpuUsagePct || 0.4,
+        city: s.city || s.address?.split(',').pop()?.trim() || 'N/A',
+        board: s.board || 'CBSE',
+        subscriptionStatus: subStatus
+      };
     });
+
+    const payload = { success: true, count: data.length, total, data };
+    await redis.setex(cacheKey, 30, JSON.stringify(payload)).catch(() => {});
+    return res.json(payload);
   } catch (error) {
     console.error('[getAllSchools]', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: 'Error fetching schools',
-      error: error.message,
-    });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -572,6 +561,18 @@ const createSchoolWithLifecycle = async (req, res) => {
 
     console.log('[DEBUG] Transaction committed successfully');
 
+    global.io?.emit('school:created', {
+      name: school.name,
+      code: school.code,
+      plan: school.plan,
+      at: new Date()
+    });
+    global.io?.emit('system:activity', {
+      type: 'SCHOOL_CREATED',
+      label: school.name,
+      at: new Date()
+    });
+
     logger.success(`School lifecycle created: ${school.name} (${school.code})`);
 
     res.status(HTTP_STATUS.CREATED).json({
@@ -665,6 +666,12 @@ const toggleSchoolStatus = async (req, res) => {
     });
 
     logger.success(`School ${status}: ${school.name} (${school.code})`);
+
+    global.io?.emit('school:status_changed', {
+      schoolId: school._id,
+      status,
+      name: school.name
+    });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -1151,7 +1158,9 @@ const renewSchoolSubscription = async (req, res) => {
       });
     }
 
-    const school = await School.findById(id).select('subscription name code');
+    const AuditLog = require('../models/AuditLog.js');
+
+    const school = await School.findById(id).select('subscription name code plan');
     if (!school) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
@@ -1165,10 +1174,10 @@ const renewSchoolSubscription = async (req, res) => {
     if (extendFromCurrent || school.subscription.endDate > now) {
       // Extend from current end date or current date (whichever is later)
       const baseDate = school.subscription.endDate > now ? school.subscription.endDate : now;
-      newEndDate = new Date(baseDate.getTime() + (durationMonths * 30 * 24 * 60 * 60 * 1000)); // Approximate months
+      newEndDate = addMonths(baseDate, durationMonths);
     } else {
       // Start from today
-      newEndDate = new Date(now.getTime() + (durationMonths * 30 * 24 * 60 * 60 * 1000));
+      newEndDate = addMonths(now, durationMonths);
     }
 
     const updatedSchool = await School.findByIdAndUpdate(
@@ -1205,6 +1214,28 @@ const renewSchoolSubscription = async (req, res) => {
         extendedFromCurrent: extendFromCurrent
       },
       req
+    });
+
+    const planPrice = PLAN_PRICES[school.plan] || PLAN_PRICES.BASIC;
+    const invoiceAmount = planPrice * durationMonths;
+
+    await AuditLog.create({
+      action: 'SUBSCRIPTION_RENEWED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      description: `Subscription renewed: ${school.name} - ${durationMonths}mo - INR ${invoiceAmount}`,
+      severity: 'INFO',
+      details: { durationMonths, invoiceAmount, newEndDate, plan: school.plan },
+      ipAddress: req.ip,
+      schoolId: school._id
+    }).catch(() => {});
+
+    global.io?.emit('school:subscription_renewed', {
+      schoolId: updatedSchool._id,
+      name: updatedSchool.name,
+      newEndDate: updatedSchool.subscription.endDate
     });
 
     logger.success(`School subscription renewed: ${school.name} (${school.code}) - ${durationMonths} months`);
@@ -2115,6 +2146,12 @@ const forceLogoutSchool = async (req, res) => {
 
     logger.success(`Force logout triggered for school: ${school.name} (${school.code})`);
 
+    global.io?.emit('security:force_logout', {
+      schoolId: school._id,
+      name: school.name,
+      at: new Date()
+    });
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Force logout initiated successfully. All users will be logged out on their next request.',
@@ -2137,6 +2174,225 @@ const forceLogoutSchool = async (req, res) => {
   }
 };
 
+// Get platform-wide school totals for metrics cards
+const getSchoolTotals = async (req, res) => {
+  try {
+    const redis = require('../config/redis');
+    const cacheKey = 'schools:totals:v2';
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json({ success: true, data: JSON.parse(cached), cached: true });
+    }
+
+    const safeQuery = (p, fb) => Promise.race([
+      p,
+      new Promise((resolve) => setTimeout(() => resolve(fb), 8000))
+    ]).catch(() => fb);
+
+    const [agg] = await safeQuery(
+      School.aggregate([
+        { $match: { isDeleted: { $ne: true } } },
+        {
+          $group: {
+            _id: null,
+            totalStudents: { $sum: '$analytics.studentsCount' },
+            totalTeachers: { $sum: '$analytics.teachersCount' },
+            totalOnlineUsers: { $sum: '$analytics.onlineUsers' },
+            totalAttendance: { $avg: '$analytics.todayAttendancePct' },
+            totalFeeToday: { $sum: '$analytics.todayFeeCollection' },
+            totalAlerts: { $sum: '$analytics.alertsCount' },
+            totalApiRequests: { $sum: '$analytics.apiRequestsToday' },
+            totalStorage: { $sum: '$analytics.storageUsedBytes' },
+            avgSecurity: { $avg: '$analytics.securityScore' },
+            totalSchools: { $sum: 1 }
+          }
+        }
+      ]),
+      [{}]
+    );
+
+    const now = new Date();
+    const [active, expired, grace] = await Promise.all([
+      safeQuery(
+        School.countDocuments({
+          isDeleted: { $ne: true },
+          'subscription.endDate': { $gt: now }
+        }),
+        0
+      ),
+      safeQuery(
+        School.countDocuments({
+          isDeleted: { $ne: true },
+          'subscription.endDate': { $lte: new Date(Date.now() - 30 * 86400000) }
+        }),
+        0
+      ),
+      safeQuery(
+        School.countDocuments({
+          isDeleted: { $ne: true },
+          'subscription.endDate': {
+            $lte: now,
+            $gt: new Date(Date.now() - 30 * 86400000)
+          }
+        }),
+        0
+      )
+    ]);
+
+    const a = agg || {};
+    const data = {
+      totalSchools: a.totalSchools || 0,
+      totalStudents: a.totalStudents || 0,
+      totalTeachers: a.totalTeachers || 0,
+      totalOnlineUsers: a.totalOnlineUsers || 0,
+      totalAttendance: Math.round(a.totalAttendance || 0),
+      totalFeeToday: a.totalFeeToday || 0,
+      totalAlerts: a.totalAlerts || 0,
+      totalApiRequests: a.totalApiRequests || 0,
+      totalStorageGb: parseFloat(((a.totalStorage || 0) / 1073741824).toFixed(2)),
+      avgSecurityScore: Math.round(a.avgSecurity || 94),
+      activeSubscriptions: active,
+      expiredSubscriptions: expired,
+      graceSubscriptions: grace,
+      generatedAt: now
+    };
+
+    await redis.setex(cacheKey, 60, JSON.stringify(data)).catch(() => {});
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get analytics snapshot for a single school
+const getSchoolAnalytics = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const redis = require('../config/redis');
+    const Student = require('../models/Student.js');
+    const StudentDailyAttendance = require('../models/StudentDailyAttendance.js');
+    const AuditLog = require('../models/AuditLog.js');
+
+    const cacheKey = `school:analytics:${id}`;
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json({ success: true, data: JSON.parse(cached), cached: true });
+    }
+
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 86400000);
+    const monthAgo = new Date(now.getTime() - 30 * 86400000);
+
+    const safeQuery = (p, fb) => Promise.race([
+      p,
+      new Promise((resolve) => setTimeout(() => resolve(fb), 5000))
+    ]).catch(() => fb);
+
+    const schoolObjectId = mongoose.Types.ObjectId.isValid(id)
+      ? new mongoose.Types.ObjectId(id)
+      : null;
+
+    const [
+      totalStudents,
+      totalTeachers,
+      attendanceThisWeek,
+      loginCountThisMonth,
+      auditEventsThisMonth,
+      school
+    ] = await Promise.all([
+      safeQuery(Student.countDocuments({ schoolId: id }), 0),
+      safeQuery(User.countDocuments({ schoolId: id, role: 'TEACHER', isDeleted: { $ne: true } }), 0),
+      schoolObjectId
+        ? safeQuery(
+          StudentDailyAttendance.aggregate([
+            { $match: { schoolId: schoolObjectId, createdAt: { $gte: weekAgo } } },
+            {
+              $group: {
+                _id: null,
+                present: { $sum: { $cond: [{ $eq: ['$status', 'PRESENT'] }, 1, 0] } },
+                total: { $sum: 1 }
+              }
+            }
+          ]),
+          []
+        )
+        : Promise.resolve([]),
+      safeQuery(AuditLog.countDocuments({ schoolId: id, action: 'LOGIN', createdAt: { $gte: monthAgo } }), 0),
+      safeQuery(AuditLog.countDocuments({ schoolId: id, createdAt: { $gte: monthAgo } }), 0),
+      safeQuery(School.findById(id).select('analytics limits').lean(), null)
+    ]);
+
+    const attendancePct = attendanceThisWeek[0]?.total > 0
+      ? Math.round((attendanceThisWeek[0].present / attendanceThisWeek[0].total) * 100)
+      : 0;
+
+    const data = {
+      totalStudents,
+      totalTeachers,
+      attendancePctThisWeek: attendancePct,
+      loginCountThisMonth,
+      auditEventsThisMonth,
+      storageUsedBytes: school?.analytics?.storageUsedBytes || 0,
+      storageLimit: school?.limits?.storageLimit || 1073741824,
+      generatedAt: now
+    };
+
+    await redis.setex(cacheKey, 120, JSON.stringify(data)).catch(() => {});
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get security summary for a single school
+const getSchoolSecuritySummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const redis = require('../config/redis');
+    const SecurityLog = require('../models/SecurityLog.js');
+    const LoginSession = require('../models/LoginSession.js');
+    const AuditLog = require('../models/AuditLog.js');
+
+    const cacheKey = `school:security:${id}`;
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json({ success: true, data: JSON.parse(cached), cached: true });
+    }
+
+    const dayAgo = new Date(Date.now() - 86400000);
+    const weekAgo = new Date(Date.now() - 7 * 86400000);
+
+    const safeQuery = (p, fb) => Promise.race([
+      p,
+      new Promise((resolve) => setTimeout(() => resolve(fb), 5000))
+    ]).catch(() => fb);
+
+    const [failedLogins, activeSessions, securityEvents, criticalEvents] = await Promise.all([
+      safeQuery(AuditLog.countDocuments({ schoolId: id, action: 'LOGIN_FAILED', createdAt: { $gte: dayAgo } }), 0),
+      safeQuery(LoginSession.countDocuments({ schoolId: id, isActive: true }), 0),
+      safeQuery(SecurityLog.countDocuments({ schoolId: id, createdAt: { $gte: weekAgo } }), 0),
+      safeQuery(AuditLog.countDocuments({ schoolId: id, severity: 'CRITICAL', createdAt: { $gte: weekAgo } }), 0)
+    ]);
+
+    const securityScore = Math.max(60, 100 - failedLogins * 5 - criticalEvents * 10);
+    const riskLevel = securityScore >= 85 ? 'LOW' : securityScore >= 70 ? 'MEDIUM' : 'HIGH';
+
+    const data = {
+      failedLogins24h: failedLogins,
+      activeSessions,
+      securityEvents7d: securityEvents,
+      criticalEvents7d: criticalEvents,
+      securityScore,
+      riskLevel
+    };
+
+    await redis.setex(cacheKey, 60, JSON.stringify(data)).catch(() => {});
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createSchool,
   getSchoolLimits,
@@ -2152,6 +2408,9 @@ module.exports = {
   updateSchoolPlan,
   getCurrentUserSchoolSubscription,
   renewSchoolSubscription,
+  getSchoolTotals,
+  getSchoolAnalytics,
+  getSchoolSecuritySummary,
   updateSchoolModules,
   createOperator,
   createParent,
