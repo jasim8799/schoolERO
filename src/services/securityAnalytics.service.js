@@ -41,6 +41,10 @@ async function recordEvent(event) {
   if (/LOGIN_FAILED|INVALID_TOKEN/.test(type)) {
     updateFields.$inc.totalFailedLogins = 1;
   }
+  if (/ACCOUNT_LOCKED/.test(type)) {
+    updateFields.$inc.totalBruteForce = 1;
+    updateFields.$inc.totalThreats = 1;
+  }
   if (/IP_BLOCKED/.test(type)) {
     updateFields.$inc.totalBlockedIps = 1;
     updateFields.$inc.totalFirewallBlocks = 1;

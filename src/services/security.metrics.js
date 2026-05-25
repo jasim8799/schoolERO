@@ -179,7 +179,14 @@ async function getLiveMetrics() {
   const aiDetections     = parseInt(await redis.get(KEYS.aiDetections24h).catch(() => '0') || '0', 10)
                            || (criticalCount + Math.floor(failedLoginsHour * 0.4));
   const securityScore    = Math.max(60, Math.min(100,
-    100 - criticalCount * 3 - Math.floor(failedLoginsHour / 5) - highRiskUsers));
+    100
+    - criticalCount * 3            // CRITICAL events
+    - Math.floor(failedLoginsHour / 5)  // hourly attack rate
+    - highRiskUsers                // high-risk profiles
+    - Math.min(10, lockedAccounts * 2)  // locked accounts (max -10)
+    // NOTE: single failed logins do NOT decrease score
+    // Only locked accounts (5+ consecutive failures) decrease it
+  ));
   const riskScore        = Math.max(10, criticalCount * 5 + Math.floor(failedLoginsHour * 2));
   const threatLevel      = criticalCount > 5 ? 'CRITICAL'
                          : criticalCount > 2 ? 'HIGH'
@@ -226,6 +233,7 @@ async function getLiveMetrics() {
     firewallBlocks:  blockedEvents,
     aiDetections,
     activeSessions,
+    lockedAccounts,
     geoAnomalies:    geoCount,
     malwareAttempts: malwareCount,
     riskScore:       `${riskScore} / 100`,
