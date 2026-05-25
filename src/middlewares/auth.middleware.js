@@ -258,63 +258,53 @@ async function postLoginActions(user, req, token) {
 }
 
 async function handleFailedLogin(req, schoolId, userId) {
-  const bruteKey = `bruteforce:${req.ip}`;
-  let attempts = 1;
+  // NOTE: Global IP blocking has been REMOVED (replaced by account-level lockout).
+  // IP tracking is for SOC intelligence ONLY, not for blocking regular users.
+  
+  const ipAddress = req.ip || req.connection?.remoteAddress;
+
+  // Track failed attempts for SOC monitoring (24h window)
+  const socIpKey = `soc:ip:failcount:${ipAddress}`;
+  let ipAttemptCount = 1;
 
   try {
-    attempts = await redis.incr(bruteKey);
-    await redis.expire(bruteKey, 900);
+    ipAttemptCount = await redis.incr(socIpKey);
+    if (ipAttemptCount === 1) {
+      await redis.expire(socIpKey, 86400); // 24h TTL
+    }
   } catch (_) {
-    // Keep default attempts.
+    // Ignore Redis errors
   }
 
+  // Log the failed attempt
   SecurityLog.create({
     schoolId,
     userId,
     eventType: 'LOGIN_FAILED',
-    severity: attempts >= 5 ? 'CRITICAL' : 'WARNING',
-    ipAddress: req.ip,
+    severity: 'WARNING',
+    ipAddress,
     userAgent: req.headers['user-agent'],
-    details: { attempts }
+    details: { attempts: ipAttemptCount, socOnly: true }
   }).catch(() => {});
 
   if (userId) {
-    const update = {
-      $inc: { failedLogins: 1 },
-      $set: { lastFailedLogin: new Date() }
-    };
-
-    if (attempts >= 5) {
-      update.$set.lockedUntil = new Date(Date.now() + 15 * 60000);
-    }
-
-    User.findByIdAndUpdate(userId, update).catch(() => {});
-
     UserActivityLog.create({
       userId,
       schoolId,
       action: 'LOGIN_FAILED',
       category: 'AUTH',
-      ipAddress: req.ip,
+      ipAddress,
       deviceHash: _getDeviceHash(req),
       userAgent: req.headers['user-agent'] || '',
-      riskLevel: attempts >= 5 ? 'HIGH' : 'MEDIUM',
-      metadata: { attempts }
+      riskLevel: 'MEDIUM',
+      metadata: { ipAttempts: ipAttemptCount, note: 'Account-level lockout via accountSecurity.service' }
     }).catch(() => {});
   }
 
-  if (attempts >= 10) {
-    redis.setex(`blocked:ip:${req.ip}`, 3600, '1').catch(() => {});
-    SecurityLog.create({
-      schoolId,
-      userId,
-      eventType: 'BRUTE_FORCE_DETECTED',
-      severity: 'CRITICAL',
-      ipAddress: req.ip,
-      details: { blockedFor: '1h', attempts }
-    }).catch(() => {});
-  }
+  // IMPORTANT: No IP blocking here. Account-level lockout is handled by accountSecurity.service.js
+  // IP ban (if needed) is admin-applied via direct redis.setex('blocked:ip:...', ...)
 }
+
 
 module.exports = {
   authenticate,

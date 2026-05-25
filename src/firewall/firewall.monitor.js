@@ -55,13 +55,16 @@ function firewallMiddleware() {
         return res.status(400).json({ success: false, message: 'Request blocked by firewall' });
       }
 
-      // ── Blocked IP check with timeout protection ──────────────────────
+      // ── Blocked IP check (skip if authenticated — allow admin investigation) ───
       const blocked = await Promise.race([
         redis.get(`blocked:ip:${ip}`),
         new Promise((resolve) => setTimeout(() => resolve(null), 300))
       ]).catch(() => null);
 
-      if (blocked) {
+      // Allow authenticated requests through (even from banned IPs — admin investigating)
+      const hasValidToken = req.headers.authorization?.startsWith('Bearer ');
+      
+      if (blocked && !hasValidToken) {
         console.warn(`[THREAT_TRACKING] Blacklisted IP ${ip} attempted access on ${path}`);
         _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
         recordSecurityEvent('IP_BLACKLISTED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});

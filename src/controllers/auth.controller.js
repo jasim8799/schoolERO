@@ -8,6 +8,7 @@ const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog');
 const { recordSecurityEvent } = require('../services/security.metrics');
+const accountSecurity = require('../services/accountSecurity.service');
 
 // Register User
 const register = async (req, res) => {
@@ -87,122 +88,191 @@ const register = async (req, res) => {
   }
 };
 
-// Login User
+// Login User — Account-level security (no global IP blocks)
 const login = async (req, res) => {
   try {
     let { email, mobile, password } = req.body;
+    if (email) email = email.toLowerCase().trim();
+    if (mobile) mobile = mobile.trim();
 
-    // Normalize email before querying MongoDB
-    if (email) email = email.toLowerCase();
-
-    console.log('LOGIN REQUEST:', { email, mobile, hasPassword: !!password });
-
-    // Validate required fields
     if ((!email && !mobile) || !password) {
-      console.log('LOGIN FAILURE: Missing required fields');
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Email/mobile and password are required'
+        message: 'Email/mobile and password are required',
       });
     }
 
-    // Find user by email or mobile
+    // ── Check IP ban (extreme cases only — admin-applied) ────────────────
+    const clientIp = req.ip || req.connection?.remoteAddress;
+    const ipBanned = await accountSecurity.isIpBanned(clientIp);
+    if (ipBanned) {
+      accountSecurity.logAttempt({
+        userId: null, email, mobile, role: null, schoolId: null,
+        result: 'ACCOUNT_LOCKED', req,
+        lockoutTriggered: false, lockoutLevel: 4,
+      }).catch(() => {});
+      return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
+        success: false,
+        message: 'Access temporarily restricted. Please contact support.',
+      });
+    }
+
+    // ── Find user ────────────────────────────────────────────────────────
     const user = await User.findOne({
       $or: [
-        ...(email ? [{ email }] : []),
-        ...(mobile ? [{ mobile }] : [])
+        ...(email  ? [{ email }]  : []),
+        ...(mobile ? [{ mobile }] : []),
       ]
     }).select('+password').populate('schoolId', 'name code status');
 
+    // ── User not found ───────────────────────────────────────────────────
     if (!user) {
-      console.log('LOGIN FAILURE: User not found');
-      console.warn(`[LOGIN_FAILURE] Unknown user login failed from IP ${req.ip}`);
-      await _handleFailedLogin(req, null, null);
       recordSecurityEvent('LOGIN_FAILED', {
-        ipAddress: req.ip,
-        severity: 'HIGH',
+        ipAddress: clientIp,
+        severity: 'MEDIUM',
       }).catch(() => {});
-      global.io?.emit('security:failed_login', {
-        ipAddress: req.ip,
-        at: new Date(),
-      });
+      accountSecurity.logAttempt({
+        userId: null, email, mobile, role: null, schoolId: null,
+        result: 'USER_NOT_FOUND', req,
+      }).catch(() => {});
+      global.io?.emit('security:failed_login', { ipAddress: clientIp, at: new Date() });
+
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
-        message: 'Invalid mobile or password'
+        message: 'Invalid credentials',
       });
     }
 
-    console.log('LOGIN USER FOUND:', { userId: user._id, role: user.role, status: user.status, schoolStatus: user.schoolId?.status });
-
-    // Check if user is active
+    // ── Account inactive ─────────────────────────────────────────────────
     if (user.status !== 'active') {
-      console.log('LOGIN FAILURE: User account inactive');
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'User account is inactive'
-      });
-    }
-
-    // Check if user's school is active (for non-SUPER_ADMIN users)
-    if (user.role !== USER_ROLES.SUPER_ADMIN && user.schoolId && user.schoolId.status !== 'active') {
-      console.log('LOGIN FAILURE: School inactive');
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: 'School is currently inactive. Please contact system administrator.'
-      });
-    }
-
-    // Compare password
-    const isPasswordValid = await comparePassword(password, user.password);
-    if (!isPasswordValid) {
-      console.log('LOGIN FAILURE: Invalid password');
-      console.warn(`[LOGIN_FAILURE] Invalid password attempt for user ${user._id} from IP ${req.ip}`);
-      await _handleFailedLogin(req, user.schoolId?._id || user.schoolId || null, user._id);
-      recordSecurityEvent('LOGIN_FAILED', {
-        ipAddress: req.ip,
-        severity: 'HIGH',
+      accountSecurity.logAttempt({
+        userId: user._id, email: user.email, mobile: user.mobile,
+        role: user.role, schoolId: user.schoolId?._id || user.schoolId,
+        result: 'ACCOUNT_INACTIVE', req,
       }).catch(() => {});
-      global.io?.emit('security:failed_login', {
-        ipAddress: req.ip,
-        at: new Date(),
-      });
-      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        message: 'Invalid mobile or password'
+        message: 'User account is inactive. Please contact your administrator.',
       });
     }
 
-    console.log('LOGIN SUCCESS: Password valid');
+    // ── School inactive (non-Super Admin only) ───────────────────────────
+    if (user.role !== USER_ROLES.SUPER_ADMIN &&
+        user.schoolId && user.schoolId.status !== 'active') {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'School is currently inactive. Please contact system administrator.',
+      });
+    }
+
+    // ── Check account lock (PER ACCOUNT — not global IP) ────────────────
+    const lockStatus = await accountSecurity.isAccountLocked(user);
+    if (lockStatus.locked) {
+      accountSecurity.logAttempt({
+        userId: user._id, email: user.email, mobile: user.mobile,
+        role: user.role, schoolId: user.schoolId?._id || user.schoolId,
+        result: 'ACCOUNT_LOCKED', req,
+        lockoutTriggered: false, lockoutLevel: lockStatus.lockoutLevel,
+        lockoutUntil: lockStatus.lockedUntil,
+        captchaRequired: lockStatus.captchaRequired,
+      }).catch(() => {});
+
+      const response = {
+        success: false,
+        message: lockStatus.message,
+        locked: true,
+        lockedUntil:     lockStatus.lockedUntil,
+        minutesRemaining: lockStatus.minutesLeft,
+      };
+      if (lockStatus.captchaRequired) {
+        response.captchaRequired = true;
+      }
+      return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json(response);
+    }
+
+    // ── Verify password ──────────────────────────────────────────────────
+    const isPasswordValid = await comparePassword(password, user.password);
+
+    if (!isPasswordValid) {
+      // Handle failed login — may trigger account lock
+      const lockResult = await accountSecurity.handleFailedLogin(user, req);
+
+      recordSecurityEvent('LOGIN_FAILED', {
+        ipAddress: clientIp,
+        severity: lockResult.level >= 3 ? 'CRITICAL' : 'HIGH',
+        schoolId: user.schoolId?._id || user.schoolId,
+      }).catch(() => {});
+
+      accountSecurity.logAttempt({
+        userId: user._id, email: user.email, mobile: user.mobile,
+        role: user.role, schoolId: user.schoolId?._id || user.schoolId,
+        result: 'WRONG_PASSWORD', req,
+        lockoutTriggered: lockResult.locked,
+        lockoutLevel:     lockResult.level,
+        lockoutUntil:     lockResult.lockedUntil,
+        captchaRequired:  lockResult.captchaRequired,
+      }).catch(() => {});
+
+      global.io?.emit('security:failed_login', {
+        ipAddress: clientIp, at: new Date(),
+        role: user.role, accountLocked: lockResult.locked,
+      });
+
+      const response = {
+        success: false,
+        message: 'Invalid credentials',
+        attemptsRemaining: lockResult.locked ? 0 : undefined,
+      };
+
+      if (lockResult.locked) {
+        response.message = `Account temporarily locked for ${lockResult.minutesLocked} minutes due to too many failed attempts.`;
+        response.locked = true;
+        response.lockedUntil = lockResult.lockedUntil;
+        response.minutesLocked = lockResult.minutesLocked;
+      } else if (lockResult.level === 1) {
+        // Warn user before lock
+        const rules = user.role === USER_ROLES.SUPER_ADMIN
+          ? [{ afterAttempts: 3, lockMinutes: 30 }]
+          : [{ afterAttempts: 5, lockMinutes: 15 }];
+        const nextLock = rules[0];
+        const attemptsLeft = nextLock.afterAttempts - lockResult.consecutiveAttempts;
+        response.message = `Invalid credentials. ${attemptsLeft} attempt(s) remaining before account lockout.`;
+        response.warning = true;
+        response.attemptsRemaining = attemptsLeft;
+      }
+
+      if (lockResult.captchaRequired) {
+        response.captchaRequired = true;
+      }
+
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json(response);
+    }
+
+    // ── Password correct — successful login ──────────────────────────────
+    await accountSecurity.handleSuccessfulLogin(user, req);
 
     // Auto-link STUDENT user to Student document if not already linked
     if (user.role === USER_ROLES.STUDENT) {
       let student = await Student.findOne({ userId: user._id });
-
       if (!student) {
-        // Try multiple ways to find the matching student record
-        const query = { schoolId: user.schoolId._id || user.schoolId };
+        const query = { schoolId: user.schoolId?._id || user.schoolId };
         const orClauses = [];
         if (user.mobile) orClauses.push({ mobile: user.mobile });
         if (user.name)   orClauses.push({ name: user.name });
         if (orClauses.length > 0) query.$or = orClauses;
-
         student = await Student.findOne(query).sort({ createdAt: -1 });
-
         if (student) {
           student.userId = user._id;
           await student.save();
-          console.log(`✅ Auto-linked STUDENT ${user.name} -> ${student._id}`);
-        } else {
-          console.log(`❌ No matching student found for ${user.name} (${user._id})`);
         }
       }
     }
 
-    // Fetch active academic session for the user's school
+    // Fetch active academic session
     const activeSession = user.schoolId
       ? await AcademicSession.findOne({
-          schoolId: user.schoolId._id || user.schoolId,
-          isActive: true
+          schoolId: user.schoolId?._id || user.schoolId,
+          isActive: true,
         })
       : null;
 
@@ -211,14 +281,12 @@ const login = async (req, res) => {
       userId: user._id,
       role: user.role,
       schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null,
-      sessionId: activeSession ? activeSession._id.toString() : null
+      sessionId: activeSession ? activeSession._id.toString() : null,
     });
 
     _postLoginActions(user, req, token).catch((e) => console.error('[postLogin]', e.message));
 
-    logger.success(`User logged in: ${user.name} (${user.role})`);
-
-    // Create audit log for login
+    // Log successful login
     auditLog({
       action: 'LOGIN',
       userId: user._id,
@@ -228,27 +296,27 @@ const login = async (req, res) => {
       description: `${user.name} (${user.role}) logged in`,
       schoolId: user.schoolId?._id || null,
       details: { role: user.role, email: user.email || user.mobile },
-      ipAddress: req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-        || req.socket?.remoteAddress || req.ip || '0.0.0.0',
+      ipAddress: clientIp,
     }).catch(() => {});
 
-    // Remove password from response
+    accountSecurity.logAttempt({
+      userId: user._id, email: user.email, mobile: user.mobile,
+      role: user.role, schoolId: user.schoolId?._id || user.schoolId,
+      result: 'SUCCESS', req,
+    }).catch(() => {});
+
     const userResponse = user.toObject();
     delete userResponse.password;
 
-    console.log('LOGIN SUCCESS: Token generated and user logged in');
-
-    res.status(HTTP_STATUS.OK).json({
+    return res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Login successful',
-      data: {
-        user: userResponse,
-        token
-      }
+      data: { user: userResponse, token },
     });
+
   } catch (error) {
     logger.error('Login error:', error.message);
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Error logging in',
       error: error.message

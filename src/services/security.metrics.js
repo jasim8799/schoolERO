@@ -172,6 +172,7 @@ async function getLiveMetrics() {
   // ── Active sessions (MongoDB — not tracked in analytics) ──────────────
   const activeSessions = await LoginSession.countDocuments({ isActive: true }).catch(() => 0);
   const highRiskUsers  = await User.countDocuments({ riskLevel: { $in: ['HIGH', 'CRITICAL'] } }).catch(() => 0);
+  const lockedAccounts = await User.countDocuments({ lockedUntil: { $gt: new Date() } }).catch(() => 0);
 
   // ── Derived metrics ───────────────────────────────────────────────────
   const failedLoginsHour = redisFailedHour; // Hourly is always Redis (TTL-safe)

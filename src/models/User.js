@@ -291,6 +291,27 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Account-level lockout (per account, NOT per IP)
+  consecutiveFailedLogins: {
+    type: Number,
+    default: 0,
+  },
+  lockoutLevel: {
+    // 0=none, 1=warn, 2=locked-15min, 3=locked-1hr, 4=locked-24hr
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 4,
+  },
+  captchaRequired: {
+    type: Boolean,
+    default: false,
+  },
+  // Total lifetime failed login count (never resets)
+  totalFailedLoginsAllTime: {
+    type: Number,
+    default: 0,
+  },
   lastLogin: {
     type: Date,
     default: null,
@@ -346,6 +367,9 @@ userSchema.index({ mfaEnabled: 1, role: 1 });
 userSchema.index({ schoolId: 1, role: 1, status: 1, isDeleted: 1 });
 userSchema.index({ 'deviceTracking.deviceHash': 1 });
 userSchema.index({ lastLogin: -1 });
+// Account lockout indexes
+userSchema.index({ lockedUntil: 1, consecutiveFailedLogins: 1 });
+userSchema.index({ role: 1, lockedUntil: 1 });
 
 // Ensure at least email or mobile is provided
 userSchema.pre('save', function(next) {
