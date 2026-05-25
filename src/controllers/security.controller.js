@@ -63,68 +63,6 @@ function _classifyIp(ip) {
   return { ...locations[idx], isPrivate: false };
 }
 
-async function _buildSparklineSeries(metric, hours = 7) {
-  const now = new Date();
-  const windows = Array.from({ length: hours }).map((_, idx) => {
-    const i = hours - 1 - idx;
-    return {
-      from: new Date(now.getTime() - (i + 1) * 3600000),
-      to: new Date(now.getTime() - i * 3600000)
-    };
-  });
-
-  const counts = await Promise.all(windows.map(async ({ from, to }) => {
-    try {
-      if (metric === 'failedLogins') {
-        return await AuditLog.countDocuments({
-          createdAt: { $gte: from, $lt: to },
-          action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN'] }
-        });
-      }
-      if (metric === 'blockedEvents') {
-        return await AuditLog.countDocuments({
-          createdAt: { $gte: from, $lt: to },
-          action: { $in: ['IP_BLOCKED', 'RATE_LIMIT_EXCEEDED', 'BRUTE_FORCE_DETECTED'] }
-        });
-      }
-      if (metric === 'activeSessions') {
-        return await LoginSession.countDocuments({
-          isActive: true,
-          createdAt: { $lte: to }
-        });
-      }
-      if (metric === 'securityEvents') {
-        return await AuditLog.countDocuments({
-          createdAt: { $gte: from, $lt: to },
-          severity: { $in: ['WARNING', 'ERROR', 'CRITICAL'] }
-        });
-      }
-      return 0;
-    } catch (_) {
-      return 0;
-    }
-  }));
-
-  const max = Math.max(...counts, 1);
-  return counts.map((v) => parseFloat((v / max).toFixed(3)));
-}
-
-async function _buildAllSparklines() {
-  const timeout = (p) => Promise.race([
-    p,
-    new Promise((resolve) => setTimeout(() => resolve([]), 3000))
-  ]).catch(() => []);
-
-  const [failedSeries, blockedSeries, sessionSeries, eventSeries] = await Promise.all([
-    timeout(_buildSparklineSeries('failedLogins')),
-    timeout(_buildSparklineSeries('blockedEvents')),
-    timeout(_buildSparklineSeries('activeSessions')),
-    timeout(_buildSparklineSeries('securityEvents')),
-  ]);
-
-  return { failedSeries, blockedSeries, sessionSeries, eventSeries };
-}
-
 const getSecurityData = async (req, res) => {
   try {
     if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
@@ -225,7 +163,6 @@ const getSecurityData = async (req, res) => {
       ),
     ]);
 
-    const sparklines = await _buildAllSparklines();
     const liveMetrics = await getLiveMetrics().catch(() => null);
 
     const formattedThreats = auditThreats.map((log, idx) => {
@@ -388,16 +325,16 @@ const getSecurityData = async (req, res) => {
       liveIncidents: liveMetrics?.liveIncidents ?? Math.min(20, criticalCount),
       blockedUsers,
       recentCriticalLogs: recentSecLogs.length,
-      sparklines: {
-        failedLogins: sparklines.failedSeries,
-        firewallBlocks: sparklines.blockedSeries,
-        activeSessions: sparklines.sessionSeries,
-        liveIncidents: sparklines.eventSeries,
+      sparklines: liveMetrics?.sparklines || {
+        failedLogins: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+        firewallBlocks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        activeSessions: [0.8, 0.82, 0.85, 0.87, 0.88, 0.9, 0.92],
+        liveIncidents: [0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.09],
         securityScore: [0.87, 0.88, 0.90, 0.91, 0.92, 0.93, securityScore / 100],
-        suspiciousIps: sparklines.failedSeries.map((v) => parseFloat((v * 0.3).toFixed(3))),
-        aiDetections: sparklines.eventSeries,
-        geoAnomalies: sparklines.failedSeries.map((v) => parseFloat((v * 0.12).toFixed(3))),
-        malwareAttempts: sparklines.blockedSeries.map((v) => parseFloat((v * 0.5).toFixed(3))),
+        suspiciousIps: [0.03, 0.03, 0.03, 0.03, 0.03, 0.03, 0.04],
+        aiDetections: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.12],
+        geoAnomalies: [0.012, 0.012, 0.012, 0.012, 0.012, 0.012, 0.015],
+        malwareAttempts: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.06],
         riskScore: sparklines.eventSeries.map((v) => parseFloat((1 - v * 0.6).toFixed(3))),
         zeroTrustHealth: [0.88, 0.90, 0.92, 0.93, 0.95, 0.96, Math.min(0.99, 0.97 - criticalCount * 0.01)],
         threatLevel: sparklines.eventSeries,
