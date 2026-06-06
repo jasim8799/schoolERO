@@ -103,7 +103,10 @@ const login = async (req, res) => {
     }
 
     // ── Check IP ban (extreme cases only — admin-applied) ────────────────
-    const clientIp = req.ip || req.connection?.remoteAddress;
+    const clientIp =
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.ip ||
+      req.connection?.remoteAddress;
     const ipBanned = await accountSecurity.isIpBanned(clientIp);
     if (ipBanned) {
       accountSecurity.logAttempt({
@@ -181,8 +184,9 @@ const login = async (req, res) => {
         success: false,
         message: lockStatus.message,
         locked: true,
-        lockedUntil:     lockStatus.lockedUntil,
+        lockedUntil: lockStatus.lockedUntil,
         minutesRemaining: lockStatus.minutesLeft,
+        minutesLocked: lockStatus.minutesLeft,
       };
       if (lockStatus.captchaRequired) {
         response.captchaRequired = true;

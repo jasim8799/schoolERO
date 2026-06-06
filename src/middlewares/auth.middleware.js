@@ -40,6 +40,16 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    const clientIp =
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      '';
+    const isPrivateIp =
+      /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|::ffff:10\.|::ffff:192\.168\.)/.test(
+        clientIp
+      );
+
     const [tokenBl, userBl, ipBl] = await Promise.all([
       Promise.race([
         decoded.jti ? redis.get(`blacklist:token:${decoded.jti}`) : Promise.resolve(null),
@@ -49,13 +59,16 @@ const authenticate = async (req, res, next) => {
         redis.get(`blacklist:user:${userId}`),
         new Promise((resolve) => setTimeout(() => resolve(null), 300))
       ]).catch(() => null),
-      Promise.race([
-        redis.get(`blocked:ip:${req.ip}`),
-        new Promise((resolve) => setTimeout(() => resolve(null), 300))
-      ]).catch(() => null)
+      isPrivateIp
+        ? Promise.resolve(null)
+        : Promise.race([
+            redis.get(`blocked:ip:${clientIp}`),
+            new Promise((resolve) => setTimeout(() => resolve(null), 300))
+          ]).catch(() => null)
     ]);
 
-    if (ipBl) {
+    // Admin IP bans apply to external IPs only; JWT-authenticated users are never IP-blocked here
+    if (ipBl && !isPrivateIp) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         message: 'Access blocked. Try again later.'

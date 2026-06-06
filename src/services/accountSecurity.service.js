@@ -25,6 +25,14 @@ const LOCKOUT_RULES = {
   ],
 };
 
+// School / LAN / loopback — never subject to IP ban checks
+const PRIVATE_IP_RE =
+  /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|::ffff:10\.|::ffff:192\.168\.)/;
+
+function _isPrivateIp(ipAddress) {
+  return PRIVATE_IP_RE.test(ipAddress || '');
+}
+
 // ── IP intelligence thresholds (SOC monitoring only, NOT blocking) ─────────
 const IP_RULES = {
   suspiciousAfterAttempts: 20,       // flag IP as suspicious in SOC
@@ -202,7 +210,7 @@ async function logAttempt(options) {
 // ── IP intelligence tracking (SOC monitoring — no user blocking) ──────────
 async function _trackIpIntelligence(ipAddress, userId, userRole) {
   if (!ipAddress) return;
-  const isPrivate = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(ipAddress);
+  const isPrivate = _isPrivateIp(ipAddress);
 
   // Track attempt count (24h window)
   const ipKey = `ip:attempts:${ipAddress}`;
@@ -252,8 +260,7 @@ async function _trackIpIntelligence(ipAddress, userId, userRole) {
 // This is NOT called for normal failed logins — only extreme attacks
 async function shouldBanIp(ipAddress) {
   if (!ipAddress) return false;
-  const isPrivate = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(ipAddress);
-  if (isPrivate) return false; // NEVER ban school networks
+  if (_isPrivateIp(ipAddress)) return false; // NEVER ban school networks
 
   const ipKey = `ip:attempts:${ipAddress}`;
   const count = parseInt(await redis.get(ipKey).catch(() => '0') || '0', 10);
@@ -264,8 +271,7 @@ async function shouldBanIp(ipAddress) {
 // ── Check if IP is already banned (admin-applied only) ───────────────────
 async function isIpBanned(ipAddress) {
   if (!ipAddress) return false;
-  const isPrivate = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(ipAddress);
-  if (isPrivate) return false; // NEVER check school networks
+  if (_isPrivateIp(ipAddress)) return false; // NEVER check school networks
 
   const banned = await redis.get(`blocked:ip:${ipAddress}`).catch(() => null);
   return banned !== null;

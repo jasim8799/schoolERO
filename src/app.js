@@ -8,7 +8,7 @@ const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
 const { attachActiveSession } = require('./middlewares/session.middleware.js');
 const errorHandler = require('./middlewares/error.middleware');
-const { authRateLimit, paymentRateLimit, generalRateLimit } = require('./middlewares/rateLimit.middleware.fixed.js');
+const { paymentRateLimit, generalRateLimit } = require('./middlewares/rateLimit.middleware.fixed.js');
 const adminRoutes = require('./routes/admin.routes');
 const schoolRoutes = require('./routes/school.routes');
 const sessionRoutes = require('./routes/session.routes');
@@ -111,6 +111,9 @@ const app = express();
 let io;
 const path = require('path');
 
+// Trust reverse proxy (Render/nginx) so req.ip reflects the real client
+app.set('trust proxy', 1);
+
 // Middlewares
 app.use(cors({
   origin: config.cors.origin,
@@ -135,7 +138,9 @@ app.get('/health', (req, res) => {
 
 // API Routes
 // Public routes must be registered before global authentication middleware.
-app.use('/api/auth', authRateLimit, authRoutes);
+// NOTE: authRateLimit is NOT applied to /api/auth to prevent blocking all users
+// when one user fails login. Per-account lockout is handled by accountSecurity.service.js
+app.use('/api/auth', authRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/version', versionRoutes);

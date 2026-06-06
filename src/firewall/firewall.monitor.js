@@ -19,8 +19,13 @@ function firewallMiddleware() {
     const ip   = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0';
     const path = req.path;
 
+    // Login/auth routes use per-account lockout only (app.js also skips firewall for /auth)
+    if (path.startsWith('/auth')) {
+      return next();
+    }
+
     try {
-      // ── Rate limit check with timeout protection ───────────────────────
+      // ── Rate limit check with timeout protection (non-auth API only) ───
       const rateKey = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW)}`;
       const redisResult = await Promise.race([
         redis.incr(rateKey),
@@ -55,21 +60,28 @@ function firewallMiddleware() {
         return res.status(400).json({ success: false, message: 'Request blocked by firewall' });
       }
 
-      // ── Blocked IP check (skip if authenticated — allow admin investigation) ───
-      const blocked = await Promise.race([
-        redis.get(`blocked:ip:${ip}`),
-        new Promise((resolve) => setTimeout(() => resolve(null), 300))
-      ]).catch(() => null);
-
-      // Allow authenticated requests through (even from banned IPs — admin investigating)
-      const hasValidToken = req.headers.authorization?.startsWith('Bearer ');
+      // ── Blocked IP check (skip for school networks and authenticated requests) ───
+      // School networks (10.x, 192.168.x, 172.16-31.x, 127.x) are NEVER blocked by IP bans
+      const isPrivateIp = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|::ffff:10\.|::ffff:192\.168\.)/.test(ip);
       
-      if (blocked && !hasValidToken) {
-        console.warn(`[THREAT_TRACKING] Blacklisted IP ${ip} attempted access on ${path}`);
-        _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
-        recordSecurityEvent('IP_BLACKLISTED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
-        return res.status(403).json({ success: false, message: 'Access denied' });
+      if (!isPrivateIp) {
+        // Only check IP ban for external IPs
+        const blocked = await Promise.race([
+          redis.get(`blocked:ip:${ip}`),
+          new Promise((resolve) => setTimeout(() => resolve(null), 300))
+        ]).catch(() => null);
+
+        // Allow authenticated requests through (even from banned IPs — admin investigating)
+        const hasValidToken = req.headers.authorization?.startsWith('Bearer ');
+        
+        if (blocked && !hasValidToken) {
+          console.warn(`[THREAT_TRACKING] Blacklisted IP ${ip} attempted access on ${path}`);
+          _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
+          recordSecurityEvent('IP_BLACKLISTED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
+          return res.status(429).json({ success: false, message: 'Access temporarily restricted. Please contact support.' });
+        }
       }
+      // All school network IPs pass through freely
     } catch (_) {
       // Firewall failure should not block legitimate traffic.
     }

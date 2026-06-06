@@ -16,6 +16,11 @@ setInterval(() => {
 // Rate limiting middleware
 const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
   return (req, res, next) => {
+    const url = req.originalUrl || req.path || '';
+    if (/\/auth\/login(\?|$)/i.test(url) || req.path === '/login') {
+      return next();
+    }
+
     const key = `${req.ip}-${req.path}`;
     const now = Date.now();
     const windowStart = now - windowMs;
@@ -55,7 +60,9 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
 };
 
 // Specific rate limits for different endpoints
-const authRateLimit = createRateLimit(5, 15 * 60 * 1000); // 5 requests per 15 minutes for auth
+// Legacy — do not use on login; per-account lockout handles brute force
+const authRateLimit = (req, res, next) => next();
+const loginRateLimit = (req, res, next) => next();
 const paymentRateLimit = createRateLimit(10, 60 * 60 * 1000); // 10 requests per hour for payments
 const backupRateLimit = createRateLimit(3, 60 * 60 * 1000); // 3 requests per hour for backup/restore
 const generalRateLimit = createRateLimit(100, 15 * 60 * 1000); // 100 requests per 15 minutes general
@@ -63,6 +70,7 @@ const generalRateLimit = createRateLimit(100, 15 * 60 * 1000); // 100 requests p
 module.exports = {
   createRateLimit,
   authRateLimit,
+  loginRateLimit,
   paymentRateLimit,
   backupRateLimit,
   generalRateLimit
