@@ -6,6 +6,14 @@ const { USER_ROLES } = require('../config/constants');
 const redis = require('../config/redis');
 const crypto = require('crypto');
 const { getLiveMetrics, recordSecurityEvent } = require('../services/security.metrics');
+const {
+  getSecurityMonitoringData,
+  getIncidentFeed,
+  getTimelineData,
+  getRadarData,
+  getThreatIntelligence,
+  getGeoAnomalies,
+} = require('../services/incident.manager');
 
 function _relativeTime(date) {
   if (!date) return 'N/A';
@@ -724,6 +732,203 @@ const blockIP = async (req, res) => {
   }
 };
 
+// ────────────────────────────────────────────────────────────────────────
+// PHASE 3 - ENTERPRISE SECURITY MONITORING
+// ────────────────────────────────────────────────────────────────────────
+
+const getMonitoringTable = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { severity, status, limit = 100 } = req.query;
+    const schoolId = req.user.schoolId;
+
+    const threats = await getSecurityMonitoringData(schoolId, { severity, status });
+
+    return res.json({
+      success: true,
+      count: threats.length,
+      data: threats.slice(0, Math.min(parseInt(limit, 10), 200)),
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getIncidents = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { severity, status, limit = 50 } = req.query;
+    const schoolId = req.user.schoolId;
+
+    const SecurityIncident = require('../models/SecurityIncident');
+    const query = { isDeleted: false };
+    if (schoolId) query.schoolId = require('mongoose').Types.ObjectId(schoolId);
+    if (severity && severity !== 'ALL') query.severity = severity;
+    if (status) query.status = status;
+
+    const incidents = await SecurityIncident.find(query)
+      .sort({ detectedAt: -1 })
+      .limit(Math.min(parseInt(limit, 10), 200))
+      .lean();
+
+    return res.json({
+      success: true,
+      count: incidents.length,
+      data: incidents,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getIncidentById = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { id } = req.params;
+    const SecurityIncident = require('../models/SecurityIncident');
+    const incident = await SecurityIncident.findById(id).lean();
+
+    if (!incident) {
+      return res.status(404).json({ success: false, message: 'Incident not found' });
+    }
+
+    return res.json({ success: true, data: incident });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// PHASE 4 - REALTIME INCIDENT FEED
+// ────────────────────────────────────────────────────────────────────────
+
+const getIncidentFeedData = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { limit = 50 } = req.query;
+    const schoolId = req.user.schoolId;
+
+    const feed = await getIncidentFeed(schoolId, Math.min(parseInt(limit, 10), 200));
+
+    return res.json({
+      success: true,
+      count: feed.length,
+      data: feed,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// PHASE 5 - INCIDENT TIMELINE
+// ────────────────────────────────────────────────────────────────────────
+
+const getTimelineDataEndpoint = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { incidentId, limit = 50 } = req.query;
+
+    const timeline = await getTimelineData(incidentId);
+
+    return res.json({
+      success: true,
+      count: timeline.length,
+      data: timeline.slice(0, Math.min(parseInt(limit, 10), 200)),
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// PHASE 6 - LIVE THREAT RADAR
+// ────────────────────────────────────────────────────────────────────────
+
+const getLiveRadarData = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const schoolId = req.user.schoolId;
+
+    const radar = await getRadarData(schoolId);
+
+    return res.json({
+      success: true,
+      data: radar,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// PHASE 7 & 8 - THREAT INTELLIGENCE
+// ────────────────────────────────────────────────────────────────────────
+
+const getThreatIntelData = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { limit = 10 } = req.query;
+    const schoolId = req.user.schoolId;
+
+    const intel = await getThreatIntelligence(schoolId, Math.min(parseInt(limit, 10), 50));
+
+    return res.json({
+      success: true,
+      count: intel.length,
+      data: intel,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// PHASE 9 - GEO ANOMALY TRACKING
+// ────────────────────────────────────────────────────────────────────────
+
+const getGeoAnomaliesData = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { limit = 10 } = req.query;
+    const schoolId = req.user.schoolId;
+
+    const anomalies = await getGeoAnomalies(schoolId, Math.min(parseInt(limit, 10), 50));
+
+    return res.json({
+      success: true,
+      count: anomalies.length,
+      data: anomalies,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getSecurityData,
   getSecurityEventById,
@@ -735,4 +940,13 @@ module.exports = {
   blockIP,
   getRadarData,
   getSecurityMetrics,
+  // New endpoints for PHASES 3-9
+  getMonitoringTable,
+  getIncidents,
+  getIncidentById,
+  getIncidentFeedData,
+  getTimelineData: getTimelineDataEndpoint,
+  getLiveRadarData,
+  getThreatIntelData,
+  getGeoAnomaliesData,
 };

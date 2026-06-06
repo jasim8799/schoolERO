@@ -9,6 +9,7 @@ const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog');
 const { recordSecurityEvent } = require('../services/security.metrics');
 const accountSecurity = require('../services/accountSecurity.service');
+const { logLoginFailed, logLoginSuccess } = require('../services/security.event.logger');
 
 // Register User
 const register = async (req, res) => {
@@ -130,10 +131,18 @@ const login = async (req, res) => {
 
     // ── User not found ───────────────────────────────────────────────────
     if (!user) {
-      recordSecurityEvent('LOGIN_FAILED', {
+      // Comprehensive security logging
+      logLoginFailed({
+        email,
+        mobile,
         ipAddress: clientIp,
+        userAgent: req.headers['user-agent'],
+        reason: 'USER_NOT_FOUND',
         severity: 'MEDIUM',
+        riskScore: 0.4,
+        req,
       }).catch(() => {});
+
       accountSecurity.logAttempt({
         userId: null, email, mobile, role: null, schoolId: null,
         result: 'USER_NOT_FOUND', req,
@@ -201,10 +210,20 @@ const login = async (req, res) => {
       // Handle failed login — may trigger account lock
       const lockResult = await accountSecurity.handleFailedLogin(user, req);
 
-      recordSecurityEvent('LOGIN_FAILED', {
+      // Comprehensive security logging
+      logLoginFailed({
+        userId: user._id,
+        email: user.email,
+        mobile: user.mobile,
         ipAddress: clientIp,
-        severity: lockResult.level >= 3 ? 'CRITICAL' : 'HIGH',
+        userAgent: req.headers['user-agent'],
         schoolId: user.schoolId?._id || user.schoolId,
+        reason: 'INVALID_CREDENTIALS',
+        severity: lockResult.level >= 3 ? 'CRITICAL' : lockResult.level >= 2 ? 'HIGH' : 'MEDIUM',
+        riskScore: Math.min(lockResult.level / 4, 1),
+        lockoutTriggered: lockResult.locked,
+        lockoutLevel: lockResult.level,
+        req,
       }).catch(() => {});
 
       accountSecurity.logAttempt({
@@ -301,6 +320,16 @@ const login = async (req, res) => {
       schoolId: user.schoolId?._id || null,
       details: { role: user.role, email: user.email || user.mobile },
       ipAddress: clientIp,
+    }).catch(() => {});
+
+    // Comprehensive security logging for successful login
+    logLoginSuccess({
+      userId: user._id,
+      userRole: user.role,
+      ipAddress: clientIp,
+      userAgent: req.headers['user-agent'],
+      schoolId: user.schoolId?._id || user.schoolId,
+      req,
     }).catch(() => {});
 
     accountSecurity.logAttempt({
