@@ -416,10 +416,10 @@ function createSafeClient(inner) {
         }
       };
     }
-  });
+});
 
   safe.client = safe;
-  safe.connection = null;
+  safe.connection = safe;
   safe.supportsBullmq = false;
   safe.transport = 'upstash-rest-or-memory';
   safe.on = () => safe;
