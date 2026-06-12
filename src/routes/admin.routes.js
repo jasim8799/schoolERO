@@ -2,6 +2,7 @@ const express = require('express');
 const {
 	createSchool,
 	getSchoolById,
+	updateSchool,
 	createSchoolWithLifecycle,
 	toggleSchoolStatus,
 	assignPrincipal,
@@ -61,6 +62,9 @@ router.get('/schools/:id/security-summary', getSchoolSecuritySummary);
 
 // GET /api/admin/schools/:id - Get school by ID
 router.get('/schools/:id', getSchoolById);
+
+// PUT /api/admin/schools/:id - Update school basic info (SUPER_ADMIN only)
+router.put('/schools/:id', updateSchool);
 
 // PUT /api/admin/schools/:id/status - Activate/Deactivate school (SUPER_ADMIN only)
 router.put('/schools/:id/status', toggleSchoolStatus);

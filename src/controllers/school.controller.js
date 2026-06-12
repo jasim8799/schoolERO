@@ -399,6 +399,78 @@ const getSchoolById = async (req, res) => {
   }
 };
 
+// Update School (basic info)
+const updateSchool = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, address, contact, plan } = req.body;
+
+    // Build update object
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (address !== undefined) updateData.address = address;
+    if (contact !== undefined) updateData.contact = contact;
+    
+    // Only allow plan update if valid
+    if (plan !== undefined && Object.values(SAAS_PLANS).includes(plan)) {
+      updateData.plan = plan;
+    }
+
+    // If no valid fields to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'No valid fields to update'
+      });
+    }
+
+    // Find and update school
+    const school = await School.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!school) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    // Log the update
+    await auditLog({
+      action: 'SCHOOL_UPDATED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'School',
+      entityId: school._id,
+      description: `Updated school "${school.name}" (${school.code})`,
+      details: {
+        schoolName: school.name,
+        schoolCode: school.code,
+        updatedFields: Object.keys(updateData)
+      },
+      req
+    });
+
+    logger.success(`School updated: ${school.name} (${school.code})`);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'School updated successfully',
+      data: school
+    });
+  } catch (error) {
+    logger.error('Update school error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating school',
+      error: error.message
+    });
+  }
+};
+
 // Create School with Lifecycle (Super Admin only)
 const createSchoolWithLifecycle = async (req, res) => {
   const session = await mongoose.startSession();
@@ -2399,6 +2471,7 @@ module.exports = {
   updateSchoolLimits,
   getAllSchools,
   getSchoolById,
+  updateSchool,
   createSchoolWithLifecycle,
   toggleSchoolStatus,
   assignPrincipal,
