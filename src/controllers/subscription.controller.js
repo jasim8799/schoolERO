@@ -43,8 +43,14 @@ function _daysRemaining(school) {
   return Math.ceil((new Date(school.subscription.endDate) - new Date()) / 86400000);
 }
 
-function _planMonthlyRevenue(plan) {
-  return (PLAN_PRICING[(plan || 'BASIC').toUpperCase()]?.monthly || PLAN_PRICING.BASIC.monthly) / 100;
+function _planMonthlyRevenue(school) {
+  // PHASE 6 FIX: Use actual database monthlyPrice instead of plan lookup
+  const dbPrice = school.subscription?.monthlyPrice;
+  if (dbPrice != null && dbPrice > 0) {
+    return dbPrice;
+  }
+  // Fallback to plan pricing only if database price is missing
+  return (PLAN_PRICING[(school.plan || 'BASIC').toUpperCase()]?.monthly || PLAN_PRICING.BASIC.monthly) / 100;
 }
 
 function _renewalProbability(billingHealth, threatScore, daysLeft) {
@@ -66,8 +72,8 @@ async function _enrichSchoolSubscription(school, includeDetail = false) {
   const schoolId       = school._id;
   const daysLeft       = _daysRemaining(school);
   const status         = _subscriptionStatus(school);
-  const plan           = (school.plan || 'BASIC').toUpperCase();
-  const monthlyRevenue = _planMonthlyRevenue(plan);
+const plan           = (school.plan || 'BASIC').toUpperCase();
+  const monthlyRevenue = _planMonthlyRevenue(school);
 
   let activeUsers = 0, failedPaymentCount = 0, billingRecords = [], fraudAlerts = [];
 

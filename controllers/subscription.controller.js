@@ -31,7 +31,10 @@ function _daysRemaining(school) {
   return Math.ceil((endDate - new Date()) / (1000 * 60 * 60 * 24));
 }
 
+// DEPRECATED - Use actual school.subscription.monthlyPrice instead
+// This hardcoded function is kept only for backward compatibility
 function _planRevenue(plan) {
+  console.log('[WARNING] _planRevenue() is deprecated. Use school.subscription.monthlyPrice instead.');
   switch ((plan || '').toUpperCase()) {
     case 'BASIC': return 9000;
     case 'STANDARD': return 18000;
@@ -39,6 +42,17 @@ function _planRevenue(plan) {
     case 'ENTERPRISE': return 58000;
     default: return 9000;
   }
+}
+
+// Get actual monthly price from school subscription
+function _getActualMonthlyPrice(school) {
+  const monthlyPrice = school.subscription?.monthlyPrice;
+  if (monthlyPrice && typeof monthlyPrice === 'number' && monthlyPrice > 0) {
+    return monthlyPrice;
+  }
+  // Fallback to plan-based if monthlyPrice not set (legacy schools)
+  console.log(`[WARNING] School ${school.name} missing monthlyPrice, using fallback`);
+  return _planRevenue(school.plan);
 }
 
 function _billingHealth(school, daysLeft) {
@@ -69,7 +83,8 @@ async function _enrichSchoolSubscription(school) {
   const daysLeft = _daysRemaining(school);
   const status = _subscriptionStatus(school);
   const plan = (school.plan || 'BASIC').toUpperCase();
-  const monthlyRevenue = _planRevenue(plan);
+  // PRIORITY 1 FIX: Use actual monthlyPrice from database, not hardcoded plan values
+  const monthlyRevenue = _getActualMonthlyPrice(school);
 
   // Get failed login count from audit logs (last 30 days)
   let failedLogins = 0;
@@ -236,16 +251,23 @@ const getSubscriptionBySchool = async (req, res) => {
 };
 
 // ── PUT /api/subscriptions/:schoolId/renew ────────────────────────────────
+// PHASE 4 + PHASE 5 + PHASE 8: Flexible duration + Recording history
 
 const renewSubscription = async (req, res) => {
+  const mongoose = require('mongoose');
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
+    
     const { durationMonths = 12, extendFromCurrent = true } = req.body;
     if (durationMonths < 1 || durationMonths > 36) {
       return res.status(400).json({ success: false, message: 'Duration must be 1-36 months' });
     }
+    
     const school = await School.findById(req.params.schoolId);
     if (!school) return res.status(404).json({ success: false, message: 'School not found' });
 
@@ -254,11 +276,35 @@ const renewSubscription = async (req, res) => {
     const baseDate = extendFromCurrent && currentEnd > now ? currentEnd : now;
     const newEndDate = new Date(baseDate.getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000);
 
+    // PHASE 4 FIX: Calculate total based on actual monthlyPrice from school, not hardcoded plan
+    const monthlyPrice = school.subscription?.monthlyPrice || 499;
+    const totalAmount = monthlyPrice * durationMonths;
+
+    // Update subscription
     await School.findByIdAndUpdate(req.params.schoolId, {
       'subscription.endDate': newEndDate,
       'subscription.isExpired': false,
       'subscription.lastRenewalDate': now,
-    });
+    }, { session });
+
+    // PHASE 8: Create renewal history record
+    const SubscriptionHistory = require('../models/SubscriptionHistory');
+    await SubscriptionHistory.createRenewalRecord({
+      schoolId: school._id,
+      schoolName: school.name,
+      schoolCode: school.code,
+      oldEndDate: school.subscription?.endDate,
+      newEndDate: newEndDate,
+      durationMonths: durationMonths,
+      monthlyPrice: monthlyPrice,
+      totalAmount: totalAmount,
+      renewedBy: req.user._id,
+      renewedByEmail: req.user.email,
+      renewalType: 'MANUAL',
+      paymentMethod: 'MANUAL'
+    }, { session });
+
+    await session.commitTransaction();
 
     await auditLog({
       action: 'SUBSCRIPTION_RENEWED',
@@ -266,17 +312,137 @@ const renewSubscription = async (req, res) => {
       role: req.user.role,
       entityType: 'SCHOOL',
       entityId: school._id,
-      description: `Subscription renewed for ${school.name} (${school.code}) — ${durationMonths} months`,
+      description: `Subscription renewed for ${school.name} (${school.code}) — ${durationMonths} months (₹${totalAmount})`,
       req,
     });
 
-    logger.success(`Subscription renewed: ${school.name} for ${durationMonths} months`);
+    logger.success(`Subscription renewed: ${school.name} for ${durationMonths} months = ₹${totalAmount}`);
     res.json({
       success: true,
       message: `Subscription renewed for ${durationMonths} months`,
-      data: { schoolId: school._id, newEndDate, durationMonths },
+      data: { 
+        schoolId: school._id, 
+        newEndDate, 
+        durationMonths,
+        monthlyPrice,
+        totalAmount
+      },
     });
   } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    session.endSession();
+  }
+};
+
+// PHASE 8: GET /api/subscriptions/:schoolId/history — Get renewal history
+
+const getSubscriptionHistory = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const SubscriptionHistory = require('../models/SubscriptionHistory');
+    const history = await SubscriptionHistory.getHistoryBySchool(
+      req.params.schoolId,
+      parseInt(req.query.limit) || 20
+    );
+
+    res.json({
+      success: true,
+      data: history
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── PUT /api/subscriptions/:schoolId/plan ──────────────────────────────
+// PHASE 3: Edit Subscription Plan and Price
+
+const updateSubscriptionPlan = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+    
+    const { schoolId } = req.params;
+    const { plan, monthlyPrice } = req.body;
+    
+    // Validate school exists
+    const school = await School.findById(schoolId);
+    if (!school) {
+      return res.status(404).json({ success: false, message: 'School not found' });
+    }
+    
+    // Build update object
+    const updateData = {};
+    
+    // Validate and update plan if provided
+    if (plan !== undefined) {
+      if (plan && !Object.values(SAAS_PLANS).includes(plan)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Invalid plan. Must be BASIC, STANDARD, PREMIUM, or ENTERPRISE' 
+        });
+      }
+      updateData['subscription.plan'] = plan;
+      updateData['plan'] = plan; // Also update top-level plan
+    }
+    
+    // Validate and update monthlyPrice if provided
+    if (monthlyPrice !== undefined) {
+      if (typeof monthlyPrice !== 'number' || monthlyPrice <= 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Monthly price must be a positive number' 
+        });
+      }
+      updateData['subscription.monthlyPrice'] = monthlyPrice;
+    }
+    
+    // Check if there's anything to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No valid fields to update (plan or monthlyPrice required)' 
+      });
+    }
+    
+    // Update the subscription
+    const updatedSchool = await School.findByIdAndUpdate(
+      schoolId,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('subscription plan name code');
+    
+    // Log the change
+    await auditLog({
+      action: 'SUBSCRIPTION_PLAN_UPDATED',
+      userId: req.user._id,
+      role: req.user.role,
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      description: `Updated subscription for ${school.name}: plan=${plan}, monthlyPrice=${monthlyPrice}`,
+      req,
+    });
+    
+    logger.success(`Subscription updated: ${school.name} - plan: ${plan}, price: ${monthlyPrice}`);
+    
+    res.json({
+      success: true,
+      message: 'Subscription updated successfully',
+      data: {
+        schoolId: school._id,
+        schoolName: school.name,
+        plan: updatedSchool.subscription.plan,
+        monthlyPrice: updatedSchool.subscription.monthlyPrice,
+      }
+    });
+  } catch (error) {
+    logger.error('[updateSubscriptionPlan]', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -373,6 +539,8 @@ module.exports = {
   getSubscriptions,
   getSubscriptionBySchool,
   renewSubscription,
+  getSubscriptionHistory,  // PHASE 8: Get renewal history
+  updateSubscriptionPlan,  // PHASE 3: Edit Subscription Plan
   suspendSubscription,
   getSubscriptionMetrics,
 };

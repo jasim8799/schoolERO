@@ -485,6 +485,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       address,
       contact,
       plan,
+      monthlyPrice,  // NEW: Accept monthly price
       principalName,
       principalEmail,
       principalMobile,
@@ -538,7 +539,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       counter++;
     }
 
-    // Prepare school data
+// Prepare school data
     const schoolData = {
       name,
       code: schoolCode,
@@ -547,8 +548,13 @@ const createSchoolWithLifecycle = async (req, res) => {
       plan: plan || SAAS_PLANS.BASIC, // Default to BASIC if not specified
       status: 'active',
       subscription: {
+        plan: plan || SAAS_PLANS.BASIC,
+        monthlyPrice: monthlyPrice || 499, // Default price in rupees
+        startDate: new Date(),
         endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial
+        status: 'ACTIVE',
         isExpired: false,
+        autoRenew: true,
         gracePeriodDays: 30,
         lastRenewalDate: new Date()
       }

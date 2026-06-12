@@ -85,13 +85,34 @@ const schoolSchema = new mongoose.Schema({
     }
   },
   subscription: {
+    plan: {
+      type: String,
+      default: 'BASIC'
+    },
+    monthlyPrice: {
+      type: Number,
+      default: 499 // Default price in rupees
+    },
+    startDate: {
+      type: Date,
+      default: Date.now
+    },
     endDate: {
       type: Date,
       default: () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // Default 1 year from now
     },
+    status: {
+      type: String,
+      enum: ['TRIAL', 'ACTIVE', 'GRACE', 'EXPIRED', 'SUSPENDED'],
+      default: 'ACTIVE'
+    },
     isExpired: {
       type: Boolean,
       default: false
+    },
+    autoRenew: {
+      type: Boolean,
+      default: true
     },
     gracePeriodDays: {
       type: Number,
