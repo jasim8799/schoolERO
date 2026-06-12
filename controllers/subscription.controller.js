@@ -140,6 +140,8 @@ const getSubscriptions = async (req, res) => {
 
     const { plan, status, payment, search, limit = 100, page = 1 } = req.query;
 
+    console.log('[getSubscriptions] Request params:', { plan, status, payment, search, limit, page });
+
     // Build school query
     const query = {};
     if (plan && plan !== 'ALL') query.plan = plan.toUpperCase();
@@ -150,7 +152,7 @@ const getSubscriptions = async (req, res) => {
       ];
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+const skip = (parseInt(page) - 1) * parseInt(limit);
     const [schools, totalCount] = await Promise.all([
       School.find(query)
         .sort({ updatedAt: -1 })
@@ -159,6 +161,12 @@ const getSubscriptions = async (req, res) => {
         .lean(),
       School.countDocuments(query),
     ]);
+
+    console.log('[getSubscriptions] DB Query result:', {
+      foundSchools: schools.length,
+      totalCount: totalCount,
+      query: query
+    });
 
     // Enrich with subscription metrics
     let enriched = await Promise.all(schools.map(_enrichSchoolSubscription));

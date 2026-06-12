@@ -12,11 +12,14 @@ const {
   getFraudAlerts,
   resolveFraudAlert,
 } = require('../controllers/subscription.controller');
+const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
 
 const router = express.Router();
 
+// Authentication must come first - attach user to req
+router.use(authenticate);
 router.use(requireRole(USER_ROLES.SUPER_ADMIN));
 
 // ── Dashboard + list ───────────────────────────────────────────────────
