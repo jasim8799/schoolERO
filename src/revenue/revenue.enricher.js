@@ -22,7 +22,11 @@ function _gateway(school) {
 async function enrichSchoolRevenue(school, includeDetail = false) {
   const schoolId = school._id;
   const plan = safePlan(school.plan);
-  const monthlyRevenue = planMrr(plan);
+  
+  // FIX: Use database monthlyPrice, fallback to plan-based default
+  // This ensures actual revenue shown matches each school's custom pricing
+  const monthlyRevenue = school.subscription?.monthlyPrice || planMrr(plan);
+  
   const paymentStatus = paymentStatusFromSchool(school);
   const gateway = _gateway(school);
 

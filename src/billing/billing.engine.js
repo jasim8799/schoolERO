@@ -3,6 +3,7 @@ const School = require('../models/School');
 const crypto = require('crypto');
 
 // Plan pricing in INR paise (1 INR = 100 paise)
+// These are fallback defaults when school doesn't have custom pricing
 const PLAN_PRICING = {
   BASIC:      { monthly: 900000,  yearly: 9720000  },  // INR 9,000/month
   STANDARD:   { monthly: 1800000, yearly: 19440000 },  // INR 18,000/month
@@ -34,7 +35,18 @@ async function createBillingRecord({
   const school = await School.findById(schoolId).lean();
   if (!school) throw new Error('School not found');
 
-  const baseAmount = PLAN_PRICING[plan]?.monthly || PLAN_PRICING.BASIC.monthly;
+  // PHASE 6 FIX: Use actual school monthlyPrice from database instead of hardcoded plan pricing
+  // monthlyPrice is stored in INR (e.g., 999), convert to paise (e.g., 99900)
+  let baseAmount;
+  if (school.subscription?.monthlyPrice && school.subscription.monthlyPrice > 0) {
+    baseAmount = school.subscription.monthlyPrice * 100;
+    console.log(`[BillingEngine] Using custom price: ₹${school.subscription.monthlyPrice}/month for ${school.name}`);
+  } else {
+    // Fallback only if database price is missing
+    baseAmount = PLAN_PRICING[plan?.toUpperCase()]?.monthly || PLAN_PRICING.BASIC.monthly;
+    console.log(`[BillingEngine] Using plan pricing: ₹${baseAmount/100}/month for ${school.name}`);
+  }
+  
   const amount     = baseAmount * durationMonths;
   const tax        = Math.round(amount * GST_RATE);
   const netAmount  = amount + tax;
@@ -62,6 +74,7 @@ async function createBillingRecord({
     createdBy,
   });
 
+  console.log(`[BillingEngine] Created billing record: ${billing.invoiceNumber} for ₹${netAmount/100}`);
   return billing;
 }
 
@@ -105,4 +118,9 @@ function calculateBillingHealth(school, daysLeft, failedPaymentCount = 0) {
   return Math.max(0, Math.min(1, parseFloat(health.toFixed(2))));
 }
 
-module.exports = { createBillingRecord, retryFailedPayment, calculateBillingHealth, PLAN_PRICING };
+module.exports = { 
+  createBillingRecord, 
+  retryFailedPayment, 
+  calculateBillingHealth, 
+  PLAN_PRICING 
+};

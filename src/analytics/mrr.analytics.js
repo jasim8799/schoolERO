@@ -21,9 +21,11 @@ async function calculateRealMRR() {
 
   for (const school of activeSchools) {
     const plan = safePlan(school.plan);
-    const planValue = PLAN_MRR[plan] || PLAN_MRR.BASIC;
+    // FIX: Use database monthlyPrice, fallback to plan-based default
+    // This ensures actual MRR matches each school's custom pricing
+    const monthlyPrice = school.subscription?.monthlyPrice || PLAN_MRR[plan] || PLAN_MRR.BASIC;
     planCounts[plan] = (planCounts[plan] || 0) + 1;
-    totalMRR += planValue;
+    totalMRR += monthlyPrice;
   }
 
   const planBreakdown = {};
