@@ -77,4 +77,8 @@ router.get('/debug', async (req, res) => {
 // Main export route
 router.get('/export', exportInventoryController);
 
+// Full inventory export (Excel with all modules)
+const { exportFullInventoryController } = require('../controllers/inventory.controller');
+router.get('/export/full', exportFullInventoryController);
+
 module.exports = router;
