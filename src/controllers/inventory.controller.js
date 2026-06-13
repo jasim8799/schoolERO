@@ -237,7 +237,21 @@ const exportInventoryController = async (req, res) => {
       const teacherDocs = await Teacher.find({
         schoolId: schoolObjId
       }).lean();
-      console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
+console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
+
+// ===== STEP 2: VERIFY TEACHER MAPPING =====
+      console.log('================ TEACHER DEBUG ================');
+      console.log('Teacher docs found:', teacherDocs.length);
+
+      teacherDocs.slice(0, 5).forEach(t => {
+        console.log({
+          teacherId: t._id.toString(),
+          userId: t.userId?.toString(),
+          schoolId: t.schoolId?.toString()
+        });
+      });
+
+      console.log('================================================');
 
       // Convert userIds to ObjectIds explicitly
       const userIdObjs = teacherDocs
@@ -305,11 +319,57 @@ const exportInventoryController = async (req, res) => {
 
       console.log('[INVENTORY] teacher staff built:', staff.length);
 
+// ===== STEP 1: DATABASE DEBUG =====
+    console.log('================ USER DEBUG ================');
+    console.log('schoolObjId:', schoolObjId);
+    console.log('schoolObjId string:', schoolObjId.toString());
+
+    const totalUsers = await User.countDocuments();
+    console.log('TOTAL USERS:', totalUsers);
+
+    const schoolUsers = await User.find({
+      schoolId: schoolObjId
+    })
+    .select('name role schoolId status')
+    .lean();
+
+    console.log('USERS FOR SCHOOL:', schoolUsers.length);
+
+    if (schoolUsers.length > 0) {
+      schoolUsers.slice(0, 10).forEach(u => {
+        console.log({
+          name: u.name,
+          role: u.role,
+          schoolId: u.schoolId?.toString(),
+          status: u.status
+        });
+      });
+    }
+
+    const roleStats = await User.aggregate([
+      { $match: { schoolId: schoolObjId } },
+      { $group: { _id: '$role', count: { $sum: 1 } } }
+    ]);
+
+    console.log('ROLE COUNTS:', roleStats);
+    console.log('============================================');
+
 // ===== TASK 2: VERIFY STAFF QUERY =====
       // Get ALL staff roles: TEACHER, OPERATOR, PRINCIPAL, WARDEN, DRIVER, ACCOUNTANT, LIBRARIAN, RECEPTIONIST
       const otherStaff = await User.find({
         schoolId: schoolObjId,
-        role: { $in: ['OPERATOR', 'PRINCIPAL', 'WARDEN', 'DRIVER', 'ACCOUNTANT', 'LIBRARIAN', 'RECEPTIONIST'] }
+        isDeleted: { $ne: true },
+        role: {
+          $in: [
+            'OPERATOR',
+            'PRINCIPAL',
+            'WARDEN',
+            'DRIVER',
+            'ACCOUNTANT',
+            'LIBRARIAN',
+            'RECEPTIONIST'
+          ]
+        }
       })
       .select('-password -documents')
       .lean();
@@ -369,7 +429,7 @@ console.log('[INVENTORY] FINAL staff:', staff.length);
       const librarians = staff.filter(x => x.role === 'LIBRARIAN');
       const receptionists = staff.filter(x => x.role === 'RECEPTIONIST');
 
-      console.log('[INVENTORY] Role counts:', {
+console.log('[INVENTORY] Role counts:', {
         teachers: teachers.length,
         operators: operators.length,
         principals: principals.length,
@@ -379,6 +439,20 @@ console.log('[INVENTORY] FINAL staff:', staff.length);
         librarians: librarians.length,
         receptionists: receptionists.length,
       });
+
+      // ===== STEP 5: VERIFY RESPONSE DATA =====
+      console.log('================ EXPORT RESPONSE ================');
+      console.log('students:', students.length);
+      console.log('staff:', staff.length);
+      console.log('teachers:', teachers.length);
+      console.log('operators:', operators.length);
+      console.log('principals:', principals.length);
+      console.log('wardens:', wardens.length);
+      console.log('drivers:', drivers.length);
+      console.log('accountants:', accountants.length);
+      console.log('librarians:', librarians.length);
+      console.log('receptionists:', receptionists.length);
+      console.log('=================================================');
 
       // Store separate arrays - will be added to response
       var staffByRole = {

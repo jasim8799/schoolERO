@@ -4,7 +4,13 @@ const USER_ROLES = {
   OPERATOR: 'OPERATOR',
   TEACHER: 'TEACHER',
   STUDENT: 'STUDENT',
-  PARENT: 'PARENT'
+  PARENT: 'PARENT',
+  // Additional staff roles for inventory export
+  WARDEN: 'WARDEN',
+  DRIVER: 'DRIVER',
+  ACCOUNTANT: 'ACCOUNTANT',
+  LIBRARIAN: 'LIBRARIAN',
+  RECEPTIONIST: 'RECEPTIONIST'
 };
 
 const USER_STATUS = {
