@@ -305,15 +305,17 @@ const exportInventoryController = async (req, res) => {
 
       console.log('[INVENTORY] teacher staff built:', staff.length);
 
-      // Operators and Principals from User model
+// ===== TASK 2: VERIFY STAFF QUERY =====
+      // Get ALL staff roles: TEACHER, OPERATOR, PRINCIPAL, WARDEN, DRIVER, ACCOUNTANT, LIBRARIAN, RECEPTIONIST
       const otherStaff = await User.find({
         schoolId: schoolObjId,
-        role: { $in: ['OPERATOR', 'PRINCIPAL'] }
+        role: { $in: ['OPERATOR', 'PRINCIPAL', 'WARDEN', 'DRIVER', 'ACCOUNTANT', 'LIBRARIAN', 'RECEPTIONIST'] }
       })
       .select('-password -documents')
       .lean();
 
-      console.log('[INVENTORY] operator/principal:', otherStaff.length);
+      console.log('[INVENTORY] [STAFF QUERY] role: { $in: ["OPERATOR", "PRINCIPAL", "WARDEN", "DRIVER", "ACCOUNTANT", "LIBRARIAN", "RECEPTIONIST"] }');
+      console.log('[INVENTORY] otherStaff count:', otherStaff.length);
 
       otherStaff.forEach(u => {
         staff.push({
@@ -346,7 +348,49 @@ const exportInventoryController = async (req, res) => {
         });
       });
 
-      console.log('[INVENTORY] FINAL staff:', staff.length);
+console.log('[INVENTORY] FINAL staff:', staff.length);
+
+      // ===== TASK 1: VERIFY API RESPONSE =====
+      console.log('========== INVENTORY EXPORT ==========');
+      console.log('students:', students.length);
+      console.log('staff:', staff.length);
+      if (staff.length > 0) {
+        console.log('staff roles:', [...new Set(staff.map(s => s.role))]);
+      }
+      console.log('======================================');
+
+      // ===== TASK 3: EXPORT STAFF SEPARATELY =====
+      const teachers = staff.filter(x => x.role === 'TEACHER');
+      const operators = staff.filter(x => x.role === 'OPERATOR');
+      const principals = staff.filter(x => x.role === 'PRINCIPAL');
+      const wardens = staff.filter(x => x.role === 'WARDEN');
+      const drivers = staff.filter(x => x.role === 'DRIVER');
+      const accountants = staff.filter(x => x.role === 'ACCOUNTANT');
+      const librarians = staff.filter(x => x.role === 'LIBRARIAN');
+      const receptionists = staff.filter(x => x.role === 'RECEPTIONIST');
+
+      console.log('[INVENTORY] Role counts:', {
+        teachers: teachers.length,
+        operators: operators.length,
+        principals: principals.length,
+        wardens: wardens.length,
+        drivers: drivers.length,
+        accountants: accountants.length,
+        librarians: librarians.length,
+        receptionists: receptionists.length,
+      });
+
+      // Store separate arrays - will be added to response
+      var staffByRole = {
+        teachers: teachers,
+        operators: operators,
+        principals: principals,
+        wardens: wardens,
+        drivers: drivers,
+        accountants: accountants,
+        librarians: librarians,
+        receptionists: receptionists,
+      };
 
     } catch (e) {
       console.error('[INVENTORY] staff error:', e.message);
@@ -563,6 +607,17 @@ return res.status(HTTP_STATUS.OK).json({
         teacherClassMap, staffAttendanceMap,
         classSummary: classMap,
         
+        // ===== TASK 3: EXPORT STAFF SEPARATELY =====
+        // Staff by role
+        teachers: staffByRole ? staffByRole.teachers : [],
+        operators: staffByRole ? staffByRole.operators : [],
+        principals: staffByRole ? staffByRole.principals : [],
+        wardens: staffByRole ? staffByRole.wardens : [],
+        drivers: staffByRole ? staffByRole.drivers : [],
+        accountants: staffByRole ? staffByRole.accountants : [],
+        librarians: staffByRole ? staffByRole.librarians : [],
+        receptionists: staffByRole ? staffByRole.receptionists : [],
+        
         // Summary
         summary: {
           totalStudents:    students.length,
@@ -572,6 +627,12 @@ return res.status(HTTP_STATUS.OK).json({
           totalStaff:       staff.length,
           teachers:  staff.filter(s => s.role === 'TEACHER').length,
           operators: staff.filter(s => s.role === 'OPERATOR').length,
+          principals: staff.filter(s => s.role === 'PRINCIPAL').length,
+          wardens: staff.filter(s => s.role === 'WARDEN').length,
+          drivers: staff.filter(s => s.role === 'DRIVER').length,
+          accountants: staff.filter(s => s.role === 'ACCOUNTANT').length,
+          librarians: staff.filter(s => s.role === 'LIBRARIAN').length,
+          receptionists: staff.filter(s => s.role === 'RECEPTIONIST').length,
           classes: classes.length,
           sections: sections.length,
           subjects: subjects.length,
