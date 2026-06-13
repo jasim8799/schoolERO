@@ -259,8 +259,25 @@ const updateSection = async (req, res) => {
       });
     }
 
-    section.name = normalizedName;
+section.name = normalizedName;
     await section.save();
+
+    // Audit log for section update
+    try {
+      await auditLog({
+        action: 'SECTION_UPDATED',
+        userId: req.user.userId,
+        schoolId,
+        details: { 
+          sectionName: normalizedName, 
+          previousName: section.name,
+          classId: section.classId,
+          sectionId: section._id 
+        }
+      });
+    } catch (auditError) {
+      logger.error('Audit log failed for SECTION_UPDATED:', auditError.message);
+    }
 
     logger.success(`Section updated: ${section.name}`);
     res.status(HTTP_STATUS.OK).json({
@@ -301,6 +318,22 @@ const deleteSection = async (req, res) => {
         success: false,
         message: 'Section not found'
       });
+    }
+
+    // Audit log for section deletion
+    try {
+      await auditLog({
+        action: 'SECTION_DELETED',
+        userId: req.user.userId,
+        schoolId,
+        details: {
+          sectionName: deleted.name,
+          classId: deleted.classId,
+          sectionId: deleted._id
+        }
+      });
+    } catch (auditError) {
+      logger.error('Audit log failed for SECTION_DELETED:', auditError.message);
     }
 
     logger.success(`Section deleted: ${deleted.name}`);

@@ -1,6 +1,7 @@
 const Expense = require('../models/Expense');
 const AcademicSession = require('../models/AcademicSession');
 const LedgerEntry = require('../models/LedgerEntry');
+const { auditLog } = require('../utils/auditLog');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -101,7 +102,7 @@ const createExpense = async (req, res) => {
     await expense.populate('createdBy', 'name');
     await expense.populate('sessionId', 'name');
 
-    // Ledger dual-write — never fail the expense creation
+// Ledger dual-write — never fail the expense creation
     try {
       await LedgerEntry.create({
         schoolId,
@@ -117,6 +118,28 @@ const createExpense = async (req, res) => {
       });
     } catch (ledgerErr) {
       console.error('[LedgerEntry] expense dual-write failed:', ledgerErr.message);
+    }
+
+    // Audit log for expense creation
+    try {
+      await auditLog({
+        action: 'EXPENSE_CREATED',
+        userId: createdBy,
+        role: req.user?.role,
+        entityType: 'Expense',
+        entityId: expense._id,
+        description: `Expense created: ${expense.category} - ₹${expense.amount}`,
+        schoolId: schoolId,
+        details: {
+          category: expense.category,
+          amount: expense.amount,
+          paymentMode: expense.paymentMode,
+          description: expense.description
+        },
+        req
+      });
+    } catch (auditErr) {
+      console.error('[EXPENSE_CREATED] Audit log failed:', auditErr.message);
     }
 
     res.status(201).json({
