@@ -512,7 +512,13 @@ const updatePlan = async (req, res) => {
     if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
-    const { plan, confirmed = false } = req.body;
+    // DEBUG: Add temporary debug logs to trace monthlyPrice end-to-end
+    console.log('PLAN UPDATE BODY:', req.body);
+    console.log('CURRENT SUBSCRIPTION:', (await School.findById(req.params.schoolId).select('subscription').lean())?.subscription);
+    
+    const { plan, confirmed = false, monthlyPrice } = req.body;
+    console.log('PLAN UPDATE INPUT - plan:', plan, 'monthlyPrice:', monthlyPrice);
+    
     const validPlans = ['BASIC', 'STANDARD', 'PREMIUM', 'ENTERPRISE'];
     if (!validPlans.includes(plan?.toUpperCase())) {
       return res.status(400).json({ success: false, message: 'Invalid plan' });
@@ -528,8 +534,20 @@ const updatePlan = async (req, res) => {
         currentPlan: school.plan, newPlan: plan,
       });
     }
-    const previousPlan = school.plan;
-    await School.findByIdAndUpdate(req.params.schoolId, { plan: plan.toUpperCase() });
+const previousPlan = school.plan;
+    
+    // FIX: Build update object to include both plan and monthlyPrice
+    const updateFields = { plan: plan.toUpperCase() };
+    
+    // If monthlyPrice is provided and valid, also update the subscription price
+    if (monthlyPrice !== undefined && monthlyPrice !== null && typeof monthlyPrice === 'number' && monthlyPrice > 0) {
+      updateFields['subscription.monthlyPrice'] = monthlyPrice;
+      console.log('SAVING MONTHLY PRICE:', monthlyPrice);
+    }
+    
+    await School.findByIdAndUpdate(req.params.schoolId, updateFields);
+    console.log('UPDATED SCHOOL WITH:', updateFields);
+    
     await createBillingRecord({
       schoolId: school._id, plan: plan.toUpperCase(), durationMonths: 1,
       createdBy: req.user._id, billingType: isDowngrade ? 'DOWNGRADE' : 'UPGRADE', previousPlan,
@@ -559,7 +577,7 @@ console.log('AUDIT PAYLOAD', { action: isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_U
     global.io?.of('/subscriptions').emit('subscription:planChanged', {
       schoolId: school._id, schoolName: school.name, previousPlan, newPlan: plan,
     });
-    return res.json({ success: true, data: { schoolId: school._id, previousPlan, newPlan: plan } });
+return res.json({ success: true, data: { schoolId: school._id, previousPlan, newPlan: plan, monthlyPrice: monthlyPrice } });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
