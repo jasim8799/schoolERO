@@ -346,6 +346,11 @@ const exportInventoryController = async (req, res) => {
 
 // ── 2. Staff ─────────────────────────────────────────────────
     let staff = [];
+    let operators = [];  // Declare at function level for response access
+    let otherStaff = []; // Declare at function level for response access
+    let roleDistribution = []; // For debug info
+    let staffByRole = {}; // For staff by role arrays
+    
     try {
       // ===== TASK 3: QUERY AND LOG MATCHING TEACHERS =====
       console.log('================ TEACHER DEBUG ================');
@@ -482,8 +487,9 @@ console.log('[INVENTORY] [STAFF QUERY] role: OPERATOR');
 console.log('[INVENTORY] operatorUsers count:', operatorUsers.length);
 
 // Split operators by designation (exactly like StaffManagementScreen)
-const operators = [];
-const otherStaff = [];
+// Note: operators and otherStaff already declared at function level
+operators = [];
+otherStaff = [];
 
 operatorUsers.forEach(u => {
   const designation = (u.designation || '').toString().trim();
@@ -515,7 +521,7 @@ console.log('SAMPLE TEACHER:', staff.filter(s => s.role === 'TEACHER')[0] ? JSON
 console.log('SAMPLE OTHER STAFF:', otherStaff[0] ? JSON.stringify(otherStaff[0]) : 'none');
 
 // ===== REQUIREMENT 9: Role distribution =====
-const roleDistribution = await User.aggregate([
+roleDistribution = await User.aggregate([
   {
     $match: { schoolId: schoolObjId }
   },
@@ -603,9 +609,10 @@ console.log('[INVENTORY] FINAL staff:', staff.length);
       }
       console.log('======================================');
 
-      // ===== TASK 3: EXPORT STAFF SEPARATELY =====
-      const teachers = staff.filter(x => x.role === 'TEACHER');
-      const operators = staff.filter(x => x.role === 'OPERATOR');
+// ===== TASK 3: EXPORT STAFF SEPARATELY =====
+      // Use the already populated operators, otherStaff, and filter teachers from staff
+      const teachersFromStaff = staff.filter(x => x.role === 'TEACHER');
+      // Note: operators and otherStaff are already populated above
       const principals = staff.filter(x => x.role === 'PRINCIPAL');
       const wardens = staff.filter(x => x.role === 'WARDEN');
       const drivers = staff.filter(x => x.role === 'DRIVER');
@@ -614,7 +621,7 @@ console.log('[INVENTORY] FINAL staff:', staff.length);
       const receptionists = staff.filter(x => x.role === 'RECEPTIONIST');
 
 console.log('[INVENTORY] Role counts:', {
-        teachers: teachers.length,
+        teachers: teachersFromStaff.length,
         operators: operators.length,
         principals: principals.length,
         wardens: wardens.length,
@@ -628,7 +635,7 @@ console.log('[INVENTORY] Role counts:', {
       console.log('================ EXPORT RESPONSE ================');
       console.log('students:', students.length);
       console.log('staff:', staff.length);
-      console.log('teachers:', teachers.length);
+      console.log('teachers:', teachersFromStaff.length);
       console.log('operators:', operators.length);
       console.log('principals:', principals.length);
       console.log('wardens:', wardens.length);
@@ -640,7 +647,7 @@ console.log('[INVENTORY] Role counts:', {
 
       // Store separate arrays - will be added to response
       var staffByRole = {
-        teachers: teachers,
+        teachers: teachersFromStaff,
         operators: operators,
         principals: principals,
         wardens: wardens,
@@ -865,10 +872,18 @@ return res.status(HTTP_STATUS.OK).json({
         teacherClassMap, staffAttendanceMap,
         classSummary: classMap,
         
-        // ===== TASK 3: EXPORT STAFF SEPARATELY =====
-        // Staff by role
+        // ===== REQUIREMENT 6: Export staff separately =====
+        operators: operators,
+        teachers: staff.filter(s => s.role === 'TEACHER'),
+        otherStaff: otherStaff,
+        
+        // Summary counts
+        operatorsCount: operators.length,
+        teachersCount: staff.filter(s => s.role === 'TEACHER').length,
+        otherStaffCount: otherStaff.length,
+        
+        // Legacy staff by role (for backward compatibility)
         teachers: staffByRole ? staffByRole.teachers : [],
-        operators: staffByRole ? staffByRole.operators : [],
         principals: staffByRole ? staffByRole.principals : [],
         wardens: staffByRole ? staffByRole.wardens : [],
         drivers: staffByRole ? staffByRole.drivers : [],
@@ -884,7 +899,8 @@ return res.status(HTTP_STATUS.OK).json({
           inactiveStudents: students.filter(s => s.status !== 'ACTIVE').length,
           totalStaff:       staff.length,
           teachers:  staff.filter(s => s.role === 'TEACHER').length,
-          operators: staff.filter(s => s.role === 'OPERATOR').length,
+          operators: operators.length,
+          otherStaff: otherStaff.length,
           principals: staff.filter(s => s.role === 'PRINCIPAL').length,
           wardens: staff.filter(s => s.role === 'WARDEN').length,
           drivers: staff.filter(s => s.role === 'DRIVER').length,
@@ -910,17 +926,6 @@ return res.status(HTTP_STATUS.OK).json({
           inventoryItems: inventoryItems.length,
         }
       },
-// ===== TASK 6 & 7: RETURN DEBUG INFORMATION IN RESPONSE =====
-      // Staff arrays separately
-      operators: operators,
-      teachers: staff.filter(s => s.role === 'TEACHER'),
-      otherStaff: otherStaff,
-
-      // Summary counts
-      operatorsCount: operators.length,
-      teachersCount: staff.filter(s => s.role === 'TEACHER').length,
-      otherStaffCount: otherStaff.length,
-
       // ===== REQUIREMENT 10: FINAL DEBUG BLOCK =====
       debug: {
         userId: userId,
