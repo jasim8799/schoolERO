@@ -10,8 +10,17 @@ const ExcelJS = require('exceljs');
 
 const exportInventoryController = async (req, res) => {
   try {
-    const { role } = req.user;
+    const { role, userId } = req.user;
     const schoolIdStr = (req.user.schoolId || req.schoolId || '').toString();
+
+    // ===== DEBUG 1: Log JWT user info =====
+    console.log('================================================');
+    console.log('[DEBUG] INVENTORY EXPORT STARTED');
+    console.log('[DEBUG] req.user.userId:', userId);
+    console.log('[DEBUG] req.user.role:', role);
+    console.log('[DEBUG] req.user.schoolId (from JWT):', schoolIdStr);
+    console.log('[DEBUG] req.schoolId (fallback):', req.schoolId);
+    console.log('================================================');
 
     if (![USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR].includes(role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
@@ -35,6 +44,12 @@ const exportInventoryController = async (req, res) => {
         message: `Invalid school ID: ${schoolIdStr}`
       });
     }
+
+    // ===== DEBUG 2: Log converted schoolObjId =====
+    console.log('[DEBUG] schoolObjId (converted):', schoolObjId.toString());
+    console.log('[DEBUG] schoolObjId type:', typeof schoolObjId);
+    console.log('[DEBUG] schoolObjId instanceof ObjectId:', schoolObjId instanceof mongoose.Types.ObjectId);
+    console.log('================================================');
 
 // ── 1. Students ──────────────────────────────────────────────
     let students = [];
@@ -153,22 +168,25 @@ const exportInventoryController = async (req, res) => {
 // ── 1k. Users ──────────────────────────────────────────────
     let allUsers = [];
     try {
-      // ===== STEP 1: ADD DATABASE DEBUGGING BEFORE allUsers QUERY =====
+      // ===== STEP 2: DETAILED USER DEBUGGING =====
       console.log('================ USER DEBUG ================');
       
-      console.log('TOKEN SCHOOL ID:', schoolIdStr);
-      console.log('OBJECT SCHOOL ID:', schoolObjId.toString());
+      console.log('TOKEN SCHOOL ID (String):', schoolIdStr);
+      console.log('OBJECT SCHOOL ID (ObjectId):', schoolObjId.toString());
       
+      // Total users in system
       const totalUsers = await User.countDocuments({});
-      console.log('TOTAL USERS:', totalUsers);
+      console.log('TOTAL USERS IN SYSTEM:', totalUsers);
       
+      // Sample users without filter
       const sampleUsers = await User.find({})
       .select('name role schoolId status')
       .limit(20)
       .lean();
       
-      console.log('SAMPLE USERS:', JSON.stringify(sampleUsers, null, 2));
+      console.log('SAMPLE USERS (first 20):', JSON.stringify(sampleUsers, null, 2));
       
+      // Role distribution
       const roleStats = await User.aggregate([
       {
       $group: {
@@ -178,8 +196,9 @@ const exportInventoryController = async (req, res) => {
       }
       ]);
       
-      console.log('ROLE STATS:', roleStats);
+      console.log('ROLE STATS (all roles in system):', JSON.stringify(roleStats, null, 2));
       
+      // schoolId distribution
       const schoolStats = await User.aggregate([
       {
       $group: {
@@ -189,7 +208,48 @@ const exportInventoryController = async (req, res) => {
       }
       ]);
       
-      console.log('SCHOOL STATS:', JSON.stringify(schoolStats, null, 2));
+      console.log('SCHOOL STATS (by schoolId):', JSON.stringify(schoolStats, null, 2));
+      
+      // ===== TASK 2: QUERY AND LOG MATCHING USERS =====
+      console.log('---------- QUERY: User.find({ schoolId: schoolObjId }) ----------');
+      console.log('schoolId used in query:', schoolObjId.toString());
+      console.log('schoolId type:', typeof schoolObjId);
+      
+      // Try querying with ObjectId
+      const matchingUsers = await User.find({
+        schoolId: schoolObjId
+      })
+      .select('name role schoolId status')
+      .lean();
+
+      console.log('MATCHING USERS (ObjectId query):', matchingUsers.length);
+      if (matchingUsers.length > 0) {
+        console.log('MATCHING USERS DATA:', JSON.stringify(matchingUsers, null, 2));
+      }
+      
+      // Try querying with String (in case schoolId is stored as String)
+      const matchingUsersStr = await User.find({
+        schoolId: schoolIdStr
+      })
+      .select('name role schoolId status')
+      .lean();
+
+      console.log('MATCHING USERS (String query):', matchingUsersStr.length);
+      
+      // ===== TASK 4: LOG ROLE COUNTS =====
+      const roleCounts = await User.aggregate([
+        {
+          $match: { schoolId: schoolObjId }
+        },
+        {
+          $group: {
+            _id: '$role',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      console.log('ROLE COUNTS (for this schoolId):', JSON.stringify(roleCounts, null, 2));
       
       console.log('============================================');
       
@@ -271,15 +331,36 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] automations error:', e.message);
     }
 
-    // ── 2. Staff ─────────────────────────────────────────────────
+// ── 2. Staff ─────────────────────────────────────────────────
     let staff = [];
     try {
+      // ===== TASK 3: QUERY AND LOG MATCHING TEACHERS =====
+      console.log('================ TEACHER DEBUG ================');
+      console.log('---------- Query: Teacher.find({ schoolId: schoolObjId }) ----------');
+      console.log('schoolId used in query:', schoolObjId.toString());
+      console.log('schoolId type:', typeof schoolObjId);
+      
+      // Try querying with ObjectId
       const teacherDocs = await Teacher.find({
         schoolId: schoolObjId
       }).lean();
-console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
 
-// ===== STEP 2: VERIFY TEACHER MAPPING =====
+      console.log('MATCHING TEACHERS (ObjectId query):', teacherDocs.length);
+      
+      // Try querying with String (in case schoolId is stored as String)
+      const teacherDocsStr = await Teacher.find({
+        schoolId: schoolIdStr
+      }).lean();
+
+      console.log('MATCHING TEACHERS (String query):', teacherDocsStr.length);
+      
+      console.log('Teacher docs found:', teacherDocs.length);
+
+      if (teacherDocs.length > 0) {
+        console.log('TEACHER SAMPLES:', JSON.stringify(teacherDocs.slice(0, 5), null, 2));
+      }
+
+      // ===== STEP 2: VERIFY TEACHER MAPPING =====
       console.log('================ TEACHER DEBUG ================');
       console.log('Teacher docs found:', teacherDocs.length);
 
@@ -730,6 +811,17 @@ return res.status(HTTP_STATUS.OK).json({
           automations: automations.length,
           inventoryItems: inventoryItems.length,
         }
+      },
+      // ===== TASK 7: RETURN DEBUG INFORMATION IN RESPONSE =====
+      debug: {
+        userId: userId,
+        role: role,
+        schoolIdFromJWT: schoolIdStr,
+        schoolObjIdUsed: schoolObjId ? schoolObjId.toString() : null,
+        studentsCount: students.length,
+        usersCount: allUsers.length,
+        teachersCount: staff.filter(s => s.role === 'TEACHER').length,
+        staffCount: staff.length,
       },
       exportedAt: new Date().toISOString(),
     });
