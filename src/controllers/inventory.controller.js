@@ -150,9 +150,49 @@ const exportInventoryController = async (req, res) => {
       console.log('[INVENTORY] PTM skip:', e.message);
     }
 
-    // ── 1k. Users ──────────────────────────────────────────────
+// ── 1k. Users ──────────────────────────────────────────────
     let allUsers = [];
     try {
+      // ===== STEP 1: ADD DATABASE DEBUGGING BEFORE allUsers QUERY =====
+      console.log('================ USER DEBUG ================');
+      
+      console.log('TOKEN SCHOOL ID:', schoolIdStr);
+      console.log('OBJECT SCHOOL ID:', schoolObjId.toString());
+      
+      const totalUsers = await User.countDocuments({});
+      console.log('TOTAL USERS:', totalUsers);
+      
+      const sampleUsers = await User.find({})
+      .select('name role schoolId status')
+      .limit(20)
+      .lean();
+      
+      console.log('SAMPLE USERS:', JSON.stringify(sampleUsers, null, 2));
+      
+      const roleStats = await User.aggregate([
+      {
+      $group: {
+        _id: '$role',
+        count: { $sum: 1 }
+      }
+      }
+      ]);
+      
+      console.log('ROLE STATS:', roleStats);
+      
+      const schoolStats = await User.aggregate([
+      {
+      $group: {
+        _id: '$schoolId',
+        count: { $sum: 1 }
+      }
+      }
+      ]);
+      
+      console.log('SCHOOL STATS:', JSON.stringify(schoolStats, null, 2));
+      
+      console.log('============================================');
+      
       allUsers = await User.find({ schoolId: schoolObjId })
         .select('-password -documents')
         .lean();
@@ -317,50 +357,7 @@ console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
         });
       });
 
-      console.log('[INVENTORY] teacher staff built:', staff.length);
-
-// ===== STEP 1: DATABASE DEBUG =====
-    console.log('================ USER DEBUG ================');
-
-    console.log('TOKEN SCHOOL ID:', schoolIdStr);
-    console.log('OBJECT SCHOOL ID:', schoolObjId.toString());
-
-    const totalUsers = await User.countDocuments({});
-    console.log('TOTAL USERS:', totalUsers);
-
-    const sampleUsers = await User.find({})
-    .select('name role schoolId status')
-    .limit(20)
-    .lean();
-
-    console.log('SAMPLE USERS:');
-    console.log(JSON.stringify(sampleUsers, null, 2));
-
-    const roleStats = await User.aggregate([
-    {
-    $group: {
-      _id: '$role',
-      count: { $sum: 1 }
-    }
-    }
-    ]);
-
-    console.log('ROLE STATS:');
-    console.log(roleStats);
-
-    const schoolStats = await User.aggregate([
-    {
-    $group: {
-      _id: '$schoolId',
-      count: { $sum: 1 }
-    }
-    }
-    ]);
-
-    console.log('SCHOOL STATS:');
-    console.log(JSON.stringify(schoolStats, null, 2));
-
-    console.log('============================================');
+console.log('[INVENTORY] teacher staff built:', staff.length);
 
 // ===== TASK 2: VERIFY STAFF QUERY =====
       // Get ALL staff roles: TEACHER, OPERATOR, PRINCIPAL, WARDEN, DRIVER, ACCOUNTANT, LIBRARIAN, RECEPTIONIST
