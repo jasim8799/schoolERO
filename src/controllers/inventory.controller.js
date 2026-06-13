@@ -8,6 +8,19 @@ const Inventory = require('../models/Inventory.js');
 const mongoose  = require('mongoose');
 const ExcelJS = require('exceljs');
 
+// Other staff designations (must match StaffManagementScreen exactly)
+const _otherStaffDesignations = [
+  'Driver',
+  'Cleaner',
+  'Warden',
+  'Peon',
+  'Guard',
+  'Cook',
+  'Accountant',
+  'Librarian',
+  'Other',
+];
+
 const exportInventoryController = async (req, res) => {
   try {
     const { role, userId } = req.user;
@@ -440,59 +453,144 @@ const exportInventoryController = async (req, res) => {
 
 console.log('[INVENTORY] teacher staff built:', staff.length);
 
-// ===== TASK 2: VERIFY STAFF QUERY =====
-      // Get ALL staff roles: TEACHER, OPERATOR, PRINCIPAL, WARDEN, DRIVER, ACCOUNTANT, LIBRARIAN, RECEPTIONIST
-      const otherStaff = await User.find({
-        schoolId: schoolObjId,
-        isDeleted: { $ne: true },
-        role: {
-          $in: [
-            'OPERATOR',
-            'PRINCIPAL',
-            'WARDEN',
-            'DRIVER',
-            'ACCOUNTANT',
-            'LIBRARIAN',
-            'RECEPTIONIST'
-          ]
-        }
-      })
-      .select('-password -documents')
-      .lean();
+// ===== TASK 2: FIXED STAFF QUERY =====
+// Fix: Use EXACTLY the same logic as StaffManagementScreen
+// 1. Fetch OPERATOR role users (not role filter like before!)
+// 2. Split by designation field to get operators vs other staff
 
-      console.log('[INVENTORY] [STAFF QUERY] role: { $in: ["OPERATOR", "PRINCIPAL", "WARDEN", "DRIVER", "ACCOUNTANT", "LIBRARIAN", "RECEPTIONIST"] }');
-      console.log('[INVENTORY] otherStaff count:', otherStaff.length);
+// First try with ObjectId, then fallback to String (support both formats)
+let operatorUsers = await User.find({
+  schoolId: schoolObjId,
+  role: 'OPERATOR',
+  isDeleted: { $ne: true }
+})
+.select('-password -documents')
+.lean();
 
-      otherStaff.forEach(u => {
-        staff.push({
-          _id:        u._id.toString(),
-          _teacherId: null,
-          name:       u.name || '',
-          email:      u.email || '',
-          mobile:     u.mobile || '',
-          whatsappNumber:  u.whatsappNumber  || '',
-          gender:          u.gender          || '',
-          dateOfBirth:     u.dateOfBirth     || null,
-          bloodGroup:      u.bloodGroup      || '',
-          address:         u.address         || '',
-          city:            u.city            || '',
-          state:           u.state           || '',
-          pincode:         u.pincode         || '',
-          employeeId:      u.employeeId      || '',
-          designation:     u.designation     || '',
-          department:      u.department      || '',
-          qualification:   u.qualification   || '',
-          experienceYears: u.experienceYears || 0,
-          monthlySalary:   u.monthlySalary   || 0,
-          subjects:        u.subjects        || [],
-          emergencyContactName:     u.emergencyContactName     || '',
-          emergencyContactRelation: u.emergencyContactRelation || '',
-          emergencyContactPhone:    u.emergencyContactPhone    || '',
-          dateOfJoining: u.dateOfJoining || null,
-          status:        u.status || 'active',
-          role:          u.role   || '',
-        });
-      });
+// If no results with ObjectId, try with string schoolId
+if (operatorUsers.length === 0) {
+  operatorUsers = await User.find({
+    schoolId: schoolIdStr,
+    role: 'OPERATOR',
+    isDeleted: { $ne: true }
+  })
+  .select('-password -documents')
+  .lean();
+}
+
+console.log('[INVENTORY] [STAFF QUERY] role: OPERATOR');
+console.log('[INVENTORY] operatorUsers count:', operatorUsers.length);
+
+// Split operators by designation (exactly like StaffManagementScreen)
+const operators = [];
+const otherStaff = [];
+
+operatorUsers.forEach(u => {
+  const designation = (u.designation || '').toString().trim();
+  if (_otherStaffDesignations.includes(designation)) {
+    otherStaff.push({
+      ...u,
+      role: 'OPERATOR',
+      category: 'OTHER_STAFF'
+    });
+  } else {
+    operators.push({
+      ...u,
+      role: 'OPERATOR',
+      category: 'OPERATOR'
+    });
+  }
+});
+
+console.log('[INVENTORY] operators (non-designation roles):', operators.length);
+console.log('[INVENTORY] otherStaff (designation roles):', otherStaff.length);
+
+// ===== REQUIREMENT 5 & 9: ADD DEBUG LOGS =====
+console.log('EXPORT SCHOOL ID:', schoolIdStr);
+console.log('OPERATORS COUNT:', operators.length);
+console.log('TEACHERS COUNT:', staff.filter(s => s.role === 'TEACHER').length);
+console.log('OTHER STAFF COUNT:', otherStaff.length);
+console.log('SAMPLE OPERATOR:', operators[0] ? JSON.stringify(operators[0]) : 'none');
+console.log('SAMPLE TEACHER:', staff.filter(s => s.role === 'TEACHER')[0] ? JSON.stringify(staff.filter(s => s.role === 'TEACHER')[0]) : 'none');
+console.log('SAMPLE OTHER STAFF:', otherStaff[0] ? JSON.stringify(otherStaff[0]) : 'none');
+
+// ===== REQUIREMENT 9: Role distribution =====
+const roleDistribution = await User.aggregate([
+  {
+    $match: { schoolId: schoolObjId }
+  },
+  {
+    $group: {
+      _id: "$role",
+      count: { $sum: 1 }
+    }
+  }
+]);
+console.log('ROLE DISTRIBUTION:', JSON.stringify(roleDistribution));
+
+// Add to staff array - operators first
+operators.forEach(u => {
+  staff.push({
+    _id: u._id.toString(),
+    _teacherId: null,
+    name: u.name || '',
+    email: u.email || '',
+    mobile: u.mobile || '',
+    whatsappNumber: u.whatsappNumber || '',
+    gender: u.gender || '',
+    dateOfBirth: u.dateOfBirth || null,
+    bloodGroup: u.bloodGroup || '',
+    address: u.address || '',
+    city: u.city || '',
+    state: u.state || '',
+    pincode: u.pincode || '',
+    employeeId: u.employeeId || '',
+    designation: u.designation || '',
+    department: u.department || '',
+    qualification: u.qualification || '',
+    experienceYears: u.experienceYears || 0,
+    monthlySalary: u.monthlySalary || 0,
+    subjects: u.subjects || [],
+    emergencyContactName: u.emergencyContactName || '',
+    emergencyContactRelation: u.emergencyContactRelation || '',
+    emergencyContactPhone: u.emergencyContactPhone || '',
+    dateOfJoining: u.dateOfJoining || null,
+    status: u.status || 'active',
+    role: 'OPERATOR',
+  });
+});
+
+// Add otherStaff (support staff with designations)
+otherStaff.forEach(u => {
+  staff.push({
+    _id: u._id.toString(),
+    _teacherId: null,
+    name: u.name || '',
+    email: u.email || '',
+    mobile: u.mobile || '',
+    whatsappNumber: u.whatsappNumber || '',
+    gender: u.gender || '',
+    dateOfBirth: u.dateOfBirth || null,
+    bloodGroup: u.bloodGroup || '',
+    address: u.address || '',
+    city: u.city || '',
+    state: u.state || '',
+    pincode: u.pincode || '',
+    employeeId: u.employeeId || '',
+    designation: u.designation || '',
+    department: u.department || '',
+    qualification: u.qualification || '',
+    experienceYears: u.experienceYears || 0,
+    monthlySalary: u.monthlySalary || 0,
+    subjects: u.subjects || [],
+    emergencyContactName: u.emergencyContactName || '',
+    emergencyContactRelation: u.emergencyContactRelation || '',
+    emergencyContactPhone: u.emergencyContactPhone || '',
+    dateOfJoining: u.dateOfJoining || null,
+    status: u.status || 'active',
+    role: 'OPERATOR',
+  });
+});
 
 console.log('[INVENTORY] FINAL staff:', staff.length);
 
@@ -812,7 +910,18 @@ return res.status(HTTP_STATUS.OK).json({
           inventoryItems: inventoryItems.length,
         }
       },
-      // ===== TASK 7: RETURN DEBUG INFORMATION IN RESPONSE =====
+// ===== TASK 6 & 7: RETURN DEBUG INFORMATION IN RESPONSE =====
+      // Staff arrays separately
+      operators: operators,
+      teachers: staff.filter(s => s.role === 'TEACHER'),
+      otherStaff: otherStaff,
+
+      // Summary counts
+      operatorsCount: operators.length,
+      teachersCount: staff.filter(s => s.role === 'TEACHER').length,
+      otherStaffCount: otherStaff.length,
+
+      // ===== REQUIREMENT 10: FINAL DEBUG BLOCK =====
       debug: {
         userId: userId,
         role: role,
@@ -822,6 +931,10 @@ return res.status(HTTP_STATUS.OK).json({
         usersCount: allUsers.length,
         teachersCount: staff.filter(s => s.role === 'TEACHER').length,
         staffCount: staff.length,
+        operatorsCount: operators.length,
+        otherStaffCount: otherStaff.length,
+        totalUsersMatched: allUsers.length,
+        roleDistribution: roleDistribution,
       },
       exportedAt: new Date().toISOString(),
     });
