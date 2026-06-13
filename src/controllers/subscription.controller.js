@@ -534,11 +534,7 @@ const updatePlan = async (req, res) => {
       schoolId: school._id, plan: plan.toUpperCase(), durationMonths: 1,
       createdBy: req.user._id, billingType: isDowngrade ? 'DOWNGRADE' : 'UPGRADE', previousPlan,
     }).catch(() => {});
-    await auditLog({
-      action:      isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_UPGRADED',
-      userId:      req.user._id, role: req.user.role,
-      entityType:  'SCHOOL', entityId: school._id,
-    // PHASE 6 FIX: PLAN_UPGRADED/PLAN_DOWNGRADED - Complete context
+// PHASE 6 FIX: PLAN_UPGRADED/PLAN_DOWNGRADED - Complete context
     const clientIp_PLAN = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress;
     const userAgent_PLAN = req.headers['user-agent'];
     await auditLog({
@@ -558,8 +554,7 @@ const updatePlan = async (req, res) => {
       ipAddress: clientIp_PLAN,
       userAgent: userAgent_PLAN
     });
-    console.log('AUDIT PAYLOAD', { action: isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_UPGRADED', schoolId: school._id, schoolName: school.name, previousPlan: previousPlan, newPlan: plan });
-    });
+console.log('AUDIT PAYLOAD', { action: isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_UPGRADED', schoolId: school._id, schoolName: school.name, previousPlan: previousPlan, newPlan: plan });
     await _invalidateSubscriptionCaches();
     global.io?.of('/subscriptions').emit('subscription:planChanged', {
       schoolId: school._id, schoolName: school.name, previousPlan, newPlan: plan,
