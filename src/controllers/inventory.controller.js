@@ -321,37 +321,45 @@ console.log('[INVENTORY] Teacher docs:', teacherDocs.length);
 
 // ===== STEP 1: DATABASE DEBUG =====
     console.log('================ USER DEBUG ================');
-    console.log('schoolObjId:', schoolObjId);
-    console.log('schoolObjId string:', schoolObjId.toString());
 
-    const totalUsers = await User.countDocuments();
+    console.log('TOKEN SCHOOL ID:', schoolIdStr);
+    console.log('OBJECT SCHOOL ID:', schoolObjId.toString());
+
+    const totalUsers = await User.countDocuments({});
     console.log('TOTAL USERS:', totalUsers);
 
-    const schoolUsers = await User.find({
-      schoolId: schoolObjId
-    })
+    const sampleUsers = await User.find({})
     .select('name role schoolId status')
+    .limit(20)
     .lean();
 
-    console.log('USERS FOR SCHOOL:', schoolUsers.length);
-
-    if (schoolUsers.length > 0) {
-      schoolUsers.slice(0, 10).forEach(u => {
-        console.log({
-          name: u.name,
-          role: u.role,
-          schoolId: u.schoolId?.toString(),
-          status: u.status
-        });
-      });
-    }
+    console.log('SAMPLE USERS:');
+    console.log(JSON.stringify(sampleUsers, null, 2));
 
     const roleStats = await User.aggregate([
-      { $match: { schoolId: schoolObjId } },
-      { $group: { _id: '$role', count: { $sum: 1 } } }
+    {
+    $group: {
+      _id: '$role',
+      count: { $sum: 1 }
+    }
+    }
     ]);
 
-    console.log('ROLE COUNTS:', roleStats);
+    console.log('ROLE STATS:');
+    console.log(roleStats);
+
+    const schoolStats = await User.aggregate([
+    {
+    $group: {
+      _id: '$schoolId',
+      count: { $sum: 1 }
+    }
+    }
+    ]);
+
+    console.log('SCHOOL STATS:');
+    console.log(JSON.stringify(schoolStats, null, 2));
+
     console.log('============================================');
 
 // ===== TASK 2: VERIFY STAFF QUERY =====
