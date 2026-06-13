@@ -645,8 +645,8 @@ console.log('[INVENTORY] Role counts:', {
       console.log('receptionists:', receptionists.length);
       console.log('=================================================');
 
-      // Store separate arrays - will be added to response
-      var staffByRole = {
+// Store separate arrays - will be added to response
+      staffByRole = {
         teachers: teachersFromStaff,
         operators: operators,
         principals: principals,
