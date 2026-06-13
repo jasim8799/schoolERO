@@ -511,6 +511,174 @@ const getSystemAnnouncements = async (req, res) => {
   }
 };
 
+/**
+ * Get all system settings
+ */
+const getSystemSettings = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied. Super Admin only.' });
+    }
+
+    let settings = await SystemSettings.findOne();
+    if (!settings) {
+      settings = await SystemSettings.create({});
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: {
+        _id: settings._id,
+        maintenanceMode: settings.maintenanceMode,
+        maintenanceMessage: settings.maintenanceMessage,
+        registrationOpen: settings.registrationOpen,
+        apiEnabled: settings.apiEnabled,
+        emailNotifications: settings.emailNotifications,
+        smsNotifications: settings.smsNotifications,
+        platformName: settings.platformName,
+        supportEmail: settings.supportEmail,
+        supportPhone: settings.supportPhone,
+        twoFactorEnabled: settings.twoFactorEnabled,
+        lastUpdatedBy: settings.lastUpdatedBy,
+        createdAt: settings.createdAt,
+        updatedAt: settings.updatedAt
+      }
+    });
+  } catch (error) {
+    logger.error('Get system settings error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error fetching system settings',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Update system settings
+ */
+const updateSystemSettings = async (req, res) => {
+  try {
+    if (req.user.role !== USER_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ success: false, message: 'Access denied. Super Admin only.' });
+    }
+
+    const {
+      maintenanceMode,
+      maintenanceMessage,
+      registrationOpen,
+      apiEnabled,
+      emailNotifications,
+      smsNotifications,
+      platformName,
+      supportEmail,
+      supportPhone,
+      twoFactorEnabled
+    } = req.body;
+
+    let settings = await SystemSettings.findOne();
+    if (!settings) {
+      settings = new SystemSettings();
+    }
+
+    // Track changes for audit log
+    const changes = {};
+
+    if (maintenanceMode !== undefined && maintenanceMode !== settings.maintenanceMode) {
+      changes.maintenanceMode = { old: settings.maintenanceMode, new: maintenanceMode };
+      settings.maintenanceMode = maintenanceMode;
+    }
+    if (maintenanceMessage !== undefined && maintenanceMessage !== settings.maintenanceMessage) {
+      changes.maintenanceMessage = { old: settings.maintenanceMessage, new: maintenanceMessage };
+      settings.maintenanceMessage = maintenanceMessage;
+    }
+    if (registrationOpen !== undefined && registrationOpen !== settings.registrationOpen) {
+      changes.registrationOpen = { old: settings.registrationOpen, new: registrationOpen };
+      settings.registrationOpen = registrationOpen;
+    }
+    if (apiEnabled !== undefined && apiEnabled !== settings.apiEnabled) {
+      changes.apiEnabled = { old: settings.apiEnabled, new: apiEnabled };
+      settings.apiEnabled = apiEnabled;
+    }
+    if (emailNotifications !== undefined && emailNotifications !== settings.emailNotifications) {
+      changes.emailNotifications = { old: settings.emailNotifications, new: emailNotifications };
+      settings.emailNotifications = emailNotifications;
+    }
+    if (smsNotifications !== undefined && smsNotifications !== settings.smsNotifications) {
+      changes.smsNotifications = { old: settings.smsNotifications, new: smsNotifications };
+      settings.smsNotifications = smsNotifications;
+    }
+    if (platformName !== undefined && platformName !== settings.platformName) {
+      changes.platformName = { old: settings.platformName, new: platformName };
+      settings.platformName = platformName;
+    }
+    if (supportEmail !== undefined && supportEmail !== settings.supportEmail) {
+      changes.supportEmail = { old: settings.supportEmail, new: supportEmail };
+      settings.supportEmail = supportEmail;
+    }
+    if (supportPhone !== undefined && supportPhone !== settings.supportPhone) {
+      changes.supportPhone = { old: settings.supportPhone, new: supportPhone };
+      settings.supportPhone = supportPhone;
+    }
+    if (twoFactorEnabled !== undefined && twoFactorEnabled !== settings.twoFactorEnabled) {
+      changes.twoFactorEnabled = { old: settings.twoFactorEnabled, new: twoFactorEnabled };
+      settings.twoFactorEnabled = twoFactorEnabled;
+    }
+
+    settings.lastUpdatedBy = req.user.userId;
+    await settings.save();
+
+    // Log any settings changes
+    if (Object.keys(changes).length > 0) {
+      await auditLog({
+        action: 'SETTINGS_UPDATED',
+        userId: req.user.userId,
+        role: req.user.role,
+        entityType: 'SystemSettings',
+        entityId: settings._id,
+        description: 'System settings updated',
+        details: { changes, updatedBy: req.user.userId },
+        req
+      });
+    }
+
+    // Emit socket event for maintenance mode changes
+    if (changes.maintenanceMode) {
+      global.io?.emit('system:maintenance', { 
+        enabled: settings.maintenanceMode, 
+        reason: settings.maintenanceMessage 
+      });
+    }
+
+    logger.success(`System settings updated by ${req.user.role}`);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Settings saved successfully',
+      data: {
+        maintenanceMode: settings.maintenanceMode,
+        maintenanceMessage: settings.maintenanceMessage,
+        registrationOpen: settings.registrationOpen,
+        apiEnabled: settings.apiEnabled,
+        emailNotifications: settings.emailNotifications,
+        smsNotifications: settings.smsNotifications,
+        platformName: settings.platformName,
+        supportEmail: settings.supportEmail,
+        supportPhone: settings.supportPhone,
+        twoFactorEnabled: settings.twoFactorEnabled,
+        updatedAt: settings.updatedAt
+      }
+    });
+  } catch (error) {
+    logger.error('Update system settings error:', error.message);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error updating system settings',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getSystemMetrics,
   getSystemHealth,
@@ -518,5 +686,7 @@ module.exports = {
   getMaintenanceMode,
   toggleMaintenanceMode,
   createSystemAnnouncement,
-  getSystemAnnouncements
+  getSystemAnnouncements,
+  getSystemSettings,
+  updateSystemSettings
 };

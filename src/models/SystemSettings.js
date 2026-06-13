@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const systemSettingsSchema = new mongoose.Schema({
+  // Platform Settings
   maintenanceMode: {
     type: Boolean,
     default: false
@@ -9,6 +10,46 @@ const systemSettingsSchema = new mongoose.Schema({
     type: String,
     default: 'System is currently under maintenance. Please try again later.'
   },
+  registrationOpen: {
+    type: Boolean,
+    default: true
+  },
+  apiEnabled: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Notification Settings
+  emailNotifications: {
+    type: Boolean,
+    default: true
+  },
+  smsNotifications: {
+    type: Boolean,
+    default: false
+  },
+  
+  // Platform Info
+  platformName: {
+    type: String,
+    default: 'School ERP'
+  },
+  supportEmail: {
+    type: String,
+    default: ''
+  },
+  supportPhone: {
+    type: String,
+    default: ''
+  },
+  
+  // Security Settings
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
+  
+  // Last updated tracking
   lastUpdatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
