@@ -36,7 +36,7 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    // ── 1. Students ──────────────────────────────────────────────
+// ── 1. Students ──────────────────────────────────────────────
     let students = [];
     try {
       students = await Student.find({ schoolId: schoolObjId })
@@ -49,9 +49,186 @@ const exportInventoryController = async (req, res) => {
         })
         .populate('userId', 'mobile email')
         .lean();
-      console.log('[INVENTORY] students:', students.length);
+      console.log('[INVENTORY] Students:', students.length);
     } catch (e) {
       console.error('[INVENTORY] student error:', e.message);
+    }
+
+    // ── 1b. Parents ──────────────────────────────────────────────
+    let parents = [];
+    try {
+      parents = students.filter(s => s.parentId).map(s => ({
+        studentName: s.name || '',
+        studentId: s._id?.toString() || '',
+        parentName: s.parentId?.userId?.name || '',
+        parentMobile: s.parentId?.userId?.mobile || '',
+        parentEmail: s.parentId?.userId?.email || '',
+        relation: s.parentId?.relation || 'Father'
+      }));
+      console.log('[INVENTORY] Parents:', parents.length);
+    } catch (e) {
+      console.error('[INVENTORY] parents error:', e.message);
+    }
+
+    // ── 1c. Classes ──────────────────────────────────────────────
+    let classes = [];
+    try {
+      const Class = mongoose.model('Class');
+      classes = await Class.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Classes:', classes.length);
+    } catch (e) {
+      console.error('[INVENTORY] classes error:', e.message);
+    }
+
+    // ── 1d. Sections ──────────────────────────────────────────────
+    let sections = [];
+    try {
+      const Section = mongoose.model('Section');
+      sections = await Section.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Sections:', sections.length);
+    } catch (e) {
+      console.error('[INVENTORY] sections error:', e.message);
+    }
+
+    // ── 1e. Subjects ──────────────────────────────────────────────
+    let subjects = [];
+    try {
+      const Subject = mongoose.model('Subject');
+      subjects = await Subject.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Subjects:', subjects.length);
+    } catch (e) {
+      console.error('[INVENTORY] subjects error:', e.message);
+    }
+
+    // ── 1f. Exams ─────────────────────────��────────────────────
+    let exams = [];
+    try {
+      const Exam = mongoose.model('Exam');
+      exams = await Exam.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Exams:', exams.length);
+    } catch (e) {
+      console.error('[INVENTORY] exams error:', e.message);
+    }
+
+    // ── 1g. Results ──────────────────────────────────────────────
+    let results = [];
+    try {
+      const Result = mongoose.model('Result');
+      results = await Result.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Results:', results.length);
+    } catch (e) {
+      console.error('[INVENTORY] results error:', e.message);
+    }
+
+    // ── 1h. Homework ──────────────────────────────────────────────
+    let homework = [];
+    try {
+      const Homework = mongoose.model('Homework');
+      homework = await Homework.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Homework:', homework.length);
+    } catch (e) {
+      console.error('[INVENTORY] homework error:', e.message);
+    }
+
+    // ── 1i. Notices ──────────────────────────────────────────────
+    let notices = [];
+    try {
+      const Notice = mongoose.model('Notice');
+      notices = await Notice.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Notices:', notices.length);
+    } catch (e) {
+      console.error('[INVENTORY] notices error:', e.message);
+    }
+
+    // ── 1j. PTM ──────────────────────────────────────────────
+    let ptm = [];
+    try {
+      const PTM = mongoose.model('PTM');
+      ptm = await PTM.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] PTM:', ptm.length);
+    } catch (e) {
+      console.log('[INVENTORY] PTM skip:', e.message);
+    }
+
+    // ── 1k. Users ──────────────────────────────────────────────
+    let allUsers = [];
+    try {
+      allUsers = await User.find({ schoolId: schoolObjId })
+        .select('-password -documents')
+        .lean();
+      console.log('[INVENTORY] Users:', allUsers.length);
+    } catch (e) {
+      console.error('[INVENTORY] users error:', e.message);
+    }
+
+    // ── 1l. Hostels ──────────────────────────────────────────────
+    let hostels = [];
+    try {
+      const Hostel = mongoose.model('Hostel');
+      hostels = await Hostel.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Hostels:', hostels.length);
+    } catch (e) {
+      console.error('[INVENTORY] hostels error:', e.message);
+    }
+
+    // ── 1m. Rooms ──────────────────────────────────────────────
+    let rooms = [];
+    try {
+      const Room = mongoose.model('Room');
+      rooms = await Room.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Rooms:', rooms.length);
+    } catch (e) {
+      console.error('[INVENTORY] rooms error:', e.message);
+    }
+
+    // ── 1n. Vehicles ──────────────────────────────────────────────
+    let vehicles = [];
+    try {
+      const Vehicle = mongoose.model('Vehicle');
+      vehicles = await Vehicle.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Vehicles:', vehicles.length);
+    } catch (e) {
+      console.error('[INVENTORY] vehicles error:', e.message);
+    }
+
+    // ── 1o. Routes ──────────────────────────────────────────────
+    let routes = [];
+    try {
+      const Route = mongoose.model('Route');
+      routes = await Route.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Routes:', routes.length);
+    } catch (e) {
+      console.error('[INVENTORY] routes error:', e.message);
+    }
+
+    // ── 1p. Expenses ──────────────────────────────────────────────
+    let expenses = [];
+    try {
+      const Expense = mongoose.model('Expense');
+      expenses = await Expense.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Expenses:', expenses.length);
+    } catch (e) {
+      console.error('[INVENTORY] expenses error:', e.message);
+    }
+
+    // ── 1q. Salary ──────────────────────────────────────────────
+    let salary = [];
+    try {
+      const Salary = mongoose.model('Salary');
+      salary = await Salary.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Salary:', salary.length);
+    } catch (e) {
+      console.log('[INVENTORY] Salary skip:', e.message);
+    }
+
+    // ── 1r. Automations ──────────────────────────────────────────────
+    let automations = [];
+    try {
+      const AutomationRule = mongoose.model('AutomationRule');
+      automations = await AutomationRule.find({ schoolId: schoolObjId }).lean();
+      console.log('[INVENTORY] Automations:', automations.length);
+    } catch (e) {
+      console.error('[INVENTORY] automations error:', e.message);
     }
 
     // ── 2. Staff ─────────────────────────────────────────────────
@@ -368,21 +545,49 @@ const exportInventoryController = async (req, res) => {
       `${staff.length} staff, ${inventoryItems.length} items`
     );
 
-    return res.status(HTTP_STATUS.OK).json({
+return res.status(HTTP_STATUS.OK).json({
       success: true,
       data: {
+        // Core datasets
         students, staff, inventoryItems,
+        
+        // Extended datasets - ALL modules
+        parents, classes, sections, subjects,
+        exams, results, homework, notices, ptm,
+        allUsers, hostels, rooms, vehicles, routes,
+        expenses, salary, automations,
+        
+        // Maps and summaries
         billMap, hostelMap, hostelFeeMap,
         transportMap, transportFeeMap,
         teacherClassMap, staffAttendanceMap,
         classSummary: classMap,
+        
+        // Summary
         summary: {
           totalStudents:    students.length,
+          parents: parents.length,
           activeStudents:   students.filter(s => s.status === 'ACTIVE').length,
           inactiveStudents: students.filter(s => s.status !== 'ACTIVE').length,
           totalStaff:       staff.length,
           teachers:  staff.filter(s => s.role === 'TEACHER').length,
           operators: staff.filter(s => s.role === 'OPERATOR').length,
+          classes: classes.length,
+          sections: sections.length,
+          subjects: subjects.length,
+          exams: exams.length,
+          results: results.length,
+          homework: homework.length,
+          notices: notices.length,
+          ptm: ptm.length,
+          users: allUsers.length,
+          hostels: hostels.length,
+          rooms: rooms.length,
+          vehicles: vehicles.length,
+          routes: routes.length,
+          expenses: expenses.length,
+          salary: salary.length,
+          automations: automations.length,
           inventoryItems: inventoryItems.length,
         }
       },
