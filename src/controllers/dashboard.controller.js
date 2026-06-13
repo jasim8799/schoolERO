@@ -403,6 +403,7 @@ const getSuperAdminDashboard = async (req, res) => {
 
     const PLAN_MRR = { BASIC: 9000, STANDARD: 18000, PREMIUM: 32000, ENTERPRISE: 58000 };
 
+// Count users by role
     const [
       totalSchools,
       activeSchools,
@@ -413,6 +414,15 @@ const getSuperAdminDashboard = async (req, res) => {
       newSchoolsThisMonth,
       failedLogins,
       suspiciousActivityCount,
+      totalSuperAdmins,
+      totalPrincipals,
+      totalOperators,
+      totalParents,
+      // Staff roles via designation field
+      totalAccountants,
+      totalReceptionists,
+      totalSchoolAdmins,
+      totalStaff,
     ] = await Promise.all([
       School.countDocuments({ isDeleted: { $ne: true } }),
       School.countDocuments({
@@ -426,7 +436,36 @@ const getSuperAdminDashboard = async (req, res) => {
       School.countDocuments({ isDeleted: { $ne: true }, createdAt: { $gte: monthAgo } }),
       AuditLog.countDocuments({ action: { $in: ['LOGIN_FAILED', 'INVALID_TOKEN', 'UNAUTHORIZED_ACCESS'] }, createdAt: { $gte: dayAgo } }),
       AuditLog.countDocuments({ severity: { $in: ['WARNING', 'CRITICAL', 'ERROR'] }, createdAt: { $gte: dayAgo } }),
+      // Count by role
+      User.countDocuments({ role: USER_ROLES.SUPER_ADMIN, isDeleted: { $ne: true } }),
+      User.countDocuments({ role: USER_ROLES.PRINCIPAL, isDeleted: { $ne: true } }),
+      User.countDocuments({ role: USER_ROLES.OPERATOR, isDeleted: { $ne: true } }),
+      User.countDocuments({ role: USER_ROLES.PARENT, isDeleted: { $ne: true } }),
+      // Count by designation field for staff roles
+      User.countDocuments({ designation: { $regex: /^accountant$/i }, isDeleted: { $ne: true } }),
+      User.countDocuments({ designation: { $regex: /^receptionist$/i }, isDeleted: { $ne: true } }),
+      User.countDocuments({ designation: { $regex: /^school.?admin$/i }, isDeleted: { $ne: true } }),
+      User.countDocuments({ 
+        designation: { $exists: true, $ne: '' }, 
+        role: { $in: [USER_ROLES.TEACHER, USER_ROLES.OPERATOR] },
+        isDeleted: { $ne: true },
+        designation: { $nin: ['Teacher', 'Operator', 'Principal', 'accountant', 'receptionist', 'school admin', 'School Admin'] }
+      }).catch(() => 0),
     ]);
+
+    // Debug log for user role counts
+    console.log('DASHBOARD COUNTS', {
+      totalUsers,
+      totalSuperAdmins,
+      totalPrincipals,
+      totalOperators,
+      totalTeachers,
+      totalParents,
+      totalAccountants,
+      totalReceptionists,
+      totalSchoolAdmins,
+      totalStaff
+    });
 
     const allSchoolsForSub = await School.find({ isDeleted: { $ne: true } })
       .select('plan subscription.endDate subscription.gracePeriodDays subscription.isExpired')
@@ -643,12 +682,22 @@ const getSuperAdminDashboard = async (req, res) => {
       });
     }
 
-    const data = {
+const data = {
       totalSchools,
       activeSchools,
       totalUsers,
       totalStudents,
       totalTeachers,
+      // New user role counts
+      totalSuperAdmins,
+      totalPrincipals,
+      totalOperators,
+      totalParents,
+      totalAccountants,
+      totalReceptionists,
+      totalSchoolAdmins,
+      totalStaff,
+      // End new user role counts
       activeSessions: liveSessionCount,
       recentLogs: recentLogCount,
       newSchoolsThisMonth,
