@@ -309,16 +309,27 @@ const login = async (req, res) => {
 
     _postLoginActions(user, req, token).catch((e) => console.error('[postLogin]', e.message));
 
-    // Log successful login
+// Log successful login
+    const userSchoolName = user.schoolId?.name || null;
+    const userSchoolId = user.schoolId?._id || user.schoolId || null;
     auditLog({
       action: 'LOGIN',
+      category: 'AUTH',
       userId: user._id,
+      userName: user.name,
       role: user.role,
       entityType: 'LOGIN_SESSION',
       entityId: user._id,
-      description: `${user.name} (${user.role}) logged in`,
-      schoolId: user.schoolId?._id || null,
-      details: { role: user.role, email: user.email || user.mobile },
+      entityName: user.name,
+      description: `${user.name} logged in successfully`,
+      schoolId: userSchoolId,
+      schoolName: userSchoolName,
+      details: { 
+        role: user.role, 
+        email: user.email || user.mobile,
+        loginMethod: 'password'
+      },
+      req: req,
       ipAddress: clientIp,
     }).catch(() => {});
 

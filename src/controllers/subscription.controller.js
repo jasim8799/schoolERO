@@ -333,12 +333,27 @@ const renewSubscription = async (req, res) => {
       console.error('[renewSubscription] Billing record creation failed:', billingErr.message);
     }
 
+// PHASE 6 FIX: SUBSCRIPTION_RENEWED - Complete context with all required fields
+    const clientIp_RENEWED = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress;
+    const userAgent_RENEWED = req.headers['user-agent'];
     await auditLog({
-      action: 'SUBSCRIPTION_RENEWED', userId: req.user._id, role: req.user.role,
-      entityType: 'SCHOOL', entityId: school._id,
-      description: `Subscription renewed for ${school.name} (${school.code}) â€” ${durationMonths} months`,
-      details: { durationMonths, newEndDate, invoiceNumber: billing?.invoiceNumber }, req,
+      action: 'SUBSCRIPTION_RENEWED',
+      category: 'SUBSCRIPTION',
+      userId: req.user._id,
+      userName: req.user.name,
+      role: req.user.role,
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      entityName: school.name,
+      description: `Subscription renewed for ${school.name} (${school.code}) for ${durationMonths} months`,
+      schoolId: school._id,
+      schoolName: school.name,
+      details: { durationMonths, newEndDate, invoiceNumber: billing?.invoiceNumber, oldEndDate: currentEnd },
+      req: req,
+      ipAddress: clientIp_RENEWED,
+      userAgent: userAgent_RENEWED
     });
+    console.log('AUDIT PAYLOAD', { action: 'SUBSCRIPTION_RENEWED', schoolId: school._id, schoolName: school.name, durationMonths });
 
     await _invalidateSubscriptionCaches();
     global.io?.of('/subscriptions').emit('subscription:renewed', {
@@ -375,13 +390,27 @@ const suspendSubscription = async (req, res) => {
       await School.findByIdAndUpdate(req.params.schoolId, { forceLogoutAt: new Date() });
     }
 
+// PHASE 6 FIX: SUBSCRIPTION_SUSPENDED/REACTIVATED - Complete context with all required fields
+    const clientIp_SUSPEND = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress;
+    const userAgent_SUSPEND = req.headers['user-agent'];
     await auditLog({
       action:      newStatus === 'inactive' ? 'SUBSCRIPTION_SUSPENDED' : 'SUBSCRIPTION_REACTIVATED',
-      userId:      req.user._id, role: req.user.role,
-      entityType:  'SCHOOL', entityId: school._id,
+      category:   'SUBSCRIPTION',
+      userId:      req.user._id,
+      userName:    req.user.name,
+      role:       req.user.role,
+      entityType:  'SCHOOL',
+      entityId:    school._id,
+      entityName:  school.name,
       description: `School ${school.name} ${newStatus === 'inactive' ? 'suspended' : 'reactivated'}`,
-      req,
+      schoolId:    school._id,
+      schoolName:  school.name,
+     details: { previousStatus: school.status, newStatus: newStatus },
+      req: req,
+      ipAddress: clientIp_SUSPEND,
+      userAgent: userAgent_SUSPEND
     });
+    console.log('AUDIT PAYLOAD', { action: newStatus === 'inactive' ? 'SUBSCRIPTION_SUSPENDED' : 'SUBSCRIPTION_REACTIVATED', schoolId: school._id, schoolName: school.name });
     await _invalidateSubscriptionCaches();
     global.io?.of('/subscriptions').emit('subscription:statusChanged', {
       schoolId: school._id, schoolName: school.name, newStatus,
@@ -452,12 +481,25 @@ const retryBilling = async (req, res) => {
     const { billingId } = req.body;
     if (!billingId) return res.status(400).json({ success: false, message: 'billingId required' });
 
+// PHASE 6 FIX: PAYMENT_RETRY_SCHEDULED - Complete context with all required fields
+    const clientIp_RETRY = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress;
+    const userAgent_RETRY = req.headers['user-agent'];
     const result = await retryFailedPayment(billingId);
     await auditLog({
-      action: 'PAYMENT_RETRY_SCHEDULED', userId: req.user._id, role: req.user.role,
-      entityType: 'BILLING', entityId: billingId,
-      description: `Payment retry ${result.retryCount} scheduled for ${result.nextRetryAt}`, req,
+      action: 'PAYMENT_RETRY_SCHEDULED',
+      category: 'BILLING',
+      userId: req.user._id,
+      userName: req.user.name,
+      role: req.user.role,
+      entityType: 'BILLING',
+      entityId: billingId,
+      description: `Payment retry ${result.retryCount} scheduled for ${result.nextRetryAt}`,
+      details: { retryCount: result.retryCount, nextRetryAt: result.nextRetryAt, billingId: billingId },
+      req: req,
+      ipAddress: clientIp_RETRY,
+      userAgent: userAgent_RETRY
     });
+    console.log('AUDIT PAYLOAD', { action: 'PAYMENT_RETRY_SCHEDULED', billingId, retryCount: result.retryCount });
     return res.json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -496,7 +538,27 @@ const updatePlan = async (req, res) => {
       action:      isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_UPGRADED',
       userId:      req.user._id, role: req.user.role,
       entityType:  'SCHOOL', entityId: school._id,
-      description: `Plan changed: ${previousPlan} â†’ ${plan} for ${school.name}`, req,
+    // PHASE 6 FIX: PLAN_UPGRADED/PLAN_DOWNGRADED - Complete context
+    const clientIp_PLAN = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress;
+    const userAgent_PLAN = req.headers['user-agent'];
+    await auditLog({
+      action: isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_UPGRADED',
+      category: 'SUBSCRIPTION',
+      userId: req.user._id,
+      userName: req.user.name,
+      role: req.user.role,
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      entityName: school.name,
+      description: `Plan changed: ${previousPlan} â†’ ${plan} for ${school.name}`,
+      schoolId: school._id,
+      schoolName: school.name,
+      details: { previousPlan: previousPlan, newPlan: plan, isDowngrade: isDowngrade },
+      req: req,
+      ipAddress: clientIp_PLAN,
+      userAgent: userAgent_PLAN
+    });
+    console.log('AUDIT PAYLOAD', { action: isDowngrade ? 'PLAN_DOWNGRADED' : 'PLAN_UPGRADED', schoolId: school._id, schoolName: school.name, previousPlan: previousPlan, newPlan: plan });
     });
     await _invalidateSubscriptionCaches();
     global.io?.of('/subscriptions').emit('subscription:planChanged', {

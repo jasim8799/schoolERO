@@ -211,11 +211,102 @@ const AuditLogSchema = new mongoose.Schema({
       'PLAN_UPGRADED',
       'PLAN_DOWNGRADED',
 
-      // Error logs
+// Error logs
       'ERROR_OCCURRED',
       'VALIDATION_FAILED',
       'UNAUTHORIZED_ACCESS',
-      'SERVER_ERROR'
+      'SERVER_ERROR',
+
+      // ====== ENTERPRISE AUDIT EVENTS ======
+      // Super Admin - Authentication (Extended)
+      'LOGIN_FAILED',
+      'LOGOUT_INITIATED',
+      'SESSION_EXPIRED',
+
+      // Super Admin - School Management (Extended)
+      'SCHOOL_DELETED',
+      'SCHOOL_SUSPENDED',
+      'SCHOOL_REACTIVATED',
+      'SUBSCRIPTION_CHANGED',
+      'SUBSCRIPTION_PLAN_CHANGED',
+      'SETTINGS_UPDATED',
+
+      // Super Admin - User Management (Extended)
+      'USER_ACCESS_REVOKED',
+      'USER_RESTORED',
+      'USER_PASSWORD_CHANGED',
+
+      // School Admin - Teacher Management
+      'TEACHER_DELETED',
+      'TEACHER_ASSIGNED',
+      'TEACHER_REMOVED',
+
+      // School Admin - Student Management
+      'STUDENT_DELETED',
+      'STUDENT_PROMOTED',
+      'STUDENT_TRANSFERRED',
+      'STUDENT_REINSTATED',
+
+      // School Admin - Class Management
+      'CLASS_DELETED',
+
+      // School Admin - Section Management
+      'SECTION_CREATED',
+      'SECTION_UPDATED',
+      'SECTION_DELETED',
+
+      // Academics - Attendance (Extended)
+      'ATTENDANCE_MARKED',
+      'ATTENDANCE_UPDATED',
+      'ATTENDANCE_BULK_MARKED',
+
+      // Academics - Marks
+      'MARKS_ADDED',
+      'MARKS_EDITED',
+      'MARKS_UPDATED',
+
+      // Academics - Results
+      'RESULT_GENERATED',
+      'RESULT_PUBLISHED',
+      'RESULT_UPDATED',
+
+      // Academics - Exams (Extended)
+      'EXAM_DELETED',
+
+      // Finance - Fees
+      'FEE_COLLECTED',
+      'FEE_UPDATED',
+      'FEE_WAIVED',
+      'FEE_REFUNDED',
+      'FEE_DISCOUNT_APPLIED',
+
+      // Finance - Expenses
+      'EXPENSE_DELETED',
+      'EXPENSE_APPROVED',
+      'EXPENSE_REJECTED',
+
+      // HR - Employees
+      'EMPLOYEE_CREATED',
+      'EMPLOYEE_UPDATED',
+      'EMPLOYEE_DELETED',
+
+      // HR - Salary
+      'SALARY_GENERATED',
+      'SALARY_PAID',
+      'SALARY_DISBURSED',
+
+      // Security - Account
+      'ACCOUNT_LOCKED',
+      'ACCOUNT_UNLOCKED',
+      'PERMISSION_CHANGED',
+      'API_ABUSE_DETECTED',
+      'SECURITY_ALERT',
+      'SUSPICIOUS_ACTIVITY',
+
+      // System - Sessions
+      'SESSION_CREATED',
+      'SESSION_TERMINATED',
+      'MULTI_LOGIN_DETECTED'
     ]
   },
   entityType: {
@@ -272,9 +363,21 @@ const AuditLogSchema = new mongoose.Schema({
       'BILLING'
     ]
   },
-  entityId: {
+entityId: {
     type: mongoose.Schema.Types.ObjectId,
     required: false // Some actions might not have a specific entity
+  },
+  entityName: {
+    type: String,
+    required: false
+  },
+  userName: {
+    type: String,
+    required: false
+  },
+  schoolName: {
+    type: String,
+    required: false
   },
   description: {
     type: String,

@@ -401,9 +401,31 @@ const updateExpense = async (req, res) => {
       expense.date = parsedDate;
     }
 
-    await expense.save();
+await expense.save();
     await expense.populate('createdBy', 'name');
     await expense.populate('sessionId', 'name');
+
+    // Audit log for expense update
+    try {
+      await auditLog({
+        action: 'EXPENSE_UPDATED',
+        userId: req.user._id,
+        role: req.user?.role,
+        entityType: 'Expense',
+        entityId: expense._id,
+        description: `Expense updated: ${expense.category} - ₹${expense.amount}`,
+        schoolId: schoolId,
+        details: {
+          category: expense.category,
+          amount: expense.amount,
+          paymentMode: expense.paymentMode,
+          description: expense.description
+        },
+        req
+      });
+    } catch (auditErr) {
+      console.error('[EXPENSE_UPDATED] Audit log failed:', auditErr.message);
+    }
 
     res.json({
       success: true,

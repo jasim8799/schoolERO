@@ -111,17 +111,32 @@ const createUser = async (req, res) => {
       spouseMobile,
     });
 
-    logger.success(`User created: ${user.name} (${user.role}) by ${req.user.role}`);
+logger.success(`User created: ${user.name} (${user.role}) by ${req.user.role}`);
 
-    // Create audit log
-    await auditLog({
-      action: 'USER_CREATED',
-      userId: req.user.userId,
-      schoolId: user.schoolId,
-      targetUserId: user._id,
-      details: { role: user.role, email, mobile },
-      req
-    });
+// Create audit log with complete context
+const targetSchoolId = user.schoolId?._id || user.schoolId;
+const targetSchoolName = user.schoolId?.name || null;
+await auditLog({
+  action: 'USER_CREATED',
+  category: 'USER',
+  userId: req.user.userId,
+  userName: req.user.name,
+  role: req.user.role,
+  entityType: 'USER',
+  entityId: user._id,
+  entityName: user.name,
+  description: `User "${user.name}" created successfully with role ${user.role}`,
+  schoolId: targetSchoolId,
+  schoolName: targetSchoolName,
+  details: { 
+    role: user.role, 
+    email, 
+    mobile,
+    createdBy: req.user.name,
+    createdByRole: req.user.role
+  },
+  req: req
+});
 
     // Remove password from response
     const userResponse = user.toObject();

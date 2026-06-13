@@ -99,17 +99,28 @@ const createSchool = async (req, res) => {
 
     logger.success(`School created: ${school.name} (${school.code}) with plan: ${school.plan}`);
 
-    // Audit log (wrap in try-catch to prevent breaking response)
+// Audit log (wrap in try-catch to prevent breaking response)
     try {
       await auditLog({
         action: 'SCHOOL_CREATED',
+        category: 'SCHOOL',
         userId: req.user._id,
+        userName: req.user.name,
         role: req.user.role,
         entityType: 'SCHOOL',
         entityId: school._id,
-        description: `School "${school.name}" (${school.code}) created`,
-        schoolId: req.user.schoolId || null,
-        req
+        entityName: school.name,
+        description: `${school.name} school created successfully`,
+        schoolId: school._id,
+        schoolName: school.name,
+        details: {
+          schoolCode: school.code,
+          plan: school.plan,
+          monthlyPrice: school.subscription?.monthlyPrice,
+          modules: school.modules,
+          limits: school.limits
+        },
+        req: req
       });
     } catch (auditError) {
       logger.error('Audit log failed for school creation:', auditError.message);
