@@ -346,114 +346,82 @@ const exportInventoryController = async (req, res) => {
 
 // ── 2. Staff ─────────────────────────────────────────────────
     let staff = [];
+    let teachers = [];  // Teachers from User collection (role=TEACHER)
     let operators = [];  // Declare at function level for response access
     let otherStaff = []; // Declare at function level for response access
     let roleDistribution = []; // For debug info
     let staffByRole = {}; // For staff by role arrays
     
     try {
-      // ===== TASK 3: QUERY AND LOG MATCHING TEACHERS =====
+      // ===== REQUIREMENT: Fetch teachers from User collection (NOT Teacher collection) =====
+      // This matches StaffManagementScreen exactly
       console.log('================ TEACHER DEBUG ================');
-      console.log('---------- Query: Teacher.find({ schoolId: schoolObjId }) ----------');
+      console.log('---------- Query: User.find({ schoolId: schoolObjId, role: TEACHER }) ----------');
       console.log('schoolId used in query:', schoolObjId.toString());
       console.log('schoolId type:', typeof schoolObjId);
       
-      // Try querying with ObjectId
-      const teacherDocs = await Teacher.find({
-        schoolId: schoolObjId
-      }).lean();
+      // Fetch teachers from User collection - PRIMARY SOURCE
+      const teacherUsers = await User.find({
+        schoolId: schoolObjId,
+        role: 'TEACHER',
+        isDeleted: { $ne: true }
+      })
+      .select('-password -documents')
+      .lean();
 
-      console.log('MATCHING TEACHERS (ObjectId query):', teacherDocs.length);
+      console.log('[INVENTORY] Teacher users (from User collection):', teacherUsers.length);
       
-      // Try querying with String (in case schoolId is stored as String)
-      const teacherDocsStr = await Teacher.find({
-        schoolId: schoolIdStr
-      }).lean();
-
-      console.log('MATCHING TEACHERS (String query):', teacherDocsStr.length);
-      
-      console.log('Teacher docs found:', teacherDocs.length);
-
-      if (teacherDocs.length > 0) {
-        console.log('TEACHER SAMPLES:', JSON.stringify(teacherDocs.slice(0, 5), null, 2));
+      // If no results with ObjectId, try with String schoolId (support both formats)
+      if (teacherUsers.length === 0) {
+        const teacherUsersStr = await User.find({
+          schoolId: schoolIdStr,
+          role: 'TEACHER',
+          isDeleted: { $ne: true }
+        })
+        .select('-password -documents')
+        .lean();
+        console.log('[INVENTORY] Teacher users (String schoolId):', teacherUsersStr.length);
       }
 
-      // ===== STEP 2: VERIFY TEACHER MAPPING =====
-      console.log('================ TEACHER DEBUG ================');
-      console.log('Teacher docs found:', teacherDocs.length);
+      console.log('TEACHER USERS FOUND:', teacherUsers.length);
 
-      teacherDocs.slice(0, 5).forEach(t => {
-        console.log({
-          teacherId: t._id.toString(),
-          userId: t.userId?.toString(),
-          schoolId: t.schoolId?.toString()
-        });
-      });
+      if (teacherUsers.length > 0) {
+        console.log('TEACHER SAMPLES:', JSON.stringify(teacherUsers.slice(0, 5), null, 2));
+      }
 
-      console.log('================================================');
+      // Build teachers array
+      teachers = teacherUsers.map(u => ({
+        _id: u._id.toString(),
+        _teacherId: null,
+        name: u.name || '',
+        email: u.email || '',
+        mobile: u.mobile || '',
+        whatsappNumber: u.whatsappNumber || '',
+        gender: u.gender || '',
+        dateOfBirth: u.dateOfBirth || null,
+        bloodGroup: u.bloodGroup || '',
+        address: u.address || '',
+        city: u.city || '',
+        state: u.state || '',
+        pincode: u.pincode || '',
+        employeeId: u.employeeId || '',
+        designation: u.designation || '',
+        department: u.department || '',
+        qualification: u.qualification || '',
+        experienceYears: u.experienceYears || 0,
+        monthlySalary: u.monthlySalary || 0,
+        subjects: u.subjects || [],
+        emergencyContactName: u.emergencyContactName || '',
+        emergencyContactRelation: u.emergencyContactRelation || '',
+        emergencyContactPhone: u.emergencyContactPhone || '',
+        dateOfJoining: u.dateOfJoining || null,
+        status: u.status || 'active',
+        role: 'TEACHER',
+      }));
 
-      // Convert userIds to ObjectIds explicitly
-      const userIdObjs = teacherDocs
-        .map(t => {
-          try {
-            return t.userId
-              ? new mongoose.Types.ObjectId(t.userId.toString())
-              : null;
-          } catch (e) { return null; }
-        })
-        .filter(Boolean);
-
-      console.log('[INVENTORY] userIds to find:', userIdObjs.length);
-
-      // Fetch matching User docs
-      const teacherUsers = userIdObjs.length > 0
-        ? await User.find({ _id: { $in: userIdObjs } })
-            .select('-password -documents')
-            .lean()
-        : [];
-
-      console.log('[INVENTORY] Teacher users found:', teacherUsers.length);
-
-      // Build userId string → User doc map
-      const userMap = {};
-      teacherUsers.forEach(u => {
-        userMap[u._id.toString()] = u;
-      });
-
-      // Build staff from Teacher docs — use User data if available,
-      // fall back to Teacher data only if User not found
-      teacherDocs.forEach(t => {
-        const u = t.userId ? userMap[t.userId.toString()] : null;
-
-        // Use User data if found, otherwise use placeholder
-        staff.push({
-          _id:        (u?._id || t.userId || t._id).toString(),
-          _teacherId: t._id.toString(),
-          name:       u?.name       || `Teacher (${t._id.toString().slice(-4)})`,
-          email:      u?.email      || '',
-          mobile:     u?.mobile     || '',
-          whatsappNumber:  u?.whatsappNumber  || '',
-          gender:          u?.gender          || '',
-          dateOfBirth:     u?.dateOfBirth     || null,
-          bloodGroup:      u?.bloodGroup      || '',
-          address:         u?.address         || '',
-          city:            u?.city            || '',
-          state:           u?.state           || '',
-          pincode:         u?.pincode         || '',
-          employeeId:      u?.employeeId      || '',
-          designation:     t.designation  || u?.designation  || '',
-          department:      u?.department      || '',
-          qualification:   t.qualification || u?.qualification || '',
-          experienceYears: u?.experienceYears || 0,
-          monthlySalary:   u?.monthlySalary   || 0,
-          subjects:        u?.subjects        || [],
-          emergencyContactName:     u?.emergencyContactName     || '',
-          emergencyContactRelation: u?.emergencyContactRelation || '',
-          emergencyContactPhone:    u?.emergencyContactPhone    || '',
-          dateOfJoining: t.joiningDate || u?.dateOfJoining || null,
-          status:        t.status || 'active',
-          role:          'TEACHER',
-        });
+      // Add teachers to staff array
+      teachers.forEach(t => {
+        staff.push(t);
       });
 
 console.log('[INVENTORY] teacher staff built:', staff.length);
@@ -512,12 +480,15 @@ console.log('[INVENTORY] operators (non-designation roles):', operators.length);
 console.log('[INVENTORY] otherStaff (designation roles):', otherStaff.length);
 
 // ===== REQUIREMENT 5 & 9: ADD DEBUG LOGS =====
-console.log('EXPORT SCHOOL ID:', schoolIdStr);
-console.log('OPERATORS COUNT:', operators.length);
-console.log('TEACHERS COUNT:', staff.filter(s => s.role === 'TEACHER').length);
-console.log('OTHER STAFF COUNT:', otherStaff.length);
+console.log('========== INVENTORY STAFF DEBUG ==========');
+console.log('School ID:', schoolObjId.toString());
+console.log('Teachers Found:', teachers.length);
+console.log('Operators Found:', operators.length);
+console.log('Other Staff Found:', otherStaff.length);
+console.log('All Users Found:', allUsers.length);
+console.log('===========================================');
 console.log('SAMPLE OPERATOR:', operators[0] ? JSON.stringify(operators[0]) : 'none');
-console.log('SAMPLE TEACHER:', staff.filter(s => s.role === 'TEACHER')[0] ? JSON.stringify(staff.filter(s => s.role === 'TEACHER')[0]) : 'none');
+console.log('SAMPLE TEACHER:', teachers[0] ? JSON.stringify(teachers[0]) : 'none');
 console.log('SAMPLE OTHER STAFF:', otherStaff[0] ? JSON.stringify(otherStaff[0]) : 'none');
 
 // ===== REQUIREMENT 9: Role distribution =====
@@ -872,14 +843,16 @@ return res.status(HTTP_STATUS.OK).json({
         teacherClassMap, staffAttendanceMap,
         classSummary: classMap,
         
-        // ===== REQUIREMENT 6: Export staff separately =====
+// ===== REQUIREMENT 6: Export staff separately =====
+        // Use teachers array directly (from User collection - matches StaffManagementScreen)
         operators: operators,
-        teachers: staff.filter(s => s.role === 'TEACHER'),
+        teachers: teachers,
         otherStaff: otherStaff,
+        allUsers: allUsers,
         
         // Summary counts
         operatorsCount: operators.length,
-        teachersCount: staff.filter(s => s.role === 'TEACHER').length,
+        teachersCount: teachers.length,
         otherStaffCount: otherStaff.length,
         
         // Legacy staff by role (for backward compatibility)
@@ -926,7 +899,7 @@ return res.status(HTTP_STATUS.OK).json({
           inventoryItems: inventoryItems.length,
         }
       },
-      // ===== REQUIREMENT 10: FINAL DEBUG BLOCK =====
+// ===== REQUIREMENT 10: FINAL DEBUG BLOCK =====
       debug: {
         userId: userId,
         role: role,
@@ -934,7 +907,7 @@ return res.status(HTTP_STATUS.OK).json({
         schoolObjIdUsed: schoolObjId ? schoolObjId.toString() : null,
         studentsCount: students.length,
         usersCount: allUsers.length,
-        teachersCount: staff.filter(s => s.role === 'TEACHER').length,
+        teachersCount: teachers.length,
         staffCount: staff.length,
         operatorsCount: operators.length,
         otherStaffCount: otherStaff.length,
