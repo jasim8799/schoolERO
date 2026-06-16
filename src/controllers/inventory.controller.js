@@ -42,7 +42,7 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    let schoolObjId;
+let schoolObjId;
     try {
       schoolObjId = new mongoose.Types.ObjectId(schoolIdStr);
     } catch (e) {
@@ -52,16 +52,20 @@ const exportInventoryController = async (req, res) => {
       });
     }
 
-    // ===== DEBUG 2: Log converted schoolObjId =====
-    console.log('[DEBUG] schoolObjId (converted):', schoolObjId.toString());
-    console.log('[DEBUG] schoolObjId type:', typeof schoolObjId);
-    console.log('[DEBUG] schoolObjId instanceof ObjectId:', schoolObjId instanceof mongoose.Types.ObjectId);
-    console.log('================================================');
+    // ===== SCHOOL ID COMPATIBILITY: Support BOTH ObjectId and String formats =====
+    const schoolFilter = {
+      $or: [
+        { schoolId: schoolObjId },
+        { schoolId: schoolIdStr }
+      ]
+    };
+
+    console.log('[DEBUG] schoolFilter:', JSON.stringify(schoolFilter));
 
 // ── 1. Students ──────────────────────────────────────────────
     let students = [];
     try {
-      students = await Student.find({ schoolId: schoolObjId })
+      students = await Student.find(schoolFilter)
         .populate('classId', 'name')
         .populate('sectionId', 'name')
         .populate({
@@ -92,11 +96,11 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] parents error:', e.message);
     }
 
-    // ── 1c. Classes ──────────────────────────────────────────────
+// ── 1c. Classes ──────────────────────────────────────────────
     let classes = [];
     try {
       const Class = mongoose.model('Class');
-      classes = await Class.find({ schoolId: schoolObjId }).lean();
+      classes = await Class.find(schoolFilter).lean();
       console.log('[INVENTORY] Classes:', classes.length);
     } catch (e) {
       console.error('[INVENTORY] classes error:', e.message);
@@ -106,7 +110,7 @@ const exportInventoryController = async (req, res) => {
     let sections = [];
     try {
       const Section = mongoose.model('Section');
-      sections = await Section.find({ schoolId: schoolObjId }).lean();
+      sections = await Section.find(schoolFilter).lean();
       console.log('[INVENTORY] Sections:', sections.length);
     } catch (e) {
       console.error('[INVENTORY] sections error:', e.message);
@@ -116,17 +120,17 @@ const exportInventoryController = async (req, res) => {
     let subjects = [];
     try {
       const Subject = mongoose.model('Subject');
-      subjects = await Subject.find({ schoolId: schoolObjId }).lean();
+      subjects = await Subject.find(schoolFilter).lean();
       console.log('[INVENTORY] Subjects:', subjects.length);
     } catch (e) {
       console.error('[INVENTORY] subjects error:', e.message);
     }
 
-    // ── 1f. Exams ─────────────────────────��────────────────────
+    // ── 1f. Exams ──────────────────────────────────────────────
     let exams = [];
     try {
       const Exam = mongoose.model('Exam');
-      exams = await Exam.find({ schoolId: schoolObjId }).lean();
+      exams = await Exam.find(schoolFilter).lean();
       console.log('[INVENTORY] Exams:', exams.length);
     } catch (e) {
       console.error('[INVENTORY] exams error:', e.message);
@@ -136,7 +140,7 @@ const exportInventoryController = async (req, res) => {
     let results = [];
     try {
       const Result = mongoose.model('Result');
-      results = await Result.find({ schoolId: schoolObjId }).lean();
+      results = await Result.find(schoolFilter).lean();
       console.log('[INVENTORY] Results:', results.length);
     } catch (e) {
       console.error('[INVENTORY] results error:', e.message);
@@ -146,7 +150,7 @@ const exportInventoryController = async (req, res) => {
     let homework = [];
     try {
       const Homework = mongoose.model('Homework');
-      homework = await Homework.find({ schoolId: schoolObjId }).lean();
+      homework = await Homework.find(schoolFilter).lean();
       console.log('[INVENTORY] Homework:', homework.length);
     } catch (e) {
       console.error('[INVENTORY] homework error:', e.message);
@@ -156,7 +160,7 @@ const exportInventoryController = async (req, res) => {
     let notices = [];
     try {
       const Notice = mongoose.model('Notice');
-      notices = await Notice.find({ schoolId: schoolObjId }).lean();
+      notices = await Notice.find(schoolFilter).lean();
       console.log('[INVENTORY] Notices:', notices.length);
     } catch (e) {
       console.error('[INVENTORY] notices error:', e.message);
@@ -166,7 +170,7 @@ const exportInventoryController = async (req, res) => {
     let ptm = [];
     try {
       const PTM = mongoose.model('PTM');
-      ptm = await PTM.find({ schoolId: schoolObjId }).lean();
+      ptm = await PTM.find(schoolFilter).lean();
       console.log('[INVENTORY] PTM:', ptm.length);
     } catch (e) {
       console.log('[INVENTORY] PTM skip:', e.message);
@@ -268,11 +272,11 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] users error:', e.message);
     }
 
-    // ── 1l. Hostels ──────────────────────────────────────────────
+// ── 1l. Hostels ──────────────────────────────────────────────
     let hostels = [];
     try {
       const Hostel = mongoose.model('Hostel');
-      hostels = await Hostel.find({ schoolId: schoolObjId }).lean();
+      hostels = await Hostel.find(schoolFilter).lean();
       console.log('[INVENTORY] Hostels:', hostels.length);
     } catch (e) {
       console.error('[INVENTORY] hostels error:', e.message);
@@ -282,7 +286,7 @@ const exportInventoryController = async (req, res) => {
     let rooms = [];
     try {
       const Room = mongoose.model('Room');
-      rooms = await Room.find({ schoolId: schoolObjId }).lean();
+      rooms = await Room.find(schoolFilter).lean();
       console.log('[INVENTORY] Rooms:', rooms.length);
     } catch (e) {
       console.error('[INVENTORY] rooms error:', e.message);
@@ -292,7 +296,7 @@ const exportInventoryController = async (req, res) => {
     let vehicles = [];
     try {
       const Vehicle = mongoose.model('Vehicle');
-      vehicles = await Vehicle.find({ schoolId: schoolObjId }).lean();
+      vehicles = await Vehicle.find(schoolFilter).lean();
       console.log('[INVENTORY] Vehicles:', vehicles.length);
     } catch (e) {
       console.error('[INVENTORY] vehicles error:', e.message);
@@ -302,7 +306,7 @@ const exportInventoryController = async (req, res) => {
     let routes = [];
     try {
       const Route = mongoose.model('Route');
-      routes = await Route.find({ schoolId: schoolObjId }).lean();
+      routes = await Route.find(schoolFilter).lean();
       console.log('[INVENTORY] Routes:', routes.length);
     } catch (e) {
       console.error('[INVENTORY] routes error:', e.message);
@@ -312,7 +316,7 @@ const exportInventoryController = async (req, res) => {
     let expenses = [];
     try {
       const Expense = mongoose.model('Expense');
-      expenses = await Expense.find({ schoolId: schoolObjId }).lean();
+      expenses = await Expense.find(schoolFilter).lean();
       console.log('[INVENTORY] Expenses:', expenses.length);
     } catch (e) {
       console.error('[INVENTORY] expenses error:', e.message);
@@ -322,7 +326,7 @@ const exportInventoryController = async (req, res) => {
     let salary = [];
     try {
       const Salary = mongoose.model('Salary');
-      salary = await Salary.find({ schoolId: schoolObjId }).lean();
+      salary = await Salary.find(schoolFilter).lean();
       console.log('[INVENTORY] Salary:', salary.length);
     } catch (e) {
       console.log('[INVENTORY] Salary skip:', e.message);
@@ -332,7 +336,7 @@ const exportInventoryController = async (req, res) => {
     let automations = [];
     try {
       const AutomationRule = mongoose.model('AutomationRule');
-      automations = await AutomationRule.find({ schoolId: schoolObjId }).lean();
+      automations = await AutomationRule.find(schoolFilter).lean();
       console.log('[INVENTORY] Automations:', automations.length);
     } catch (e) {
       console.error('[INVENTORY] automations error:', e.message);
@@ -355,8 +359,9 @@ const exportInventoryController = async (req, res) => {
       console.log('schoolId type:', typeof schoolObjId);
       
 // Fetch teachers from User collection - PRIMARY SOURCE
+      // Use schoolFilter for compatibility with both ObjectId and String schoolId
       let teacherUsers = await User.find({
-        schoolId: schoolObjId,
+        ...schoolFilter,
         role: USER_ROLES.TEACHER,
         isDeleted: { $ne: true }
       })
@@ -364,26 +369,9 @@ const exportInventoryController = async (req, res) => {
       .lean();
 
       console.log('[INVENTORY] Teacher users (from User collection):', teacherUsers.length);
-      
-      // If no results with ObjectId, try with String schoolId (support both formats)
-      if (teacherUsers.length === 0) {
-        teacherUsers = await User.find({
-          schoolId: schoolIdStr,
-          role: USER_ROLES.TEACHER,
-          isDeleted: { $ne: true }
-        })
-        .select('-password -documents')
-        .lean();
-        console.log('[INVENTORY] Teacher fallback using String schoolId:', teacherUsers.length);
-      }
-
       console.log('TEACHER USERS FOUND:', teacherUsers.length);
 
-      if (teacherUsers.length > 0) {
-        console.log('TEACHER SAMPLES:', JSON.stringify(teacherUsers.slice(0, 5), null, 2));
-      }
-
-      // Build teachers array
+      // Build teachers array - use USER_ROLES constant
       teachers = teacherUsers.map(u => ({
         _id: u._id.toString(),
         _teacherId: null,
@@ -410,7 +398,7 @@ const exportInventoryController = async (req, res) => {
         emergencyContactPhone: u.emergencyContactPhone || '',
         dateOfJoining: u.dateOfJoining || null,
         status: u.status || 'active',
-        role: 'TEACHER',
+        role: USER_ROLES.TEACHER,
       }));
 
       // Add teachers to staff array
