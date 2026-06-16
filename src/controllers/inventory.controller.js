@@ -354,164 +354,105 @@ const exportInventoryController = async (req, res) => {
     }
 
 // ── 2. Staff ─────────────────────────────────────────────────
+    // FIXED: Use User collection (matching StaffManagementScreen)
+    // DO NOT use Teacher collection - it causes mismatch
     let staff = [];
+    let teachers = [];  // NEW: Separate teachers array from User collection
     let operators = [];  // Declare at function level for response access
     let otherStaff = []; // Declare at function level for response access
     let roleDistribution = []; // For debug info
     let staffByRole = {}; // For staff by role arrays
     
     try {
-      // ===== TASK 3: QUERY AND LOG MATCHING TEACHERS =====
-      console.log('================ TEACHER DEBUG ================');
-      console.log('---------- Query: Teacher.find({ schoolId: schoolObjId }) ----------');
-      console.log('schoolId used in query:', schoolObjId.toString());
-      console.log('schoolId type:', typeof schoolObjId);
+      // ===== STEP 1: FETCH ALL SCHOOL USERS =====
+      console.log('================ STAFF DEBUG ================');
       
-      // Try querying with ObjectId
-      const teacherDocs = await Teacher.find({
+      // Fetch all users for the school - no role filter first to see what's in DB
+      let allSchoolUsers = await User.find({
         schoolId: schoolObjId
-      }).lean();
+      })
+      .select('name role designation schoolId status isDeleted')
+      .lean();
 
-      console.log('MATCHING TEACHERS (ObjectId query):', teacherDocs.length);
-      
-      // Try querying with String (in case schoolId is stored as String)
-      const teacherDocsStr = await Teacher.find({
-        schoolId: schoolIdStr
-      }).lean();
-
-      console.log('MATCHING TEACHERS (String query):', teacherDocsStr.length);
-      
-      console.log('Teacher docs found:', teacherDocs.length);
-
-      if (teacherDocs.length > 0) {
-        console.log('TEACHER SAMPLES:', JSON.stringify(teacherDocs.slice(0, 5), null, 2));
+      // Fallback: try with string schoolId if no results
+      if (allSchoolUsers.length === 0) {
+        allSchoolUsers = await User.find({
+          schoolId: schoolIdStr
+        })
+        .select('name role designation schoolId status isDeleted')
+        .lean();
       }
 
-      // ===== STEP 2: VERIFY TEACHER MAPPING =====
-      console.log('================ TEACHER DEBUG ================');
-      console.log('Teacher docs found:', teacherDocs.length);
+      console.log('TOTAL USERS:', allSchoolUsers.length);
+      console.log('SAMPLE USERS:', JSON.stringify(allSchoolUsers.slice(0, 5), null, 2));
 
-      teacherDocs.slice(0, 5).forEach(t => {
-        console.log({
-          teacherId: t._id.toString(),
-          userId: t.userId?.toString(),
-          schoolId: t.schoolId?.toString()
-        });
-      });
+      // ===== STEP 2: CASE INSENSITIVE ROLE MATCHING =====
+      // Filter to active users (not deleted)
+      const activeUsers = allSchoolUsers.filter(u => u.isDeleted !== true);
 
-      console.log('================================================');
+      console.log('ACTIVE USERS:', activeUsers.length);
 
-      // Convert userIds to ObjectIds explicitly
-      const userIdObjs = teacherDocs
-        .map(t => {
-          try {
-            return t.userId
-              ? new mongoose.Types.ObjectId(t.userId.toString())
-              : null;
-          } catch (e) { return null; }
-        })
-        .filter(Boolean);
+      // Case-insensitive TEACHER filter - use User collection (same as StaffManagementScreen)
+      const teacherUsers = activeUsers.filter(
+        u => (u.role || '').toString().trim().toUpperCase() === 'TEACHER'
+      );
 
-      console.log('[INVENTORY] userIds to find:', userIdObjs.length);
+      console.log('FILTERED TEACHERS:', teacherUsers.length);
 
-      // Fetch matching User docs
-      const teacherUsers = userIdObjs.length > 0
-        ? await User.find({ _id: { $in: userIdObjs } })
-            .select('-password -documents')
-            .lean()
-        : [];
+      // Case-insensitive OPERATOR filter
+      const operatorUsers = activeUsers.filter(
+        u => (u.role || '').toString().trim().toUpperCase() === 'OPERATOR'
+      );
 
-      console.log('[INVENTORY] Teacher users found:', teacherUsers.length);
+      console.log('FILTERED OPERATORS:', operatorUsers.length);
 
-      // Build userId string → User doc map
-      const userMap = {};
-      teacherUsers.forEach(u => {
-        userMap[u._id.toString()] = u;
-      });
+      // ===== STEP 3: BUILD TEACHERS FROM USER TABLE =====
+      // Build teacher array directly from User collection (matching StaffManagementScreen)
+      teachers = teacherUsers.map(u => ({
+        _id: u._id.toString(),
+        name: u.name || '',
+        email: u.email || '',
+        mobile: u.mobile || '',
+        designation: u.designation || '',
+        qualification: u.qualification || '',
+        department: u.department || '',
+        employeeId: u.employeeId || '',
+        status: u.status || 'active',
+        role: 'TEACHER'
+      }));
 
-      // Build staff from Teacher docs — use User data if available,
-      // fall back to Teacher data only if User not found
-      teacherDocs.forEach(t => {
-        const u = t.userId ? userMap[t.userId.toString()] : null;
+console.log('[INVENTORY] Teachers built:', teachers.length);
 
-        // Use User data if found, otherwise use placeholder
-        staff.push({
-          _id:        (u?._id || t.userId || t._id).toString(),
-          _teacherId: t._id.toString(),
-          name:       u?.name       || `Teacher (${t._id.toString().slice(-4)})`,
-          email:      u?.email      || '',
-          mobile:     u?.mobile     || '',
-          whatsappNumber:  u?.whatsappNumber  || '',
-          gender:          u?.gender          || '',
-          dateOfBirth:     u?.dateOfBirth     || null,
-          bloodGroup:      u?.bloodGroup      || '',
-          address:         u?.address         || '',
-          city:            u?.city            || '',
-          state:           u?.state           || '',
-          pincode:         u?.pincode         || '',
-          employeeId:      u?.employeeId      || '',
-          designation:     t.designation  || u?.designation  || '',
-          department:      u?.department      || '',
-          qualification:   t.qualification || u?.qualification || '',
-          experienceYears: u?.experienceYears || 0,
-          monthlySalary:   u?.monthlySalary   || 0,
-          subjects:        u?.subjects        || [],
-          emergencyContactName:     u?.emergencyContactName     || '',
-          emergencyContactRelation: u?.emergencyContactRelation || '',
-          emergencyContactPhone:    u?.emergencyContactPhone    || '',
-          dateOfJoining: t.joiningDate || u?.dateOfJoining || null,
-          status:        t.status || 'active',
-          role:          'TEACHER',
-        });
-      });
-
-console.log('[INVENTORY] teacher staff built:', staff.length);
-
-// ===== TASK 2: FIXED STAFF QUERY =====
-// Fix: Use EXACTLY the same logic as StaffManagementScreen
-// 1. Fetch OPERATOR role users (not role filter like before!)
-// 2. Split by designation field to get operators vs other staff
-
-// First try with ObjectId, then fallback to String (support both formats)
-let operatorUsers = await User.find({
-  schoolId: schoolObjId,
-  role: 'OPERATOR',
-  isDeleted: { $ne: true }
-})
-.select('-password -documents')
-.lean();
-
-// If no results with ObjectId, try with string schoolId
-if (operatorUsers.length === 0) {
-  operatorUsers = await User.find({
-    schoolId: schoolIdStr,
-    role: 'OPERATOR',
-    isDeleted: { $ne: true }
-  })
-  .select('-password -documents')
-  .lean();
-}
-
-console.log('[INVENTORY] [STAFF QUERY] role: OPERATOR');
-console.log('[INVENTORY] operatorUsers count:', operatorUsers.length);
-
-// Split operators by designation (exactly like StaffManagementScreen)
-// Note: operators and otherStaff already declared at function level
+// ===== STEP 4: SPLIT OPERATORS BY DESIGNATION =====
+// Use the already filtered operatorUsers from STEP 2
+// Exactly match StaffManagementScreen logic
 operators = [];
 otherStaff = [];
 
-operatorUsers.forEach(u => {
-  const designation = (u.designation || '').toString().trim();
-  // Use case-insensitive designation check
-  if (_isOtherStaffDesignation(designation)) {
+const OTHER_STAFF = [
+  'DRIVER',
+  'CLEANER',
+  'WARDEN',
+  'PEON',
+  'GUARD',
+  'COOK',
+  'ACCOUNTANT',
+  'LIBRARIAN',
+  'OTHER'
+];
+
+operatorUsers.forEach(user => {
+  const designation = (user.designation || '').toString().trim().toUpperCase();
+  
+  if (OTHER_STAFF.includes(designation)) {
     otherStaff.push({
-      ...u,
+      ...user,
       role: 'OPERATOR',
       category: 'OTHER_STAFF'
     });
   } else {
     operators.push({
-      ...u,
+      ...user,
       role: 'OPERATOR',
       category: 'OPERATOR'
     });
@@ -544,7 +485,25 @@ roleDistribution = await User.aggregate([
 ]);
 console.log('ROLE DISTRIBUTION:', JSON.stringify(roleDistribution));
 
-// Add to staff array - operators first
+// Add to staff array - TEACHERS first (from the new teachers array)
+teachers.forEach(u => {
+  staff.push({
+    _id: u._id.toString(),
+    _teacherId: null,
+    name: u.name || '',
+    email: u.email || '',
+    mobile: u.mobile || '',
+    designation: u.designation || '',
+    qualification: u.qualification || '',
+    department: u.department || '',
+    employeeId: u.employeeId || '',
+    status: u.status || 'active',
+    role: 'TEACHER',
+    category: 'TEACHER'
+  });
+});
+
+// Add to staff array - operators
 operators.forEach(u => {
   staff.push({
     _id: u._id.toString(),
@@ -573,6 +532,7 @@ operators.forEach(u => {
     dateOfJoining: u.dateOfJoining || null,
     status: u.status || 'active',
     role: 'OPERATOR',
+    category: 'OPERATOR'
   });
 });
 
@@ -605,6 +565,7 @@ otherStaff.forEach(u => {
     dateOfJoining: u.dateOfJoining || null,
     status: u.status || 'active',
     role: 'OPERATOR',
+    category: 'OTHER_STAFF'
   });
 });
 
