@@ -3,7 +3,6 @@ const { logger }   = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 const Student   = require('../models/Student.js');
 const User      = require('../models/User.js');
-const Teacher   = require('../models/Teacher.js');
 const Inventory = require('../models/Inventory.js');
 const mongoose  = require('mongoose');
 const ExcelJS = require('exceljs');
@@ -26,14 +25,9 @@ const exportInventoryController = async (req, res) => {
     const { role, userId } = req.user;
     const schoolIdStr = (req.user.schoolId || req.schoolId || '').toString();
 
-    // ===== DEBUG 1: Log JWT user info =====
-    console.log('================================================');
+    // ===== DEBUG START =====
     console.log('[DEBUG] INVENTORY EXPORT STARTED');
-    console.log('[DEBUG] req.user.userId:', userId);
-    console.log('[DEBUG] req.user.role:', role);
-    console.log('[DEBUG] req.user.schoolId (from JWT):', schoolIdStr);
-    console.log('[DEBUG] req.schoolId (fallback):', req.schoolId);
-    console.log('================================================');
+    console.log('[DEBUG] userId:', userId, 'role:', role);
 
     if (![USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR].includes(role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
@@ -360,10 +354,10 @@ const exportInventoryController = async (req, res) => {
       console.log('schoolId used in query:', schoolObjId.toString());
       console.log('schoolId type:', typeof schoolObjId);
       
-      // Fetch teachers from User collection - PRIMARY SOURCE
-      const teacherUsers = await User.find({
+// Fetch teachers from User collection - PRIMARY SOURCE
+      let teacherUsers = await User.find({
         schoolId: schoolObjId,
-        role: 'TEACHER',
+        role: USER_ROLES.TEACHER,
         isDeleted: { $ne: true }
       })
       .select('-password -documents')
@@ -373,14 +367,14 @@ const exportInventoryController = async (req, res) => {
       
       // If no results with ObjectId, try with String schoolId (support both formats)
       if (teacherUsers.length === 0) {
-        const teacherUsersStr = await User.find({
+        teacherUsers = await User.find({
           schoolId: schoolIdStr,
-          role: 'TEACHER',
+          role: USER_ROLES.TEACHER,
           isDeleted: { $ne: true }
         })
         .select('-password -documents')
         .lean();
-        console.log('[INVENTORY] Teacher users (String schoolId):', teacherUsersStr.length);
+        console.log('[INVENTORY] Teacher fallback using String schoolId:', teacherUsers.length);
       }
 
       console.log('TEACHER USERS FOUND:', teacherUsers.length);
@@ -434,7 +428,7 @@ console.log('[INVENTORY] teacher staff built:', staff.length);
 // First try with ObjectId, then fallback to String (support both formats)
 let operatorUsers = await User.find({
   schoolId: schoolObjId,
-  role: 'OPERATOR',
+  role: USER_ROLES.OPERATOR,
   isDeleted: { $ne: true }
 })
 .select('-password -documents')
@@ -444,7 +438,7 @@ let operatorUsers = await User.find({
 if (operatorUsers.length === 0) {
   operatorUsers = await User.find({
     schoolId: schoolIdStr,
-    role: 'OPERATOR',
+    role: USER_ROLES.OPERATOR,
     isDeleted: { $ne: true }
   })
   .select('-password -documents')
@@ -581,26 +575,52 @@ console.log('[INVENTORY] FINAL staff:', staff.length);
       console.log('======================================');
 
 // ===== TASK 3: EXPORT STAFF SEPARATELY =====
-      // Use the already populated operators, otherStaff, and filter teachers from staff
+      // Use designation-based filtering (NOT role-based)
+      // Actual data model: role = OPERATOR, designation = Driver/Cleaner/Warden/etc.
       const teachersFromStaff = staff.filter(x => x.role === 'TEACHER');
-      // Note: operators and otherStaff are already populated above
       const principals = staff.filter(x => x.role === 'PRINCIPAL');
-      const wardens = staff.filter(x => x.role === 'WARDEN');
-      const drivers = staff.filter(x => x.role === 'DRIVER');
-      const accountants = staff.filter(x => x.role === 'ACCOUNTANT');
-      const librarians = staff.filter(x => x.role === 'LIBRARIAN');
+      
+      // Designation-based staff (matching StaffManagementScreen)
+      const wardens = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Warden');
+      const drivers = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Driver');
+      const accountants = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Accountant');
+      const librarians = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Librarian');
+      const cleaners = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Cleaner');
+      const guards = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Guard');
+      const cooks = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Cook');
+      const peons = otherStaff.filter(x => (x.designation || '').toString().trim() === 'Peon');
       const receptionists = staff.filter(x => x.role === 'RECEPTIONIST');
 
 console.log('[INVENTORY] Role counts:', {
         teachers: teachersFromStaff.length,
         operators: operators.length,
+        otherStaff: otherStaff.length,
         principals: principals.length,
         wardens: wardens.length,
         drivers: drivers.length,
         accountants: accountants.length,
         librarians: librarians.length,
+        cleaners: cleaners.length,
+        guards: guards.length,
+        cooks: cooks.length,
+        peons: peons.length,
         receptionists: receptionists.length,
       });
+
+// ===== ISSUE #5: STAFF ROLE DISTRIBUTION DEBUG =====
+console.log('========== INVENTORY STAFF DEBUG ==========');
+console.log('Teachers:', teachers.length);
+console.log('Operators:', operators.length);
+console.log('Other Staff:', otherStaff.length);
+console.log('Wardens:', wardens.length);
+console.log('Drivers:', drivers.length);
+console.log('Accountants:', accountants.length);
+console.log('Librarians:', librarians.length);
+console.log('Cleaners:', cleaners.length);
+console.log('Guards:', guards.length);
+console.log('Cooks:', cooks.length);
+console.log('Peons:', peons.length);
+console.log('===========================================');
 
       // ===== STEP 5: VERIFY RESPONSE DATA =====
       console.log('================ EXPORT RESPONSE ================');
@@ -855,8 +875,8 @@ return res.status(HTTP_STATUS.OK).json({
         teachersCount: teachers.length,
         otherStaffCount: otherStaff.length,
         
-        // Legacy staff by role (for backward compatibility)
-        teachers: staffByRole ? staffByRole.teachers : [],
+// Legacy staff by role (for backward compatibility) - ISSUE #1 FIX: rename duplicate key
+        legacyTeachers: staffByRole ? staffByRole.teachers : [],
         principals: staffByRole ? staffByRole.principals : [],
         wardens: staffByRole ? staffByRole.wardens : [],
         drivers: staffByRole ? staffByRole.drivers : [],
@@ -864,22 +884,26 @@ return res.status(HTTP_STATUS.OK).json({
         librarians: staffByRole ? staffByRole.librarians : [],
         receptionists: staffByRole ? staffByRole.receptionists : [],
         
-        // Summary
+        // Summary - ISSUE #4 FIX: Use designation-based counts
         summary: {
           totalStudents:    students.length,
           parents: parents.length,
           activeStudents:   students.filter(s => s.status === 'ACTIVE').length,
           inactiveStudents: students.filter(s => s.status !== 'ACTIVE').length,
           totalStaff:       staff.length,
-          teachers:  staff.filter(s => s.role === 'TEACHER').length,
+          teachers:  teachers.length,
           operators: operators.length,
           otherStaff: otherStaff.length,
-          principals: staff.filter(s => s.role === 'PRINCIPAL').length,
-          wardens: staff.filter(s => s.role === 'WARDEN').length,
-          drivers: staff.filter(s => s.role === 'DRIVER').length,
-          accountants: staff.filter(s => s.role === 'ACCOUNTANT').length,
-          librarians: staff.filter(s => s.role === 'LIBRARIAN').length,
-          receptionists: staff.filter(s => s.role === 'RECEPTIONIST').length,
+          principals: principals.length,
+          wardens: wardens.length,
+          drivers: drivers.length,
+          accountants: accountants.length,
+          librarians: librarians.length,
+          cleaners: cleaners.length,
+          guards: guards.length,
+          cooks: cooks.length,
+          peons: peons.length,
+          receptionists: receptionists.length,
           classes: classes.length,
           sections: sections.length,
           subjects: subjects.length,
@@ -990,23 +1014,11 @@ const exportFullInventoryController = async (req, res) => {
         .then(d => { console.log('[BACKUP] Students loaded:', d.length); return d; })
         .catch(() => []),
 
-      // 2. Staff (Teachers + Operators + Principals)
-      Teacher.find({ schoolId: schoolObjId }).lean()
-        .then(async (teacherDocs) => {
-          const userIds = teacherDocs.map(t => t.userId).filter(Boolean);
-          const users = userIds.length > 0 ? await User.find({ _id: { $in: userIds } }).select('-password').lean() : [];
-          const userMap = {};
-          users.forEach(u => { userMap[u._id.toString()] = u; });
-          return teacherDocs.map(t => ({
-            _id: t._id.toString(),
-            name: userMap[t.userId?.toString()]?.name || '',
-            email: userMap[t.userId?.toString()]?.email || '',
-            mobile: userMap[t.userId?.toString()]?.mobile || '',
-            role: 'TEACHER',
-            designation: t.designation || '',
-            status: t.status || 'active'
-          }));
-        })
+// 2. Staff (Teachers + Operators + Principals) - ISSUE #2 FIX: Use User collection directly
+      User.find({ schoolId: schoolObjId, role: 'TEACHER', isDeleted: { $ne: true } })
+        .select('-password -documents')
+        .lean()
+        .then(d => { console.log('[BACKUP] Teachers loaded (from User collection):', d.length); return d; })
         .catch(() => []),
 
       // 3. All Users
@@ -1098,7 +1110,7 @@ const exportFullInventoryController = async (req, res) => {
       sheet.columns = headers.map((h, i) => ({ header: h, key: `col${i}`, width: 15 }));
       rows.forEach(row => {
         const rowData = {};
-        headers.forEach((h, i) => { rowData[`col${i}`] = row[i] || ''; });
+headers.forEach((h, i) => { rowData[`col${i}`] = row[i] ?? ''; });
         sheet.addRow(rowData);
       });
       sheet.getRow(1).font = { bold: true };
@@ -1127,13 +1139,13 @@ const exportFullInventoryController = async (req, res) => {
       ])
     );
 
-    // Sheet 3: Parents
-    const parentsData = studentsData.filter(s => s.parentId).map(s => ({
-      studentName: s.name || '',
-      parentName: s.parentId?.userId?.name || '',
-      parentMobile: s.parentId?.userId?.mobile || '',
-      parentEmail: s.parentId?.userId?.email || ''
-    }));
+// Sheet 3: Parents - FIX: Convert objects to row arrays
+    const parentsData = studentsData.filter(s => s.parentId).map(s => [
+      s.name || '',
+      s.parentId?.userId?.name || '',
+      s.parentId?.userId?.mobile || '',
+      s.parentId?.userId?.email || ''
+    ]);
     addSheet('Parents', ['Student Name', 'Parent Name', 'Mobile', 'Email'], parentsData);
 
     // Sheet 4: Staff
