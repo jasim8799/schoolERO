@@ -9,6 +9,7 @@ const mongoose  = require('mongoose');
 const ExcelJS = require('exceljs');
 
 // Other staff designations (must match StaffManagementScreen exactly)
+// Use lowercase for case-insensitive comparison
 const _otherStaffDesignations = [
   'Driver',
   'Cleaner',
@@ -20,6 +21,14 @@ const _otherStaffDesignations = [
   'Librarian',
   'Other',
 ];
+
+// Helper function for case-insensitive designation check
+const _isOtherStaffDesignation = (designation) => {
+  if (!designation) return false;
+  const normalized = designation.toString().trim().toLowerCase();
+  // Compare using lowercase for case-insensitive matching
+  return _otherStaffDesignations.some(d => d.toLowerCase() === normalized);
+};
 
 const exportInventoryController = async (req, res) => {
   try {
@@ -493,7 +502,8 @@ otherStaff = [];
 
 operatorUsers.forEach(u => {
   const designation = (u.designation || '').toString().trim();
-  if (_otherStaffDesignations.includes(designation)) {
+  // Use case-insensitive designation check
+  if (_isOtherStaffDesignation(designation)) {
     otherStaff.push({
       ...u,
       role: 'OPERATOR',
