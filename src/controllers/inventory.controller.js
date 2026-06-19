@@ -147,14 +147,186 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] exams error:', e.message);
     }
 
-    // ── 1g. Results ──────────────────────────────────────────────
+// ── 1g. Results ──────────────────────────────────────────────
     let results = [];
     try {
       const Result = mongoose.model('Result');
-      results = await Result.find({ schoolId: schoolObjId }).lean();
+      results = await Result.find({ schoolId: schoolObjId })
+        .populate('examId', 'name')
+        .populate('sessionId', 'name')
+        .lean();
       console.log('[INVENTORY] Results:', results.length);
     } catch (e) {
       console.error('[INVENTORY] results error:', e.message);
+    }
+
+    // ==== NEW: Detailed Results Map per Student ====
+    const studentResultsMap = {};
+    try {
+      results.forEach(r => {
+        const sid = r.studentId?.toString();
+        if (!sid) return;
+        if (!studentResultsMap[sid]) studentResultsMap[sid] = [];
+        r.marks?.forEach(m => {
+          studentResultsMap[sid].push({
+            examName: r.examId?.name || '',
+            subjectName: m.subjectName || '',
+            marksObtained: m.marksObtained,
+            isPass: m.isPass,
+            totalMarks: r.totalMarks,
+            percentage: r.percentage,
+            grade: r.grade,
+            status: r.status,
+            overallStatus: r.overallStatus,
+            resultDate: r.createdAt
+          });
+        });
+      });
+      console.log('[INVENTORY] studentResultsMap:', Object.keys(studentResultsMap).length);
+    } catch (e) {
+      console.error('[INVENTORY] studentResultsMap error:', e.message);
+    }
+
+    // ==== NEW: Student Subject Enrollment Map ====
+    const studentSubjectsMap = {};
+    try {
+      const StudentSubject = mongoose.model('StudentSubject') || mongoose.model('Subject');
+      // For now, derive from student records - subjects from class
+      students.forEach(s => {
+        const sid = s._id?.toString();
+        if (!sid) return;
+        // Subjects would be linked through student enrollment - placeholder
+        if (!studentSubjectsMap[sid]) studentSubjectsMap[sid] = [];
+      });
+      // Also try Subject model for class-subject mapping
+      const classSubjects = await mongoose.model('Subject').find({ schoolId: schoolObjId }).lean();
+      // Map subjects to classes
+      const classSubjectsMap = {};
+      classSubjects.forEach(subj => {
+        const cid = subj.classId?.toString();
+        if (!cid) return;
+        if (!classSubjectsMap[cid]) classSubjectsMap[cid] = [];
+        classSubjectsMap[cid].push(subj.name);
+      });
+      // Assign subjects to students based on class
+      students.forEach(s => {
+        const sid = s._id?.toString();
+        const cid = s.classId?._id?.toString() || s.classId?.toString();
+        if (!sid || !cid) return;
+        if (!studentSubjectsMap[sid]) studentSubjectsMap[sid] = [];
+        if (classSubjectsMap[cid]) {
+          classSubjectsMap[cid].forEach(subj => {
+            if (!studentSubjectsMap[sid].includes(subj)) {
+              studentSubjectsMap[sid].push(subj);
+            }
+          });
+        }
+      });
+      console.log('[INVENTORY] studentSubjectsMap:', Object.keys(studentSubjectsMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] studentSubjectsMap skip:', e.message);
+    }
+
+    // ==== NEW: Detailed Student Attendance Map ====
+    const studentAttendanceMap = {};
+    try {
+      const StudentAttendance = mongoose.model('StudentDailyAttendance') || mongoose.model('StudentAttendance');
+      const since = new Date();
+      since.setFullYear(since.getFullYear() - 1); // Last 1 year
+      const attendRecords = await StudentAttendance.find({
+        schoolId: schoolObjId,
+        date: { $gte: since }
+      })
+      .populate('studentId', 'name')
+      .lean();
+      attendRecords.forEach(a => {
+        const sid = a.studentId?.toString();
+        if (!sid) return;
+        const recDate = a.date ? new Date(a.date) : new Date();
+        const monthKey = `${recDate.getFullYear()}-${String(recDate.getMonth() + 1).padStart(2, '0')}`;
+        if (!studentAttendanceMap[sid]) studentAttendanceMap[sid] = {};
+        if (!studentAttendanceMap[sid][monthKey]) {
+          studentAttendanceMap[sid][monthKey] = { present: 0, absent: 0, total: 0 };
+        }
+        studentAttendanceMap[sid][monthKey].total++;
+        const status = (a.status || '').toUpperCase();
+        if (status === 'PRESENT' || status === 'LATE') {
+          studentAttendanceMap[sid][monthKey].present++;
+        } else {
+          studentAttendanceMap[sid][monthKey].absent++;
+        }
+      });
+      // Calculate percentages
+      Object.keys(studentAttendanceMap).forEach(sid => {
+        Object.keys(studentAttendanceMap[sid]).forEach(month => {
+          const rec = studentAttendanceMap[sid][month];
+          rec.percentage = rec.total > 0 ? ((rec.present / rec.total) * 100).toFixed(1) : '0';
+        });
+      });
+      console.log('[INVENTORY] studentAttendanceMap:', Object.keys(studentAttendanceMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] studentAttendanceMap skip:', e.message);
+    }
+
+    // ==== NEW: Student Fee Details Map ====
+    const studentFeeDetailsMap = {};
+    try {
+      const bills = await mongoose.model('Bill').find({ schoolId: schoolObjId })
+        .select('studentId billType totalAmount paidAmount dueAmount status createdAt')
+        .lean();
+      bills.forEach(b => {
+        const sid = b.studentId?.toString();
+        if (!sid) return;
+        if (!studentFeeDetailsMap[sid]) studentFeeDetailsMap[sid] = [];
+        studentFeeDetailsMap[sid].push({
+          billType: b.billType || 'TUITION',
+          totalAmount: b.totalAmount || 0,
+          paidAmount: b.paidAmount || 0,
+          dueAmount: b.dueAmount || 0,
+          status: b.status || 'UNPAID',
+          createdAt: b.createdAt
+        });
+      });
+      console.log('[INVENTORY] studentFeeDetailsMap:', Object.keys(studentFeeDetailsMap).length);
+    } catch (e) {
+      console.error('[INVENTORY] studentFeeDetailsMap error:', e.message);
+    }
+
+    // ==== NEW: Student Homework Map ====
+    const studentHomeworkMap = {};
+    try {
+      const homeworkList = await Homework.find({ schoolId: schoolObjId })
+        .populate('classId', 'name')
+        .populate('subjectId', 'name')
+        .lean();
+      // Map homework to students by class
+      const classHomework = {};
+      homeworkList.forEach(hw => {
+        const cid = hw.classId?._id?.toString() || hw.classId?.toString();
+        if (!cid) return;
+        if (!classHomework[cid]) classHomework[cid] = [];
+        classHomework[cid].push({
+          subjectName: hw.subjectId?.name || '',
+          title: hw.title,
+          dueDate: hw.dueDate,
+          status: hw.status || 'Active'
+        });
+      });
+      // Assign to students
+      students.forEach(s => {
+        const sid = s._id?.toString();
+        const cid = s.classId?._id?.toString() || s.classId?.toString();
+        if (!sid || !cid) return;
+        if (!studentHomeworkMap[sid]) studentHomeworkMap[sid] = [];
+        if (classHomework[cid]) {
+          classHomework[cid].forEach(hw => {
+            studentHomeworkMap[sid].push(hw);
+          });
+        }
+      });
+      console.log('[INVENTORY] studentHomeworkMap:', Object.keys(studentHomeworkMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] studentHomeworkMap skip:', e.message);
     }
 
     // ── 1h. Homework ──────────────────────────────────────────────
@@ -167,7 +339,7 @@ const exportInventoryController = async (req, res) => {
       console.error('[INVENTORY] homework error:', e.message);
     }
 
-    // ── 1i. Notices ──────────────────────────────────────────────
+// ── 1i. Notices ──────────────────────────────────────────────
     let notices = [];
     try {
       const Notice = mongoose.model('Notice');
@@ -175,6 +347,103 @@ const exportInventoryController = async (req, res) => {
       console.log('[INVENTORY] Notices:', notices.length);
     } catch (e) {
       console.error('[INVENTORY] notices error:', e.message);
+    }
+
+    // ==== NEW: Teacher Salary Map ====
+    const teacherSalaryMap = {};
+    try {
+      const salaryPayments = await mongoose.model('SalaryPayment').find({ schoolId: schoolObjId })
+        .populate('staffId', 'name')
+        .lean();
+      salaryPayments.forEach(sp => {
+        const tid = sp.staffId?.toString();
+        if (!tid) return;
+        if (!teacherSalaryMap[tid]) teacherSalaryMap[tid] = [];
+        teacherSalaryMap[tid].push({
+          month: sp.month,
+          amountPaid: sp.amountPaid,
+          paymentMode: sp.paymentMode,
+          paymentDate: sp.paymentDate,
+          status: sp.status || 'PAID'
+        });
+      });
+      console.log('[INVENTORY] teacherSalaryMap:', Object.keys(teacherSalaryMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] teacherSalaryMap skip:', e.message);
+    }
+
+    // ==== NEW: Parent Child Map ====
+    const parentChildMap = {};
+    try {
+      parents.forEach(p => {
+        const parentUserId = p.parentUserId || p.parentId;
+        if (!parentUserId) return;
+        if (!parentChildMap[parentUserId]) parentChildMap[parentUserId] = [];
+        parentChildMap[parentUserId].push({
+          studentName: p.studentName,
+          studentId: p.studentId,
+          relation: p.relation || 'Father'
+        });
+      });
+      console.log('[INVENTORY] parentChildMap:', Object.keys(parentChildMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] parentChildMap skip:', e.message);
+    }
+
+    // ==== NEW: Teacher Subject Map ====
+    const teacherSubjectMap = {};
+    try {
+      const teacherAssignments = await mongoose.model('TeacherAssignment').find({ schoolId: schoolObjId })
+        .populate('subjectId', 'name')
+        .populate('teacherId', 'name')
+        .lean();
+      teacherAssignments.forEach(ta => {
+        const tid = ta.teacherId?.toString();
+        if (!tid) return;
+        if (!teacherSubjectMap[tid]) teacherSubjectMap[tid] = [];
+        const subjName = ta.subjectId?.name || '';
+        if (subjName && !teacherSubjectMap[tid].includes(subjName)) {
+          teacherSubjectMap[tid].push(subjName);
+        }
+      });
+      console.log('[INVENTORY] teacherSubjectMap:', Object.keys(teacherSubjectMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] teacherSubjectMap skip:', e.message);
+    }
+
+    // ==== NEW: Operator Activity Map ====
+    const operatorActivityMap = {};
+    try {
+      // Map expenses to operators
+      expenses.forEach(exp => {
+        const oid = exp.createdBy?.toString();
+        if (!oid) return;
+        if (!operatorActivityMap[oid]) operatorActivityMap[oid] = [];
+        operatorActivityMap[oid].push({
+          type: 'EXPENSE',
+          description: exp.title,
+          amount: exp.amount,
+          category: exp.category,
+          date: exp.date,
+          status: exp.status
+        });
+      });
+      // Map notices to operators
+      notices.forEach(n => {
+        const oid = n.createdBy?.toString();
+        if (!oid) return;
+        if (!operatorActivityMap[oid]) operatorActivityMap[oid] = [];
+        operatorActivityMap[oid].push({
+          type: 'NOTICE',
+          description: n.title,
+          postFor: n.postFor,
+          date: n.createdAt,
+          status: n.status
+        });
+      });
+      console.log('[INVENTORY] operatorActivityMap:', Object.keys(operatorActivityMap).length);
+    } catch (e) {
+      console.log('[INVENTORY] operatorActivityMap skip:', e.message);
     }
 
     // ── 1j. PTM ──────────────────────────────────────────────
@@ -842,6 +1111,17 @@ return res.status(HTTP_STATUS.OK).json({
         transportMap, transportFeeMap,
         teacherClassMap, staffAttendanceMap,
         classSummary: classMap,
+        
+        // ===== NEW: Enterprise Inventory V2 Detail Maps =====
+        studentResultsMap,
+        studentSubjectsMap,
+        studentAttendanceMap,
+        studentFeeDetailsMap,
+        studentHomeworkMap,
+        teacherSalaryMap,
+        parentChildMap,
+        teacherSubjectMap,
+        operatorActivityMap,
         
         // ===== REQUIREMENT 6: Export staff separately =====
         operators: operators,
