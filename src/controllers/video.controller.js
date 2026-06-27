@@ -1,4 +1,6 @@
 const Video = require('../models/Video');
+const Class = require('../models/Class');
+const Subject = require('../models/Subject');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 
 const _ip = (req) =>
@@ -20,6 +22,45 @@ const _audit = async (action, entityType, entityId, desc, details, req) => {
   } catch (_) {}
 };
 
+const _resolveContextSessionId = (req) => req.activeSession?._id || req.user?.sessionId || null;
+
+const _validateClassSubjectPair = async ({ classId, subjectId, req }) => {
+  const schoolId = req.schoolId;
+  const sessionId = _resolveContextSessionId(req);
+
+  const classFilter = { _id: classId, schoolId };
+  const subjectFilter = { _id: subjectId, schoolId };
+  if (sessionId) {
+    classFilter.sessionId = sessionId;
+    subjectFilter.sessionId = sessionId;
+  }
+
+  const classDoc = await Class.findOne(classFilter).select('_id');
+  if (!classDoc) {
+    return {
+      ok: false,
+      message: 'Selected class does not exist in the current school/session',
+    };
+  }
+
+  const subjectDoc = await Subject.findOne(subjectFilter).select('_id classId');
+  if (!subjectDoc) {
+    return {
+      ok: false,
+      message: 'Selected subject does not exist in the current school/session',
+    };
+  }
+
+  if (subjectDoc.classId?.toString() !== classDoc._id.toString()) {
+    return {
+      ok: false,
+      message: 'Selected subject does not belong to the selected class',
+    };
+  }
+
+  return { ok: true };
+};
+
 // ── POST /api/videos ────────────────────────────────────────────
 const createVideo = async (req, res) => {
   try {
@@ -38,15 +79,6 @@ const createVideo = async (req, res) => {
       visibility,
     } = req.body;
 
-    // DEBUG: Log upload details
-    console.log('========== VIDEO UPLOAD DEBUG ==========');
-    console.log('Selected Subject Name:', req.body.subjectName);
-    console.log('Selected Subject ID (payload):', subjectId);
-    console.log('Selected Class ID:', classId);
-    console.log('School ID:', req.schoolId);
-    console.log('Session ID:', req.activeSession?._id || req.user.sessionId);
-    console.log('======================================');
-
     if (!title || !classId || !subjectId || !videoUrl) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
@@ -54,16 +86,13 @@ const createVideo = async (req, res) => {
       });
     }
 
-    // DEBUG: Verify Subject exists in DB before saving
-    const Subject = require('../models/Subject');
-    const subjectDoc = await Subject.findById(subjectId);
-    console.log('MongoDB Subject ID:', subjectDoc ? subjectDoc._id.toString() : 'NOT FOUND');
-    console.log('MongoDB Subject Name:', subjectDoc ? subjectDoc.name : 'N/A');
-    console.log('MongoDB Subject classId:', subjectDoc ? subjectDoc.classId.toString() : 'N/A');
-    console.log('MongoDB Subject sessionId:', subjectDoc ? subjectDoc.sessionId.toString() : 'N/A');
-    console.log('MongoDB Subject schoolId:', subjectDoc ? subjectDoc.schoolId.toString() : 'N/A');
-    console.log('Comparing: payloadSubjectId === mongoSubjectId:', subjectDoc ? (subjectId === subjectDoc._id.toString()) : 'N/A');
-    console.log('========================================');
+    const pairValidation = await _validateClassSubjectPair({ classId, subjectId, req });
+    if (!pairValidation.ok) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: pairValidation.message,
+      });
+    }
 
     const video = new Video({
       title,
@@ -164,16 +193,6 @@ const videos = await Video.find(filter)
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
 
-    // DEBUG: Log all videos returned
-    console.log('========== GET /api/videos DEBUG ==========');
-    console.log('Total videos returned:', videos.length);
-    console.log('Filter used:', filter);
-    for (var i = 0; i < videos.length; i++) {
-      const v = videos[i];
-      console.log(`Video[${i}]: _id=${v._id}, title=${v.title}, classId=${v.classId?._id}, className=${v.classId?.name}, subjectId=${v.subjectId?._id}, subjectName=${v.subjectId?.name}, sessionId=${v.sessionId}, schoolId=${v.schoolId}`);
-    }
-    console.log('==========================================');
-
     res.json({ success: true, data: videos });
   } catch (error) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
@@ -238,6 +257,20 @@ const updateVideo = async (req, res) => {
       title, description, topic, chapter, classId, subjectId,
       videoUrl, videoType, thumbnailUrl, duration, isFree, visibility
     } = req.body;
+
+    const nextClassId = classId || video.classId;
+    const nextSubjectId = subjectId || video.subjectId;
+    const pairValidation = await _validateClassSubjectPair({
+      classId: nextClassId,
+      subjectId: nextSubjectId,
+      req,
+    });
+    if (!pairValidation.ok) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: pairValidation.message,
+      });
+    }
 
     if (title !== undefined && !title.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
