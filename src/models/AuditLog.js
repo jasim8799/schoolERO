@@ -174,8 +174,10 @@ const AuditLogSchema = new mongoose.Schema({
 
       // Video
       'VIDEO_UPLOADED',
+      'VIDEO_UPDATED',
       'VIDEO_DELETED',
       'VIDEO_VIEWED',
+      'VIDEO_CLASS_SUBJECT_MISMATCH',
 
       // Q&A
       'QUESTION_ASKED',

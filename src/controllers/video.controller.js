@@ -187,11 +187,44 @@ const getVideos = async (req, res) => {
       if (subjectId) filter.subjectId = subjectId;
     }
 
-const videos = await Video.find(filter)
+    const rawVideos = await Video.find(filter)
+      .select('_id title classId subjectId')
+      .lean();
+
+    const rawSubjectIds = [...new Set(rawVideos.map((v) => v.subjectId?.toString()).filter(Boolean))];
+    const rawSubjects = await Subject.find({ _id: { $in: rawSubjectIds } })
+      .select('_id classId')
+      .lean();
+    const rawSubjectById = new Map(rawSubjects.map((s) => [s._id.toString(), s]));
+
+    const videos = await Video.find(filter)
       .populate('classId', 'name')
-      .populate('subjectId', 'name')
+      .populate('subjectId', 'name classId')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
+
+    const mismatches = rawVideos.filter((video) => {
+      const subject = rawSubjectById.get(video.subjectId?.toString());
+      if (!subject) return true;
+      return subject.classId?.toString() !== video.classId?.toString();
+    });
+
+    if (mismatches.length) {
+      await Promise.allSettled(
+        mismatches.map((video) => _audit(
+          'VIDEO_CLASS_SUBJECT_MISMATCH',
+          'VIDEO',
+          video._id,
+          `Video class/subject mismatch detected for "${video.title}"`,
+          {
+            videoId: video._id?.toString?.(),
+            classId: video.classId?.toString?.(),
+            subjectId: video.subjectId?.toString?.(),
+          },
+          req,
+        ))
+      );
+    }
 
     res.json({ success: true, data: videos });
   } catch (error) {

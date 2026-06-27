@@ -292,7 +292,7 @@ app.use(
   checkModuleAccess('fees'),
   feeCollectionRoutes
 );
-app.use('/api/videos', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('videos'), videoRoutes);
+app.use('/api/videos', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('videos'), videoRoutes);
 app.use('/api/admissions', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('students'), admissionRoutes);
 app.use('/api/questions', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), questionRoutes);
 app.use('/api/ptm', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), ptmRoutes);

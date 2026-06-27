@@ -29,6 +29,10 @@ const monitoringCtrl = require('../controllers/monitoring.controller');
 const healthCtrl = require('../controllers/health.controller');
 const auditCtrl = require('../controllers/audit.controller');
 const { migrateParentUserId } = require('../controllers/parent.controller');
+const {
+	checkVideoIntegrity,
+	fixVideoIntegrity,
+} = require('../controllers/videoIntegrity.admin.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { USER_ROLES } = require('../config/constants');
@@ -107,6 +111,10 @@ router.post('/schools/:id/teacher', createTeacher);
 
 // POST /api/admin/migrate-parent-user-id - Migrate parentUserId for existing students (SUPER_ADMIN only)
 router.post('/migrate-parent-user-id', migrateParentUserId);
+
+// Video integrity
+router.post('/check-video-integrity', checkVideoIntegrity);
+router.post('/fix-video-integrity', fixVideoIntegrity);
 
 // Analytics
 router.get('/analytics/overview', analyticsCtrl.getOverview);
