@@ -38,12 +38,32 @@ const createVideo = async (req, res) => {
       visibility,
     } = req.body;
 
+    // DEBUG: Log upload details
+    console.log('========== VIDEO UPLOAD DEBUG ==========');
+    console.log('Selected Subject Name:', req.body.subjectName);
+    console.log('Selected Subject ID (payload):', subjectId);
+    console.log('Selected Class ID:', classId);
+    console.log('School ID:', req.schoolId);
+    console.log('Session ID:', req.activeSession?._id || req.user.sessionId);
+    console.log('======================================');
+
     if (!title || !classId || !subjectId || !videoUrl) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'title, classId, subjectId, and videoUrl are required',
       });
     }
+
+    // DEBUG: Verify Subject exists in DB before saving
+    const Subject = require('../models/Subject');
+    const subjectDoc = await Subject.findById(subjectId);
+    console.log('MongoDB Subject ID:', subjectDoc ? subjectDoc._id.toString() : 'NOT FOUND');
+    console.log('MongoDB Subject Name:', subjectDoc ? subjectDoc.name : 'N/A');
+    console.log('MongoDB Subject classId:', subjectDoc ? subjectDoc.classId.toString() : 'N/A');
+    console.log('MongoDB Subject sessionId:', subjectDoc ? subjectDoc.sessionId.toString() : 'N/A');
+    console.log('MongoDB Subject schoolId:', subjectDoc ? subjectDoc.schoolId.toString() : 'N/A');
+    console.log('Comparing: payloadSubjectId === mongoSubjectId:', subjectDoc ? (subjectId === subjectDoc._id.toString()) : 'N/A');
+    console.log('========================================');
 
     const video = new Video({
       title,
@@ -138,11 +158,21 @@ const getVideos = async (req, res) => {
       if (subjectId) filter.subjectId = subjectId;
     }
 
-    const videos = await Video.find(filter)
+const videos = await Video.find(filter)
       .populate('classId', 'name')
       .populate('subjectId', 'name')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
+
+    // DEBUG: Log all videos returned
+    console.log('========== GET /api/videos DEBUG ==========');
+    console.log('Total videos returned:', videos.length);
+    console.log('Filter used:', filter);
+    for (var i = 0; i < videos.length; i++) {
+      const v = videos[i];
+      console.log(`Video[${i}]: _id=${v._id}, title=${v.title}, classId=${v.classId?._id}, className=${v.classId?.name}, subjectId=${v.subjectId?._id}, subjectName=${v.subjectId?.name}, sessionId=${v.sessionId}, schoolId=${v.schoolId}`);
+    }
+    console.log('==========================================');
 
     res.json({ success: true, data: videos });
   } catch (error) {

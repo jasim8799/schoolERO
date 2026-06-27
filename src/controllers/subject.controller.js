@@ -144,11 +144,21 @@ const getAllSubjects = async (req, res) => {
       filter.classId = classId;
     }
 
-    const subjects = await Subject.find(filter)
+const subjects = await Subject.find(filter)
       .populate('classId', 'name')
       .populate('schoolId', 'name code')
       .populate('sessionId', 'name startDate endDate')
       .sort({ classId: 1, name: 1 });
+
+    // DEBUG: Log all subjects loaded into dropdown
+    console.log('========== GET /api/subjects DEBUG ==========');
+    console.log('Total subjects returned:', subjects.length);
+    console.log('Filter used:', filter);
+    for (var i = 0; i < subjects.length; i++) {
+      const s = subjects[i];
+      console.log(`Subject[${i}]: name=${s.name}, _id=${s._id}, classId=${s.classId?._id}, className=${s.classId?.name}, sessionId=${s.sessionId?._id}, schoolId=${s.schoolId?._id}`);
+    }
+    console.log('==========================================');
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
