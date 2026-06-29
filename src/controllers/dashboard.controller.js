@@ -107,8 +107,9 @@ const getPrincipalDashboard = async (req, res) => {
       // Students exist but no room capacity defined - treat as fully occupied
       hostelOccupancy = 100;
     }
-    // Format: no decimal for whole numbers, 1 decimal for fractional
-    const hostelOccupancyFormatted = hostelOccupancy === Math.truncate(hostelOccupancy) 
+// Format: no decimal for whole numbers, 1 decimal for fractional
+    // FIX: Use Math.trunc() instead of non-existent Math.truncate()
+    const hostelOccupancyFormatted = Number.isInteger(hostelOccupancy) 
       ? hostelOccupancy.toString() 
       : hostelOccupancy.toFixed(1);
     const hostelStudentCount = hostelStudents;
@@ -117,10 +118,11 @@ const getPrincipalDashboard = async (req, res) => {
     const transportStudents = await StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' });
     // Calculate transport percentage: transportStudents / totalStudents × 100
     // PHASE 3 FIX: Format without .0 decimals
+    // FIX: Use Number.isInteger() instead of non-existent Math.truncate()
     const transportPercentRaw = totalStudents > 0 
       ? ((transportStudents / totalStudents) * 100) 
       : 0;
-    const transportPercentage = transportPercentRaw === Math.truncate(transportPercentRaw)
+    const transportPercentage = Number.isInteger(transportPercentRaw)
       ? transportPercentRaw.toString()
       : transportPercentRaw.toFixed(1);
 
