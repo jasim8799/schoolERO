@@ -92,23 +92,33 @@ const getPrincipalDashboard = async (req, res) => {
       }),
     ]);
 
-// Hostel occupancy
+// Hostel occupancy - FORENSIC FIX: Use Room.totalBeds (NOT $capacity which doesn't exist in schema)
     const hostelStudents = await StudentHostel.countDocuments({ schoolId, status: 'ACTIVE' });
-    const totalHostelCapacity = await require('../models/Room').aggregate([
+    const roomData = await require('../models/Room').aggregate([
       { $match: { schoolId } },
-      { $group: { _id: null, total: { $sum: '$capacity' } } }
+      { $group: { _id: null, totalBeds: { $sum: '$totalBeds' }, roomCount: { $sum: 1 } } }
     ]);
-    // PHASE 1 FIX: Handle edge case where hostel has students but no room capacity configured
-    // If there are students but no capacity data, return 100% (all beds occupied since no capacity limit defined)
+    const totalBeds = roomData.length > 0 ? roomData[0].totalBeds : 0;
+    const roomCount = roomData.length > 0 ? roomData[0].roomCount : 0;
+    
+    // DEBUG: Log hostel metrics for verification
+    console.log('========== HOSTEL DASHBOARD DEBUG ==========');
+    console.log('Rooms:', roomCount);
+    console.log('Total Beds:', totalBeds);
+    console.log('Assigned Students:', hostelStudents);
+    console.log('============================================');
+    
+    // FORENSIC FIX: Never assume 100% if capacity is missing
+    // Use Room.totalBeds for actual capacity calculation
     let hostelOccupancy = 0;
-    if (totalHostelCapacity.length > 0 && totalHostelCapacity[0].total > 0) {
-      hostelOccupancy = ((hostelStudents / totalHostelCapacity[0].total) * 100);
-    } else if (hostelStudents > 0) {
-      // Students exist but no room capacity defined - treat as fully occupied
-      hostelOccupancy = 100;
+    if (totalBeds > 0) {
+      const rawOccupancy = (hostelStudents / totalBeds) * 100;
+      // Clamp between 0 and 100
+      hostelOccupancy = Math.max(0, Math.min(100, rawOccupancy));
     }
+    // If no capacity (totalBeds = 0), hostelOccupancy stays 0 (not 100%)
+    
 // Format: no decimal for whole numbers, 1 decimal for fractional
-    // FIX: Use Math.trunc() instead of non-existent Math.truncate()
     const hostelOccupancyFormatted = Number.isInteger(hostelOccupancy) 
       ? hostelOccupancy.toString() 
       : hostelOccupancy.toFixed(1);
