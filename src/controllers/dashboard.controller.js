@@ -12,8 +12,11 @@ const Homework = require('../models/Homework');
 const Exam = require('../models/Exam');
 const Result = require('../models/Result');
 const Bill = require('../models/Bill');
+const LeaveApplication = require('../models/LeaveApplication');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
 const AuditLog = require('../models/AuditLog');
+const Section = require('../models/Section');
+const Class = require('../models/Class');
 const redis = require('../config/redis');
 const { USER_ROLES } = require('../config/constants');
 
@@ -97,12 +100,59 @@ const getPrincipalDashboard = async (req, res) => {
     ]);
     const hostelOccupancy = totalHostelCapacity.length > 0 ? ((hostelStudents / totalHostelCapacity[0].total) * 100).toFixed(1) : 0;
 
-    // Transport students count
+// Transport students count
     const transportStudents = await StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' });
+
+    // ===== EXECUTIVE DASHBOARD METRICS FOR PRINCIPAL =====
+    
+    // Teachers absent today
+    const teacherAbsentToday = await TeacherAttendance.countDocuments({
+      schoolId,
+      date: { $gte: today, $lt: tomorrow },
+      status: 'ABSENT'
+    });
+
+    // Pending leave applications (staff leave awaiting approval)
+    const pendingLeaveCount = await LeaveApplication.countDocuments({
+      schoolId,
+      status: 'PENDING'
+    });
+
+    // Classes pending attendance (sections without today's attendance marked)
+    let classesPendingAttendance = 0;
+    try {
+      const classes = await Class.find({ schoolId, ...sFilter });
+      for (const cls of classes) {
+        const sections = await Section.find({ classId: cls._id, schoolId, ...sFilter });
+        for (const section of sections) {
+          const hasAttendance = await StudentDailyAttendance.countDocuments({
+            classId: cls._id,
+            sectionId: section._id,
+            schoolId,
+            date: { $gte: today, $lt: tomorrow }
+          });
+          if (hasAttendance === 0) {
+            classesPendingAttendance++;
+          }
+        }
+      }
+    } catch (_) {
+      classesPendingAttendance = 0;
+    }
+
+    // Overdue fee amount (sum of all overdue bills)
+    const overdueBills = await Bill.find({
+      schoolId,
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 },
+      dueDate: { $lt: today }
+    });
+    const totalOverdueAmount = overdueBills.reduce((sum, bill) => sum + (bill.dueAmount || 0), 0);
 
     res.json({
       success: true,
       data: {
+        // Existing metrics
         totalStudents,
         totalTeachers,
         todayAttendancePercent,
@@ -115,7 +165,12 @@ const getPrincipalDashboard = async (req, res) => {
         publishedResultsCount: publishedResultExamIds.length,
         absentToday,
         hostelOccupancy,
-        transportStudents
+        transportStudents,
+        // NEW EXECUTIVE METRICS FOR PRINCIPAL
+        teacherAbsentToday,
+        pendingLeaveCount,
+        classesPendingAttendance,
+        totalOverdueAmount
       }
     });
   } catch (err) {
