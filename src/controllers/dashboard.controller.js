@@ -98,15 +98,31 @@ const getPrincipalDashboard = async (req, res) => {
       { $match: { schoolId } },
       { $group: { _id: null, total: { $sum: '$capacity' } } }
     ]);
-    const hostelOccupancy = totalHostelCapacity.length > 0 ? ((hostelStudents / totalHostelCapacity[0].total) * 100).toFixed(1) : 0;
+    // PHASE 1 FIX: Handle edge case where hostel has students but no room capacity configured
+    // If there are students but no capacity data, return 100% (all beds occupied since no capacity limit defined)
+    let hostelOccupancy = 0;
+    if (totalHostelCapacity.length > 0 && totalHostelCapacity[0].total > 0) {
+      hostelOccupancy = ((hostelStudents / totalHostelCapacity[0].total) * 100);
+    } else if (hostelStudents > 0) {
+      // Students exist but no room capacity defined - treat as fully occupied
+      hostelOccupancy = 100;
+    }
+    // Format: no decimal for whole numbers, 1 decimal for fractional
+    const hostelOccupancyFormatted = hostelOccupancy === Math.truncate(hostelOccupancy) 
+      ? hostelOccupancy.toString() 
+      : hostelOccupancy.toFixed(1);
     const hostelStudentCount = hostelStudents;
 
-    // Transport students count
+// Transport students count
     const transportStudents = await StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' });
     // Calculate transport percentage: transportStudents / totalStudents × 100
-    const transportPercentage = totalStudents > 0 
-      ? ((transportStudents / totalStudents) * 100).toFixed(1) 
-      : '0';
+    // PHASE 3 FIX: Format without .0 decimals
+    const transportPercentRaw = totalStudents > 0 
+      ? ((transportStudents / totalStudents) * 100) 
+      : 0;
+    const transportPercentage = transportPercentRaw === Math.truncate(transportPercentRaw)
+      ? transportPercentRaw.toString()
+      : transportPercentRaw.toFixed(1);
 
     // ===== EXECUTIVE DASHBOARD METRICS FOR PRINCIPAL =====
     
@@ -186,7 +202,8 @@ res.json({
         publishedExamsCount,
         publishedResultsCount: publishedResultExamIds.length,
         absentToday,
-        hostelOccupancy,
+        // PHASE 1 & 3 FIX: Use formatted values without .0 decimals
+        hostelOccupancy: hostelOccupancyFormatted,
         hostelStudentCount,
         transportStudents,
         transportPercentage,
