@@ -147,7 +147,24 @@ const getPrincipalDashboard = async (req, res) => {
       dueAmount: { $gt: 0 },
       dueDate: { $lt: today }
     });
-    const totalOverdueAmount = overdueBills.reduce((sum, bill) => sum + (bill.dueAmount || 0), 0);
+const totalOverdueAmount = overdueBills.reduce((sum, bill) => sum + (bill.dueAmount || 0), 0);
+
+// Today's attendance counts for Attendance Meter
+    const todayPresent = presentCount;
+    const todayAbsent = absentToday;
+    const attendanceNotMarked = totalStudents - (presentCount + absentToday);
+
+    // PHASE 1 DEBUG: Log exact API response
+    console.log('========================================');
+    console.log('PRINCIPAL DASHBOARD API RESPONSE');
+    console.log('========================================');
+    console.log(JSON.stringify({
+      todayPresent,
+      todayAbsent,
+      attendanceNotMarked: attendanceNotMarked > 0 ? attendanceNotMarked : 0,
+      totalStudents
+    }, null, 2));
+    console.log('========================================');
 
     res.json({
       success: true,
@@ -170,7 +187,11 @@ const getPrincipalDashboard = async (req, res) => {
         teacherAbsentToday,
         pendingLeaveCount,
         classesPendingAttendance,
-        totalOverdueAmount
+        totalOverdueAmount,
+        // Attendance Meter fields
+        todayPresent,
+        todayAbsent,
+        attendanceNotMarked: attendanceNotMarked > 0 ? attendanceNotMarked : 0
       }
     });
   } catch (err) {
