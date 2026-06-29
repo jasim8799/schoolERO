@@ -92,16 +92,21 @@ const getPrincipalDashboard = async (req, res) => {
       }),
     ]);
 
-    // Hostel occupancy
+// Hostel occupancy
     const hostelStudents = await StudentHostel.countDocuments({ schoolId, status: 'ACTIVE' });
     const totalHostelCapacity = await require('../models/Room').aggregate([
       { $match: { schoolId } },
       { $group: { _id: null, total: { $sum: '$capacity' } } }
     ]);
     const hostelOccupancy = totalHostelCapacity.length > 0 ? ((hostelStudents / totalHostelCapacity[0].total) * 100).toFixed(1) : 0;
+    const hostelStudentCount = hostelStudents;
 
-// Transport students count
+    // Transport students count
     const transportStudents = await StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' });
+    // Calculate transport percentage: transportStudents / totalStudents × 100
+    const transportPercentage = totalStudents > 0 
+      ? ((transportStudents / totalStudents) * 100).toFixed(1) 
+      : '0';
 
     // ===== EXECUTIVE DASHBOARD METRICS FOR PRINCIPAL =====
     
@@ -166,7 +171,7 @@ const totalOverdueAmount = overdueBills.reduce((sum, bill) => sum + (bill.dueAmo
     }, null, 2));
     console.log('========================================');
 
-    res.json({
+res.json({
       success: true,
       data: {
         // Existing metrics
@@ -182,7 +187,9 @@ const totalOverdueAmount = overdueBills.reduce((sum, bill) => sum + (bill.dueAmo
         publishedResultsCount: publishedResultExamIds.length,
         absentToday,
         hostelOccupancy,
+        hostelStudentCount,
         transportStudents,
+        transportPercentage,
         // NEW EXECUTIVE METRICS FOR PRINCIPAL
         teacherAbsentToday,
         pendingLeaveCount,
