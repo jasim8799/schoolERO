@@ -101,16 +101,57 @@ const getPrincipalDashboard = async (req, res) => {
     const totalBeds = roomData.length > 0 ? roomData[0].totalBeds : 0;
     const roomCount = roomData.length > 0 ? roomData[0].roomCount : 0;
     
-    // DEBUG: Log hostel metrics for verification
-    console.log('========== HOSTEL DASHBOARD DEBUG ==========');
-    console.log('Rooms:', roomCount);
-    console.log('Total Beds:', totalBeds);
-    console.log('Assigned Students:', hostelStudents);
-    console.log('============================================');
+    // FORENSIC PHASE 1-7: Get detailed room data for audit
+    const Room = require('../models/Room');
+    const Hostel = require('../models/Hostel');
+    
+    // Count hostels and get their IDs
+    const hostelCount = await Hostel.countDocuments({ schoolId });
+    
+    // Get individual room details for forensic audit
+    const roomDetails = await Room.find({ schoolId }).select('roomNumber totalBeds availableBeds hostelId').lean();
+    const roomIds = roomDetails.map(r => r._id);
+    
+    // Get individual student hostel details for forensic audit
+    const studentHostelDetails = await StudentHostel.find({ schoolId, status: 'ACTIVE' })
+      .select('roomId hostelId')
+      .lean();
+    
+    // Verify relationships: Check if studentHostel.roomId references exist in Room collection
+    const validRoomIds = new Set(roomIds.map(id => id.toString()));
+    const orphanedStudentHostels = studentHostelDetails.filter(sh => !validRoomIds.has(sh.roomId?.toString()));
+    
+    // Get capacity from Hostel model as alternative (PHASE 3: Single Source of Truth verification)
+    const hostelCaps = await Hostel.find({ schoolId }).select('capacity').lean();
+    const hostelCapacitySum = hostelCaps.reduce((sum, h) => sum + (h.capacity || 0), 0);
+    
+    // FORENSIC DIAGNOSTIC LOG (PHASE 6-7: Verify capacity sources)
+    console.log('========== HOSTEL FORENSIC AUDIT ==========');
+    console.log('SchoolId:', schoolId);
+    console.log('Hostel Count:', hostelCount);
+    console.log('Room Count:', roomCount);
+    console.log('Total Beds (from Rooms):', totalBeds);
+    console.log('Active Students:', hostelStudents);
+    console.log('Hostel Capacity (sum):', hostelCapacitySum);
+    console.log('Orphaned StudentHostels:', orphanedStudentHostels.length);
+    console.log('=============================================');
     
     // FORENSIC FIX: Never assume 100% if capacity is missing
     // Use Room.totalBeds for actual capacity calculation
+    // PHASE 5: Validate data before calculation
     let hostelOccupancy = 0;
+    let occupancyWarning = null;
+    
+    if (totalBeds === 0 && hostelStudents > 0) {
+      // PHASE 5: Log warning instead of silently failing
+      occupancyWarning = 'No room capacity configured but students assigned';
+      console.warn('FORENSIC WARNING:', occupancyWarning);
+    } else if (hostelStudents > totalBeds) {
+      // PHASE 5: Log warning if students > beds
+      occupancyWarning = `Students (${hostelStudents}) exceed beds (${totalBeds})`;
+      console.warn('FORENSIC WARNING:', occupancyWarning);
+    }
+    
     if (totalBeds > 0) {
       const rawOccupancy = (hostelStudents / totalBeds) * 100;
       // Clamp between 0 and 100
