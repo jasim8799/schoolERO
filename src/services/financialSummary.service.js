@@ -14,6 +14,89 @@
 const mongoose = require('mongoose');
 const Bill = require('../models/Bill');
 const TransportFee = require('../models/TransportFee');
+const StudentHostel = require('../models/StudentHostel');
+const Hostel = require('../models/Hostel');
+const StudentTransport = require('../models/StudentTransport');
+const Route = require('../models/Route');
+
+const MONTH_NAMES = [
+  '',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function normalizeStatus(rawStatus) {
+  const status = (rawStatus ?? '').toString().toUpperCase();
+  switch (status) {
+    case 'PAID':
+    case 'UNPAID':
+    case 'PARTIAL':
+    case 'PENDING':
+    case 'NOT_BILLED':
+    case 'CANCELLED':
+      return status;
+    default:
+      return 'NOT_BILLED';
+  }
+}
+
+function buildAcademicMonths(now = new Date()) {
+  const academicStartYear = now.getMonth() + 1 >= 4 ? now.getFullYear() : now.getFullYear() - 1;
+  const months = [];
+
+  for (let month = 4; month <= 12; month++) {
+    months.push({
+      month,
+      year: academicStartYear,
+      label: `${MONTH_NAMES[month]} ${academicStartYear}`,
+    });
+  }
+
+  for (let month = 1; month <= 3; month++) {
+    months.push({
+      month,
+      year: academicStartYear + 1,
+      label: `${MONTH_NAMES[month]} ${academicStartYear + 1}`,
+    });
+  }
+
+  const cutoff = new Date(now.getFullYear(), now.getMonth());
+  return months.filter((md) => new Date(md.year, md.month - 1) <= cutoff);
+}
+
+function isPendingStatus(status) {
+  const normalized = normalizeStatus(status);
+  return normalized !== 'PAID' && normalized !== 'CANCELLED';
+}
+
+function extractStudentId(record) {
+  const studentData = record?.studentId;
+  if (studentData && typeof studentData === 'object') {
+    return studentData._id?.toString() ?? studentData.id?.toString() ?? '';
+  }
+  return studentData?.toString() ?? '';
+}
+
+function findMonthMatch(history, label, month, year) {
+  for (const raw of history) {
+    const item = raw && typeof raw === 'object' ? raw : {};
+    const description = item.description?.toString() ?? '';
+    if (description.includes(label) || description.includes(`${month}/${year}`)) {
+      return item;
+    }
+  }
+  return null;
+}
 
 /**
  * Get Financial Summary - Single Source of Truth
@@ -38,66 +121,132 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     ? { sessionId: new mongoose.Types.ObjectId(sessionId.toString()) }
     : {};
 
-  const unpaidBillStatuses = ['UNPAID', 'PARTIAL', 'PENDING', 'NOT_BILLED'];
+  const now = new Date();
+  const academicMonths = buildAcademicMonths(now);
 
-  // ============================================================
-  // FORENSIC MASTER FIX: Extended to include ALL financial metrics
-  // in a single aggregation for performance (Phase 8 requirement)
-  // ============================================================
-  
-  // Run all aggregations in parallel for efficiency
-  const [
-    // Fee Due (all bill types combined - original logic)
-    feeUnpaid, feePartial,
-    // Hostel Due (billType = HOSTEL only)
-    hostelPending,
-    // Transport Due (month-level fee rows)
-    transportFeePending,
-    // Transport Due (billType = TRANSPORT only)
-    transportBillPending
-  ] = await Promise.all([
-    // Fee: All bills with status UNPAID
+  // Fee Due (existing global summary) still uses the shared Bill-based logic.
+  const [feeUnpaid, feePartial] = await Promise.all([
     Bill.aggregate([
       { $match: { schoolId: safeSchoolId, status: 'UNPAID', dueAmount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
+      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } },
     ]),
-    // Fee: All bills with status PARTIAL
     Bill.aggregate([
       { $match: { schoolId: safeSchoolId, status: 'PARTIAL', dueAmount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
+      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } },
     ]),
-    // Hostel: billType = HOSTEL with unpaid statuses
-    Bill.aggregate([
-      { $match: { schoolId: safeSchoolId, billType: 'HOSTEL', status: { $in: unpaidBillStatuses }, dueAmount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
-    ]),
-    // Transport: month-level fee rows still pending
-    TransportFee.aggregate([
-      { $match: { schoolId: safeSchoolId, status: 'PENDING', amount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-    ]),
-    // Transport: billType = TRANSPORT with unpaid statuses
-    Bill.aggregate([
-      { $match: { schoolId: safeSchoolId, billType: 'TRANSPORT', status: { $in: unpaidBillStatuses }, dueAmount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
-    ])
   ]);
 
-  // Calculate Fee Due totals (all bill types)
+  const [hostelAssignments, hostelBills, transportAssignments, transportBills, transportFees] =
+    await Promise.all([
+      StudentHostel.find({ schoolId: safeSchoolId, status: 'ACTIVE' })
+        .populate('hostelId', 'monthlyFee')
+        .lean(),
+      Bill.find({ schoolId: safeSchoolId, billType: 'HOSTEL', ...sessionMatch, status: { $ne: 'CANCELLED' } })
+        .select('studentId description status totalAmount dueAmount createdAt')
+        .lean(),
+      StudentTransport.find({ schoolId: safeSchoolId, status: 'ACTIVE' })
+        .populate('routeId', 'monthlyFee')
+        .lean(),
+      Bill.find({ schoolId: safeSchoolId, billType: 'TRANSPORT', ...sessionMatch, status: { $ne: 'CANCELLED' } })
+        .select('studentId description status totalAmount dueAmount createdAt')
+        .lean(),
+      TransportFee.find({ schoolId: safeSchoolId, ...sessionMatch })
+        .select('studentId month year amount status')
+        .lean(),
+    ]);
+
+  const hostelBillsByStudent = new Map();
+  for (const bill of hostelBills) {
+    const studentId = extractStudentId(bill);
+    if (!studentId) continue;
+    if (!hostelBillsByStudent.has(studentId)) hostelBillsByStudent.set(studentId, []);
+    hostelBillsByStudent.get(studentId).push(bill);
+  }
+
+  const transportBillsByStudent = new Map();
+  for (const bill of transportBills) {
+    const studentId = extractStudentId(bill);
+    if (!studentId) continue;
+    if (!transportBillsByStudent.has(studentId)) transportBillsByStudent.set(studentId, []);
+    transportBillsByStudent.get(studentId).push(bill);
+  }
+
+  const transportFeesByStudentMonth = new Map();
+  for (const fee of transportFees) {
+    const studentId = extractStudentId(fee);
+    if (!studentId) continue;
+    const key = `${studentId}|${fee.month}|${fee.year}`;
+    transportFeesByStudentMonth.set(key, fee);
+  }
+
+  let hostelDueTotal = 0;
+  let hostelDueCount = 0;
+  for (const assignment of hostelAssignments) {
+    const studentId = extractStudentId(assignment);
+    if (!studentId) continue;
+    const monthlyFee = assignment?.hostelId?.monthlyFee || 0;
+    const history = hostelBillsByStudent.get(studentId) || [];
+
+    for (const monthData of academicMonths) {
+      const match = findMonthMatch(history, monthData.label, monthData.month, monthData.year);
+      const status = normalizeStatus(match?.status);
+      const totalAmount = match?.totalAmount;
+      const dueAmount = match?.dueAmount;
+      const effectiveAmount = status === 'PAID'
+        ? (totalAmount ?? monthlyFee)
+        : (dueAmount ?? totalAmount ?? monthlyFee);
+
+      if (isPendingStatus(status)) {
+        hostelDueTotal += effectiveAmount;
+        hostelDueCount += 1;
+      }
+    }
+  }
+
+  let transportDueTotal = 0;
+  let transportDueCount = 0;
+  for (const assignment of transportAssignments) {
+    const studentId = extractStudentId(assignment);
+    if (!studentId) continue;
+    const monthlyFee = assignment?.routeId?.monthlyFee || 0;
+    const history = transportBillsByStudent.get(studentId) || [];
+
+    for (const monthData of academicMonths) {
+      const match = findMonthMatch(history, monthData.label, monthData.month, monthData.year);
+      const feeKey = `${studentId}|${monthData.month}|${monthData.year}`;
+      const feeRecord = transportFeesByStudentMonth.get(feeKey);
+
+      let status = 'NOT_BILLED';
+      let totalAmount = null;
+      let dueAmount = null;
+
+      if (match) {
+        status = normalizeStatus(match.status);
+        totalAmount = match.totalAmount;
+        dueAmount = match.dueAmount;
+      } else if (feeRecord) {
+        status = normalizeStatus(feeRecord.status);
+        totalAmount = feeRecord.amount;
+        dueAmount = feeRecord.amount;
+      }
+
+      const effectiveAmount = status === 'PAID'
+        ? (totalAmount ?? monthlyFee)
+        : (dueAmount ?? totalAmount ?? monthlyFee);
+
+      if (isPendingStatus(status)) {
+        transportDueTotal += effectiveAmount;
+        transportDueCount += 1;
+      }
+    }
+  }
+
+  const transportDueAmount = transportDueTotal;
+
   const feeUnpaidTotal = feeUnpaid[0]?.total || 0;
   const feeUnpaidCount = feeUnpaid[0]?.count || 0;
   const feePartialTotal = feePartial[0]?.total || 0;
   const feePartialCount = feePartial[0]?.count || 0;
-
-  // Calculate Hostel Due totals (billType = HOSTEL only)
-  const hostelDueTotal = hostelPending[0]?.total || 0;
-  const hostelDueCount = hostelPending[0]?.count || 0;
-
-  // Calculate Transport Due totals from both month-level fee rows and bills
-  const transportFeePendingTotal = transportFeePending[0]?.total || 0;
-  const transportFeePendingCount = transportFeePending[0]?.count || 0;
-  const transportBillPendingTotal = transportBillPending[0]?.total || 0;
-  const transportBillPendingCount = transportBillPending[0]?.count || 0;
 
   // Build comprehensive result
   const result = {
@@ -111,18 +260,18 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     
     // Hostel Due - NEW extending the single source of truth
     hostelDueAmount: hostelDueTotal,
-    hostelDueCount: hostelDueCount,
+    hostelDueCount,
     hostelUnpaidDue: hostelDueTotal,
     hostelPartialDue: 0,
     
     // Transport Due - NEW extending the single source of truth
-    transportDueAmount: transportFeePendingTotal + transportBillPendingTotal,
-    transportDueCount: transportFeePendingCount + transportBillPendingCount,
-    transportUnpaidDue: transportFeePendingTotal,
-    transportPartialDue: transportBillPendingTotal,
+    transportDueAmount,
+    transportDueCount,
+    transportUnpaidDue: transportDueTotal,
+    transportPartialDue: 0,
     
     // Combined total for reports (optional - future use)
-    overallDueAmount: (feeUnpaidTotal + feePartialTotal) + hostelDueTotal + (transportFeePendingTotal + transportBillPendingTotal)
+    overallDueAmount: (feeUnpaidTotal + feePartialTotal) + hostelDueTotal + transportDueTotal
   };
 
   // FORENSIC DEBUG LOG
