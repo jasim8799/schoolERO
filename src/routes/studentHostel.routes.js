@@ -8,6 +8,7 @@ const {
 	getAllStudentHostels,
 	removeStudentHostel,
 	reassignHostel
+	,getHostelPaymentSummary
 } = require('../controllers/studentHostel.controller.js');
 const { USER_ROLES } = require('../config/constants.js');
 
@@ -17,6 +18,7 @@ router.post('/assign', authenticate, enforceSchoolIsolation, requireRole(USER_RO
 router.delete('/assign/:id', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), removeStudentHostel);
 router.patch('/reassign/:id', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), reassignHostel);
 router.get('/', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getAllStudentHostels);
+router.get('/summary', authenticate, enforceSchoolIsolation, requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR), getHostelPaymentSummary);
 router.get('/student/:id', authenticate, enforceSchoolIsolation, getStudentHostel);
 
 module.exports = router;

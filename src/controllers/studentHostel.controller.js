@@ -2,6 +2,7 @@ const StudentHostel = require('../models/StudentHostel.js');
 const Student = require('../models/Student.js');
 const Room = require('../models/Room.js');
 const School = require('../models/School.js');
+const { getFinancialSummary } = require('../services/financialSummary.service');
 
 const assignHostel = async (req, res) => {
   try {
@@ -173,6 +174,25 @@ const getAllStudentHostels = async (req, res) => {
   }
 };
 
+const getHostelPaymentSummary = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const financialSummary = await getFinancialSummary({
+      schoolId,
+      sessionId: req.user?.sessionId,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        pendingAmount: financialSummary.hostelDueAmount || 0,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const removeStudentHostel = async (req, res) => {
   try {
     const { id } = req.params; // assignment _id
@@ -268,4 +288,5 @@ module.exports = {
   getAllStudentHostels,
   removeStudentHostel,
   reassignHostel,
+  getHostelPaymentSummary,
 };

@@ -2,6 +2,7 @@ const StudentTransport = require('../models/StudentTransport.js');
 const Student = require('../models/Student.js');
 const Route = require('../models/Route.js');
 const TransportFee = require('../models/TransportFee.js');
+const { getFinancialSummary } = require('../services/financialSummary.service');
 
 const assignTransport = async (req, res) => {
   try {
@@ -198,6 +199,25 @@ const getAllAssignments = async (req, res) => {
   }
 };
 
+const getTransportPaymentSummary = async (req, res) => {
+  try {
+    const { schoolId } = req.user;
+    const financialSummary = await getFinancialSummary({
+      schoolId,
+      sessionId: req.user?.sessionId,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        pendingAmount: financialSummary.transportDueAmount || 0,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const removeStudentTransport = async (req, res) => {
   try {
     const { id } = req.params;
@@ -266,4 +286,5 @@ module.exports = {
   getAllAssignments,
   removeStudentTransport,
   reassignStudentTransport,
+  getTransportPaymentSummary,
 };
