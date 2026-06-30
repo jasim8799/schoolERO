@@ -155,6 +155,27 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
         .lean(),
     ]);
 
+  const [hostelAssignmentStudentIds, transportAssignmentStudentIds] = [
+    new Set(hostelAssignments.map((assignment) => extractStudentId(assignment)).filter(Boolean)),
+    new Set(transportAssignments.map((assignment) => extractStudentId(assignment)).filter(Boolean)),
+  ];
+
+  const hostelAdmissionBills = hostelBills.filter((bill) => {
+    const status = normalizeStatus(bill.status);
+    if (status === 'CANCELLED') return false;
+    const studentId = extractStudentId(bill);
+    const description = bill.description?.toString() ?? '';
+    return studentId && (!hostelAssignmentStudentIds.has(studentId) || description.toLowerCase().includes('admission'));
+  });
+
+  const transportAdmissionBills = transportBills.filter((bill) => {
+    const status = normalizeStatus(bill.status);
+    if (status === 'CANCELLED') return false;
+    const studentId = extractStudentId(bill);
+    const description = bill.description?.toString() ?? '';
+    return studentId && (!transportAssignmentStudentIds.has(studentId) || description.toLowerCase().includes('admission'));
+  });
+
   const hostelBillsByStudent = new Map();
   for (const bill of hostelBills) {
     const studentId = extractStudentId(bill);
@@ -203,6 +224,15 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     }
   }
 
+  for (const bill of hostelAdmissionBills) {
+    const status = normalizeStatus(bill.status);
+    if (status === 'PAID') continue;
+    const totalAmount = bill.totalAmount;
+    const dueAmount = bill.dueAmount;
+    hostelDueTotal += (dueAmount ?? totalAmount ?? 0);
+    hostelDueCount += 1;
+  }
+
   let transportDueTotal = 0;
   let transportDueCount = 0;
   for (const assignment of transportAssignments) {
@@ -239,6 +269,15 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
         transportDueCount += 1;
       }
     }
+  }
+
+  for (const bill of transportAdmissionBills) {
+    const status = normalizeStatus(bill.status);
+    if (status === 'PAID') continue;
+    const totalAmount = bill.totalAmount;
+    const dueAmount = bill.dueAmount;
+    transportDueTotal += (dueAmount ?? totalAmount ?? 0);
+    transportDueCount += 1;
   }
 
   const transportDueAmount = transportDueTotal;
