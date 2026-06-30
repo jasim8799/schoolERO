@@ -309,51 +309,56 @@ res.json({
   }
 };
 
-// Get Operator dashboard data
+// Get Operator dashboard data - MATCHES PRINCIPAL DASHBOARD FIELDS
 const getOperatorDashboard = async (req, res) => {
   try {
     const { schoolId } = req.user;
     const sFilter = sessionFilter(req);
 
-    // Pending fee dues
-    const pendingFeeDues = await StudentFee.countDocuments({ schoolId, ...sFilter, status: { $in: ['Due', 'Partial'] } });
+    // Total students
+    const totalStudents = await Student.countDocuments({ schoolId, ...sFilter });
 
-    // Today payments
+    // Total teachers
+    const totalTeachers = await User.countDocuments({ schoolId, role: USER_ROLES.TEACHER });
+
+    // Today attendance %
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    const todayAttendances = await StudentDailyAttendance.find({
+      schoolId,
+      ...sFilter,
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length;
+    const todayAttendancePercent = todayAttendances.length > 0 ? ((presentCount / todayAttendances.length) * 100).toFixed(1) : 0;
+
+    // Use shared financial summary service - same calculation as Principal
+    const financialSummary = await getFinancialSummary({
+      schoolId,
+      sessionId: req.user?.sessionId
+    });
+
+    const totalFeeDue = financialSummary.totalDue;
+    const feeDueCount = financialSummary.feeDueCount || (financialSummary.unpaidCount + financialSummary.partialCount);
+
+    // Hostel and transport due from single source
+    const hostelDueAmount = financialSummary.hostelDueAmount || 0;
+    const transportDueAmount = financialSummary.transportDueAmount || 0;
+
+    // Today collection
     const todayPayments = await FeePayment.find({
       schoolId,
       ...sFilter,
       paymentDate: { $gte: today, $lt: tomorrow }
     });
-    const todayPaymentsCount = todayPayments.length;
-    const todayPaymentsAmount = todayPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const todayCollection = todayPayments.reduce((sum, payment) => sum + payment.amount, 0);
 
-    // Attendance not marked
-    const classes = await require('../models/Class').find({ schoolId, ...sFilter });
-    let attendanceNotMarked = 0;
-    for (const cls of classes) {
-      const sections = await require('../models/Section').find({ classId: cls._id, ...sFilter });
-      for (const section of sections) {
-        const students = await Student.countDocuments({ classId: cls._id, sectionId: section._id, schoolId, ...sFilter });
-        const marked = await StudentDailyAttendance.countDocuments({
-          classId: cls._id,
-          sectionId: section._id,
-          schoolId,
-          ...sFilter,
-          date: { $gte: today, $lt: tomorrow }
-        });
-        if (marked < students) {
-          attendanceNotMarked += (students - marked);
-        }
-      }
-    }
-
-    // Exam forms pending
-    const pendingExamForms = await ExamForm.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
+    // Pending exam payments
+    const pendingExamPayments = await ExamPayment.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
     const [publishedExamsCount, publishedResultExamIds, feeOverdueCount, absentToday] = await Promise.all([
       Exam.countDocuments({ schoolId, ...sFilter, status: 'Published' }),
@@ -373,19 +378,92 @@ const getOperatorDashboard = async (req, res) => {
       }),
     ]);
 
+    // Hostel students count
+    const hostelStudents = await StudentHostel.countDocuments({ schoolId, status: 'ACTIVE' });
+    const hostelStudentCount = hostelStudents;
+
+    // Transport students count
+    const transportStudents = await StudentTransport.countDocuments({ schoolId, status: 'ACTIVE' });
+
+    // Teachers absent today
+    const teacherAbsentToday = await TeacherAttendance.countDocuments({
+      schoolId,
+      date: { $gte: today, $lt: tomorrow },
+      status: 'ABSENT'
+    });
+
+    // Pending leave applications
+    const pendingLeaveCount = await LeaveApplication.countDocuments({
+      schoolId,
+      status: 'PENDING'
+    });
+
+    // Classes pending attendance
+    let classesPendingAttendance = 0;
+    try {
+      const classes = await Class.find({ schoolId, ...sFilter });
+      for (const cls of classes) {
+        const sections = await Section.find({ classId: cls._id, schoolId, ...sFilter });
+        for (const section of sections) {
+          const hasAttendance = await StudentDailyAttendance.countDocuments({
+            classId: cls._id,
+            sectionId: section._id,
+            schoolId,
+            date: { $gte: today, $lt: tomorrow }
+          });
+          if (hasAttendance === 0) {
+            classesPendingAttendance++;
+          }
+        }
+      }
+    } catch (_) {
+      classesPendingAttendance = 0;
+    }
+
+    // Overdue fee amount
+    const overdueBills = await Bill.find({
+      schoolId,
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 },
+      dueDate: { $lt: today }
+    });
+    const totalOverdueAmount = overdueBills.reduce((sum, bill) => sum + (bill.dueAmount || 0), 0);
+
+    // Attendance meter fields
+    const todayPresent = presentCount;
+    const todayAbsent = absentToday;
+    const attendanceNotMarked = totalStudents - (presentCount + absentToday);
+
     res.json({
       success: true,
       data: {
-        pendingFeeDues,
-        feeDueCount: pendingFeeDues,
+        // SESSION OVERVIEW fields
+        totalStudents,
+        totalTeachers,
+        todayAttendancePercent,
+        totalFeeDue,
+        feeDueCount,
         feeOverdueCount,
-        todayPaymentsCount,
-        todayPaymentsAmount,
-        attendanceNotMarked,
-        pendingExamForms,
+        todayCollection,
+        pendingExamPayments,
+        // Additional counts
         publishedExamsCount,
         publishedResultsCount: publishedResultExamIds.length,
         absentToday,
+        // Hostel and Transport
+        hostelStudentCount,
+        transportStudents,
+        // TODAY'S SCHOOL HEALTH fields
+        teacherAbsentToday,
+        pendingLeaveCount,
+        classesPendingAttendance,
+        totalOverdueAmount,
+        hostelDueAmount,
+        transportDueAmount,
+        // ATTENDANCE METER fields
+        todayPresent,
+        todayAbsent,
+        attendanceNotMarked: attendanceNotMarked > 0 ? attendanceNotMarked : 0
       }
     });
   } catch (err) {
