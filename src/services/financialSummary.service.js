@@ -13,6 +13,7 @@
 
 const mongoose = require('mongoose');
 const Bill = require('../models/Bill');
+const TransportFee = require('../models/TransportFee');
 
 /**
  * Get Financial Summary - Single Source of Truth
@@ -37,6 +38,8 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     ? { sessionId: new mongoose.Types.ObjectId(sessionId.toString()) }
     : {};
 
+  const unpaidBillStatuses = ['UNPAID', 'PARTIAL', 'PENDING', 'NOT_BILLED'];
+
   // ============================================================
   // FORENSIC MASTER FIX: Extended to include ALL financial metrics
   // in a single aggregation for performance (Phase 8 requirement)
@@ -47,9 +50,11 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     // Fee Due (all bill types combined - original logic)
     feeUnpaid, feePartial,
     // Hostel Due (billType = HOSTEL only)
-    hostelUnpaid, hostelPartial,
+    hostelPending,
+    // Transport Due (month-level fee rows)
+    transportFeePending,
     // Transport Due (billType = TRANSPORT only)
-    transportUnpaid, transportPartial
+    transportBillPending
   ] = await Promise.all([
     // Fee: All bills with status UNPAID
     Bill.aggregate([
@@ -61,24 +66,19 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
       { $match: { schoolId: safeSchoolId, status: 'PARTIAL', dueAmount: { $gt: 0 }, ...sessionMatch } },
       { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
     ]),
-    // Hostel: billType = HOSTEL with status UNPAID
+    // Hostel: billType = HOSTEL with unpaid statuses
     Bill.aggregate([
-      { $match: { schoolId: safeSchoolId, billType: 'HOSTEL', status: 'UNPAID', dueAmount: { $gt: 0 }, ...sessionMatch } },
+      { $match: { schoolId: safeSchoolId, billType: 'HOSTEL', status: { $in: unpaidBillStatuses }, dueAmount: { $gt: 0 }, ...sessionMatch } },
       { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
     ]),
-    // Hostel: billType = HOSTEL with status PARTIAL
-    Bill.aggregate([
-      { $match: { schoolId: safeSchoolId, billType: 'HOSTEL', status: 'PARTIAL', dueAmount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
+    // Transport: month-level fee rows still pending
+    TransportFee.aggregate([
+      { $match: { schoolId: safeSchoolId, status: 'PENDING', amount: { $gt: 0 }, ...sessionMatch } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]),
-    // Transport: billType = TRANSPORT with status UNPAID
+    // Transport: billType = TRANSPORT with unpaid statuses
     Bill.aggregate([
-      { $match: { schoolId: safeSchoolId, billType: 'TRANSPORT', status: 'UNPAID', dueAmount: { $gt: 0 }, ...sessionMatch } },
-      { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
-    ]),
-    // Transport: billType = TRANSPORT with status PARTIAL
-    Bill.aggregate([
-      { $match: { schoolId: safeSchoolId, billType: 'TRANSPORT', status: 'PARTIAL', dueAmount: { $gt: 0 }, ...sessionMatch } },
+      { $match: { schoolId: safeSchoolId, billType: 'TRANSPORT', status: { $in: unpaidBillStatuses }, dueAmount: { $gt: 0 }, ...sessionMatch } },
       { $group: { _id: null, total: { $sum: '$dueAmount' }, count: { $sum: 1 } } }
     ])
   ]);
@@ -90,16 +90,14 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
   const feePartialCount = feePartial[0]?.count || 0;
 
   // Calculate Hostel Due totals (billType = HOSTEL only)
-  const hostelUnpaidTotal = hostelUnpaid[0]?.total || 0;
-  const hostelUnpaidCount = hostelUnpaid[0]?.count || 0;
-  const hostelPartialTotal = hostelPartial[0]?.total || 0;
-  const hostelPartialCount = hostelPartial[0]?.count || 0;
+  const hostelDueTotal = hostelPending[0]?.total || 0;
+  const hostelDueCount = hostelPending[0]?.count || 0;
 
-  // Calculate Transport Due totals (billType = TRANSPORT only)
-  const transportUnpaidTotal = transportUnpaid[0]?.total || 0;
-  const transportUnpaidCount = transportUnpaid[0]?.count || 0;
-  const transportPartialTotal = transportPartial[0]?.total || 0;
-  const transportPartialCount = transportPartial[0]?.count || 0;
+  // Calculate Transport Due totals from both month-level fee rows and bills
+  const transportFeePendingTotal = transportFeePending[0]?.total || 0;
+  const transportFeePendingCount = transportFeePending[0]?.count || 0;
+  const transportBillPendingTotal = transportBillPending[0]?.total || 0;
+  const transportBillPendingCount = transportBillPending[0]?.count || 0;
 
   // Build comprehensive result
   const result = {
@@ -112,19 +110,19 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     feeDueCount: feeUnpaidCount + feePartialCount,
     
     // Hostel Due - NEW extending the single source of truth
-    hostelDueAmount: hostelUnpaidTotal + hostelPartialTotal,
-    hostelDueCount: hostelUnpaidCount + hostelPartialCount,
-    hostelUnpaidDue: hostelUnpaidTotal,
-    hostelPartialDue: hostelPartialTotal,
+    hostelDueAmount: hostelDueTotal,
+    hostelDueCount: hostelDueCount,
+    hostelUnpaidDue: hostelDueTotal,
+    hostelPartialDue: 0,
     
     // Transport Due - NEW extending the single source of truth
-    transportDueAmount: transportUnpaidTotal + transportPartialTotal,
-    transportDueCount: transportUnpaidCount + transportPartialCount,
-    transportUnpaidDue: transportUnpaidTotal,
-    transportPartialDue: transportPartialTotal,
+    transportDueAmount: transportFeePendingTotal + transportBillPendingTotal,
+    transportDueCount: transportFeePendingCount + transportBillPendingCount,
+    transportUnpaidDue: transportFeePendingTotal,
+    transportPartialDue: transportBillPendingTotal,
     
     // Combined total for reports (optional - future use)
-    overallDueAmount: (feeUnpaidTotal + feePartialTotal) + (hostelUnpaidTotal + hostelPartialTotal) + (transportUnpaidTotal + transportPartialTotal)
+    overallDueAmount: (feeUnpaidTotal + feePartialTotal) + hostelDueTotal + (transportFeePendingTotal + transportBillPendingTotal)
   };
 
   // FORENSIC DEBUG LOG
