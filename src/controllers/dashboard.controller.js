@@ -2,6 +2,8 @@ const Student = require('../models/Student');
 const User = require('../models/User');
 const StudentDailyAttendance = require('../models/StudentDailyAttendance');
 const TeacherAttendance = require('../models/TeacherAttendance');
+// FORENSIC MASTER FIX: Use shared financial summary service - single source of truth for fee due
+const { getFinancialSummary, getFeeOverdueCount, getTodayCollection } = require('../services/financialSummary.service');
 const StudentFee = require('../models/StudentFee'); // Legacy - kept for backward compatibility only
 const FeePayment = require('../models/FeePayment');
 const ExamPayment = require('../models/ExamPayment');
@@ -59,37 +61,30 @@ const getPrincipalDashboard = async (req, res) => {
 const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length;
     const todayAttendancePercent = todayAttendances.length > 0 ? ((presentCount / todayAttendances.length) * 100).toFixed(1) : 0;
 
-    // ============================================================
-    // FORENSIC FIX: Use Bill module as single source of truth
-    // (Previously used legacy StudentFee which caused mismatch)
+// ============================================================
+    // FORENSIC MASTER FIX: Use shared financial summary service
+    // This ensures Principal Dashboard uses IDENTICAL calculation as Fee Dashboard
+    // (Single source of truth - no duplicate aggregation logic)
     // ============================================================
     
-    // Fee due amount - use Bill module (same as Fee Dashboard)
-    const [unpaidBills, partialBills] = await Promise.all([
-      Bill.aggregate([
-        { $match: { schoolId, ...sFilter, status: 'UNPAID', dueAmount: { $gt: 0 } } },
-        { $group: { _id: null, total: { $sum: '$dueAmount' } } }
-      ]),
-      Bill.aggregate([
-        { $match: { schoolId, ...sFilter, status: 'PARTIAL', dueAmount: { $gt: 0 } } },
-        { $group: { _id: null, total: { $sum: '$dueAmount' } } }
-      ])
-    ]);
-    const totalFeeDue = (unpaidBills[0]?.total || 0) + (partialBills[0]?.total || 0);
+    // Use shared service - same calculation as Fee Dashboard
+    const financialSummary = await getFinancialSummary({
+      schoolId,
+      sessionId: req.user?.sessionId
+    });
     
-    // Fee due count - count of unpaid + partial bills
-    const [unpaidCount, partialCount] = await Promise.all([
-      Bill.countDocuments({ schoolId, ...sFilter, status: 'UNPAID', dueAmount: { $gt: 0 } }),
-      Bill.countDocuments({ schoolId, ...sFilter, status: 'PARTIAL', dueAmount: { $gt: 0 } })
-    ]);
-    const feeDueCount = unpaidCount + partialCount;
+    const totalFeeDue = financialSummary.totalDue;
+    const feeDueCount = financialSummary.unpaidCount + financialSummary.partialCount;
 
-    // FORENSIC VERIFICATION LOG
+    // FORENSIC MASTER VERIFICATION LOG
     console.log('========== FORENSIC FEE DUE VERIFICATION ==========');
     console.log('SchoolId:', schoolId);
     console.log('Principal Dashboard Fee Due:', totalFeeDue);
     console.log('Fee Due Count (unpaid + partial):', feeDueCount);
-    console.log('==================================================');
+    console.log('Unpaid Due:', financialSummary.unpaidDue);
+    console.log('Partial Due:', financialSummary.partialDue);
+    console.log('[SHARED SERVICE] This value = Fee Dashboard Total Due');
+    console.log('======================================================');
 
     // Today collection
     const todayPayments = await FeePayment.find({

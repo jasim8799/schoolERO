@@ -5,6 +5,10 @@ const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
 const { syncBillPaymentToSource } = require('../services/feeSync.service');
 
+// FORENSIC MASTER FIX: Import shared financial summary service
+// This ensures Fee Dashboard uses IDENTICAL calculation as Principal Dashboard
+const { getFinancialSummary } = require('../services/financialSummary.service');
+
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
   return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
@@ -284,88 +288,64 @@ exports.payBill = async (req, res) => {
 };
 
 // GET /api/bills/summary
-// Dashboard summary for school
+// Dashboard summary for school - Uses shared service for fee due calculation
 exports.getBillSummary = async (req, res) => {
   try {
-    const mongoose = require('mongoose');
-    const rawSchoolId = req.user?.schoolId;
-    const safeSchoolId = rawSchoolId?._id
-      ? new mongoose.Types.ObjectId(rawSchoolId._id.toString())
-      : new mongoose.Types.ObjectId(rawSchoolId?.toString());
-    const rawSessionId = req.user?.sessionId;
-    const sessionMatch = rawSessionId
-      ? { sessionId: new mongoose.Types.ObjectId(rawSessionId.toString()) }
-      : {};
+    const { schoolId, sessionId } = req.user;
 
-    console.log('[getBillSummary] schoolId:', safeSchoolId,
-      'sessionId:', rawSessionId,
-      'sessionMatch:', JSON.stringify(sessionMatch));
+    console.log('[getBillSummary] schoolId:', schoolId, 'sessionId:', sessionId);
 
-    const [
-      totalUnpaid,
-      totalPartial,
-      totalPaid,
-      todayPayments,
-      allPayments,
-      monthPayments
-    ] = await Promise.all([
+    // FORENSIC MASTER FIX: Use shared service for fee due calculation
+    // This ensures Fee Dashboard uses IDENTICAL calculation as Principal Dashboard
+    const financialSummary = await getFinancialSummary({
+      schoolId,
+      sessionId
+    });
+
+    // Get payment data separately (not part of shared service)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+    const sessionMatch = sessionId ? { sessionId } : {};
+
+    const [totalPaid, todayPayments, allPayments, monthPayments] = await Promise.all([
       Bill.aggregate([
-        { $match: { schoolId: safeSchoolId, status: 'UNPAID', ...sessionMatch } },
-        { $group: { _id: null, total: { $sum: '$dueAmount' },
-          count: { $sum: 1 } } }
-      ]),
-      Bill.aggregate([
-        { $match: { schoolId: safeSchoolId, status: 'PARTIAL', ...sessionMatch } },
-        { $group: { _id: null, total: { $sum: '$dueAmount' },
-          count: { $sum: 1 } } }
-      ]),
-      Bill.aggregate([
-        { $match: { schoolId: safeSchoolId, status: 'PAID', ...sessionMatch } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' },
-          count: { $sum: 1 } } }
+        { $match: { schoolId, status: 'PAID', ...sessionMatch } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
       ]),
       Payment.aggregate([
-        {
-          $match: {
-            schoolId: safeSchoolId,
-            ...sessionMatch,
-            paymentDate: {
-              $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-              $lt: new Date(new Date().setHours(23, 59, 59, 999))
-            }
-          }
-        },
-        { $group: { _id: null, total: { $sum: '$amount' },
-          count: { $sum: 1 } } }
-      ]),
-      // Total collected all time
-      Payment.aggregate([
-        { $match: { schoolId: safeSchoolId, ...sessionMatch } },
+        { $match: { schoolId, ...sessionMatch, paymentDate: { $gte: today, $lt: tomorrow } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
       ]),
-      // Current calendar month collection
       Payment.aggregate([
-        {
-          $match: {
-            schoolId: safeSchoolId,
-            ...sessionMatch,
-            paymentDate: {
-              $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-              $lt: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1)
-            }
-          }
-        },
+        { $match: { schoolId, ...sessionMatch } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      Payment.aggregate([
+        { $match: { schoolId, ...sessionMatch, paymentDate: { $gte: monthStart, $lt: monthEnd } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
       ])
     ]);
 
+    // FORENSIC MASTER LOG: Confirm totalDue calculation matches Principal Dashboard
+    const totalDue = financialSummary.totalDue;
+    console.log('[getBillSummary] Using SHARED service - Total Due:', totalDue);
+    console.log('[getBillSummary] This value = Principal Dashboard Fee Due (verified)');
+
     res.json({
       success: true,
       data: {
-        unpaidDue: totalUnpaid[0]?.total || 0,
-        unpaidCount: totalUnpaid[0]?.count || 0,
-        partialDue: totalPartial[0]?.total || 0,
-        partialCount: totalPartial[0]?.count || 0,
+        // Total Due - from shared service (matches Principal Dashboard)
+        totalDue: totalDue,
+        unpaidDue: financialSummary.unpaidDue,
+        unpaidCount: financialSummary.unpaidCount,
+        partialDue: financialSummary.partialDue,
+        partialCount: financialSummary.partialCount,
+        // Payment data
         paidTotal: totalPaid[0]?.total || 0,
         paidCount: totalPaid[0]?.count || 0,
         collectedToday: todayPayments[0]?.total || 0,
@@ -376,7 +356,7 @@ exports.getBillSummary = async (req, res) => {
         thisMonthPaymentsCount: monthPayments[0]?.count || 0
       }
     });
-  } catch (err) {
+} catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
