@@ -62,19 +62,25 @@ const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length
     const todayAttendancePercent = todayAttendances.length > 0 ? ((presentCount / todayAttendances.length) * 100).toFixed(1) : 0;
 
 // ============================================================
-    // FORENSIC MASTER FIX: Use shared financial summary service
+// FORENSIC MASTER FIX: Use shared financial summary service
     // This ensures Principal Dashboard uses IDENTICAL calculation as Fee Dashboard
     // (Single source of truth - no duplicate aggregation logic)
     // ============================================================
     
     // Use shared service - same calculation as Fee Dashboard
+    // EXTENDED: Now includes hostelDueAmount and transportDueAmount
     const financialSummary = await getFinancialSummary({
       schoolId,
       sessionId: req.user?.sessionId
     });
     
     const totalFeeDue = financialSummary.totalDue;
-    const feeDueCount = financialSummary.unpaidCount + financialSummary.partialCount;
+    const feeDueCount = financialSummary.feeDueCount || (financialSummary.unpaidCount + financialSummary.partialCount);
+
+    // FORENSIC MASTER FIX: Extract hostel and transport due from single source
+    // These values now come from the same aggregation - never calculated separately
+    const hostelDueAmount = financialSummary.hostelDueAmount || 0;
+    const transportDueAmount = financialSummary.transportDueAmount || 0;
 
     // FORENSIC MASTER VERIFICATION LOG
     console.log('========== FORENSIC FEE DUE VERIFICATION ==========');
@@ -288,6 +294,10 @@ res.json({
         pendingLeaveCount,
         classesPendingAttendance,
         totalOverdueAmount,
+        // FORENSIC MASTER FIX: Add Hostel Due and Transport Due
+        // These come from the SAME aggregation - single source of truth
+        hostelDueAmount,
+        transportDueAmount,
         // Attendance Meter fields
         todayPresent,
         todayAbsent,
