@@ -474,18 +474,38 @@ const getOperatorDashboard = async (req, res) => {
 // Get Teacher dashboard data
 const getTeacherDashboard = async (req, res) => {
   try {
-    const { schoolId, _id: teacherId } = req.user;
+    const { schoolId, _id: teacherId, sessionId } = req.user;
     const sFilter = sessionFilter(req);
 
-    // Assigned classes (simplified - count classes teacher has attendance for)
-    const assignedClasses = await StudentDailyAttendance.distinct('classId', { schoolId, ...sFilter, markedBy: teacherId });
-
-    // Today attendance status
+    // Date helpers
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayStr = today.toISOString().split('T')[0];
 
+    // ===== PHASE 1: Assigned classes (from teacher assignments) =====
+    const TeacherAssignment = require('../models/TeacherAssignment.js');
+    const Class = require('../models/Class.js');
+    const Section = require('../models/Section.js');
+    const Subject = require('../models/Subject.js');
+    const Student = require('../models/Student.js');
+
+    // Get teacher's class assignments
+    const teacherAssignments = await TeacherAssignment.find({
+      teacherId,
+      schoolId,
+      ...sFilter
+    }).populate('classId sectionId subjectId').lean();
+
+    // Extract unique classIds
+    const assignedClassIds = [...new Set(teacherAssignments.map(a => a.classId?.toString()).filter(Boolean))];
+    const assignedSections = teacherAssignments.filter(a => a.sectionId).map(a => ({
+      classId: a.classId,
+      sectionId: a.sectionId
+    }));
+
+    // ===== PHASE 2: Today's attendance status =====
     const todayAttendance = await TeacherAttendance.findOne({
       teacherId,
       schoolId,
@@ -493,18 +513,163 @@ const getTeacherDashboard = async (req, res) => {
       date: { $gte: today, $lt: tomorrow }
     });
 
-    // Homework count
+    // ===== PHASE 3: Homework stats =====
+    // Total homework created by teacher
     const homeworkCount = await Homework.countDocuments({ schoolId, ...sFilter, createdBy: teacherId });
+    
+    // Homework pending review (has submissions but not reviewed)
+    const homeworkPending = await Homework.countDocuments({
+      schoolId,
+      ...sFilter,
+      createdBy: teacherId,
+      status: { $ne: 'REVIEWED' }
+    });
+
+    // Homework submitted (has submissions)
+    const HomeworkSubmission = require('../models/HomeworkSubmission');
+    const homeworkSubmitted = await HomeworkSubmission.countDocuments({
+      schoolId,
+      ...sFilter,
+      homeworks: { $in: await Homework.distinct('_id', { schoolId, ...sFilter, createdBy: teacherId }) }
+    }).catch(() => 0);
+
+    // ===== PHASE 4: Today's classes from timetable =====
+    const todayClasses = teacherAssignments.filter(a => {
+      if (!a.day) return false;
+      const dayMap = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 };
+      return dayMap[a.day] === today.getDay();
+    }).map(a => ({
+      classId: a.classId,
+      className: a.classId?.name || 'Unknown',
+      sectionName: a.sectionId?.name || 'All',
+      subjectName: a.subjectId?.name || 'Unknown',
+      startTime: a.startTime,
+      endTime: a.endTime,
+      period: a.period
+    })).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+
+    // ===== PHASE 5: Total students in assigned classes =====
+    let totalStudents = 0;
+    if (assignedClassIds.length > 0) {
+      totalStudents = await Student.countDocuments({
+        schoolId,
+        ...sFilter,
+        classId: { $in: assignedClassIds }
+      });
+    }
+
+    // ===== PHASE 6: Result entries pending =====
+    const Result = require('../models/Result.js');
+    const resultEntriesPending = await Result.countDocuments({
+      schoolId,
+      ...sFilter,
+      createdBy: teacherId,
+      status: 'Draft'
+    });
+
+    // ===== PHASE 7: Upcoming exams =====
+    const Exam = require('../models/Exam.js');
+    const upcomingExamsCount = await Exam.countDocuments({
+      schoolId,
+      ...sFilter,
+      status: 'Published',
+      endDate: { $gte: today }
+    });
+
+    // ===== PHASE 8: Leave applications =====
+    const LeaveApplication = require('../models/LeaveApplication.js');
+    const leaveApplicationsPending = await LeaveApplication.countDocuments({
+      schoolId,
+      ...sFilter,
+      status: 'PENDING'
+    });
+
+    // ===== PHASE 9: Today's PTMs =====
+    const PTM = require('../models/PTM.js');
+    const todayPTMs = await PTM.find({
+      schoolId,
+      ...sFilter,
+      date: { $gte: today, $lt: tomorrow },
+      status: { $ne: 'CANCELLED' }
+    }).lean();
+    const todayPTMsCount = todayPTMs.length;
+
+    // ===== PHASE 10: Unread notices =====
+    // Count notices not marked as read by this teacher
+    const Notice = require('../models/Notice.js');
+    const noticesCount = await Notice.countDocuments({
+      schoolId,
+      ...sFilter,
+      target: { $in: ['Teacher', 'All', 'Staff'] }
+    });
+
+    // ===== PHASE 11: Attendance for teacher's classes today =====
+    let attendanceMarked = 0;
+    let attendanceTotal = 0;
+    if (assignedClassIds.length > 0) {
+      const classAttendance = await StudentDailyAttendance.find({
+        schoolId,
+        ...sFilter,
+        classId: { $in: assignedClassIds },
+        date: { $gte: today, $lt: tomorrow },
+        markedBy: teacherId
+      }).lean();
+      attendanceMarked = classAttendance.length;
+      
+      // Count total students in assigned classes
+      attendanceTotal = await Student.countDocuments({
+        schoolId,
+        ...sFilter,
+        classId: { $in: assignedClassIds },
+        status: 'ACTIVE'
+      });
+    }
+
+    // Calculate attendance percentage
+    const attendancePercentage = attendanceTotal > 0 
+      ? Math.round((attendanceMarked / attendanceTotal) * 100)
+      : 0;
 
     res.json({
       success: true,
       data: {
-        assignedClassesCount: assignedClasses.length,
+        // Core teacher data
+        assignedClassesCount: assignedClassIds.length,
+        todayClassesCount: todayClasses.length,
+        totalStudents,
         todayAttendanceStatus: todayAttendance ? todayAttendance.status : 'NOT_MARKED',
-        homeworkCount
+        
+        // Homework stats
+        homeworkCount,
+        homeworkPending: homeworkPending > 0 ? homeworkPending : 0,
+        homeworkSubmitted: homeworkSubmitted > 0 ? homeworkSubmitted : 0,
+        
+        // Result entries
+        resultEntriesPending,
+        
+        // Upcoming
+        upcomingExamsCount,
+        
+        // Leave
+        leaveApplicationsPending,
+        
+        // Today's PTMs
+        todayPTMsCount,
+        
+        // Notices
+        noticesCount: noticesCount || 0,
+        
+        // Attendance stats for overview
+        attendanceMarked,
+        attendanceTotal,
+        attendancePercentage,
+        
+        // Today's schedule (for schedule card)
+        todayClasses: todayClasses.slice(0, 8)
       }
     });
   } catch (err) {
+    console.error('[getTeacherDashboard] Error:', err.message);
     res.status(500).json({ message: err.message });
   }
 };
