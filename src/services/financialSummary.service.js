@@ -133,9 +133,3 @@ module.exports.getTodayCollection = async ({ schoolId, sessionId }) => {
     count: todayPayments[0]?.count || 0
   };
 };
-
-module.exports = {
-  getFinancialSummary,
-  getFeeOverdueCount,
-  getTodayCollection
-};
