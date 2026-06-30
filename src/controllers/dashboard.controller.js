@@ -513,25 +513,13 @@ const getTeacherDashboard = async (req, res) => {
       date: { $gte: today, $lt: tomorrow }
     });
 
-    // ===== PHASE 3: Homework stats =====
+// ===== PHASE 3: Homework stats =====
     // Total homework created by teacher
     const homeworkCount = await Homework.countDocuments({ schoolId, ...sFilter, createdBy: teacherId });
     
-    // Homework pending review (has submissions but not reviewed)
-    const homeworkPending = await Homework.countDocuments({
-      schoolId,
-      ...sFilter,
-      createdBy: teacherId,
-      status: { $ne: 'REVIEWED' }
-    });
-
-    // Homework submitted (has submissions)
-    const HomeworkSubmission = require('../models/HomeworkSubmission');
-    const homeworkSubmitted = await HomeworkSubmission.countDocuments({
-      schoolId,
-      ...sFilter,
-      homeworks: { $in: await Homework.distinct('_id', { schoolId, ...sFilter, createdBy: teacherId }) }
-    }).catch(() => 0);
+    // Homework pending review (has submissions but not reviewed) - REMOVED
+    // Note: HomeworkSubmission model does not exist - removed to prevent server crash
+    // Use only existing Homework model for stats
 
     // ===== PHASE 4: Today's classes from timetable =====
     const todayClasses = teacherAssignments.filter(a => {
@@ -630,7 +618,7 @@ const getTeacherDashboard = async (req, res) => {
       ? Math.round((attendanceMarked / attendanceTotal) * 100)
       : 0;
 
-    res.json({
+res.json({
       success: true,
       data: {
         // Core teacher data
@@ -639,10 +627,8 @@ const getTeacherDashboard = async (req, res) => {
         totalStudents,
         todayAttendanceStatus: todayAttendance ? todayAttendance.status : 'NOT_MARKED',
         
-        // Homework stats
+        // Homework stats (only from existing Homework model)
         homeworkCount,
-        homeworkPending: homeworkPending > 0 ? homeworkPending : 0,
-        homeworkSubmitted: homeworkSubmitted > 0 ? homeworkSubmitted : 0,
         
         // Result entries
         resultEntriesPending,
