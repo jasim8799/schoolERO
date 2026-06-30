@@ -488,7 +488,6 @@ const getTeacherDashboard = async (req, res) => {
     const TeacherAssignment = require('../models/TeacherAssignment.js');
     const Class = require('../models/Class.js');
     const Section = require('../models/Section.js');
-    const Subject = require('../models/Subject.js');
     const Student = require('../models/Student.js');
 
     // Get teacher's class assignments
@@ -516,10 +515,6 @@ const getTeacherDashboard = async (req, res) => {
 // ===== PHASE 3: Homework stats =====
     // Total homework created by teacher
     const homeworkCount = await Homework.countDocuments({ schoolId, ...sFilter, createdBy: teacherId });
-    
-    // Homework pending review (has submissions but not reviewed) - REMOVED
-    // Note: HomeworkSubmission model does not exist - removed to prevent server crash
-    // Use only existing Homework model for stats
 
     // ===== PHASE 4: Today's classes from timetable =====
     const todayClasses = teacherAssignments.filter(a => {
@@ -572,24 +567,44 @@ const getTeacherDashboard = async (req, res) => {
       status: 'PENDING'
     });
 
-    // ===== PHASE 9: Today's PTMs =====
-    const PTM = require('../models/PTM.js');
-    const todayPTMs = await PTM.find({
-      schoolId,
-      ...sFilter,
-      date: { $gte: today, $lt: tomorrow },
-      status: { $ne: 'CANCELLED' }
-    }).lean();
-    const todayPTMsCount = todayPTMs.length;
+    // ===== PHASE 9: Today's PTMs (SAFE OPTIONAL IMPORT) =====
+    // PHASE 4: Use safe optional import pattern to prevent server crash
+    // File is Ptm.js not PTM.js - case sensitivity
+    let PTMModel = null;
+    let todayPTMsCount = 0;
+    try {
+      PTMModel = require('../models/Ptm');
+      if (PTMModel) {
+        const todayPTMs = await PTMModel.find({
+          schoolId,
+          ...sFilter,
+          date: { $gte: today, $lt: tomorrow },
+          status: { $ne: 'CANCELLED' }
+        }).lean();
+        todayPTMsCount = todayPTMs.length;
+      }
+    } catch (_) {
+      // PTM model doesn't exist - set count to 0
+      todayPTMsCount = 0;
+    }
 
-    // ===== PHASE 10: Unread notices =====
-    // Count notices not marked as read by this teacher
-    const Notice = require('../models/Notice.js');
-    const noticesCount = await Notice.countDocuments({
-      schoolId,
-      ...sFilter,
-      target: { $in: ['Teacher', 'All', 'Staff'] }
-    });
+    // ===== PHASE 10: Unread notices (SAFE OPTIONAL IMPORT) =====
+    // Notice.js exists but verify for safety
+    let NoticeModel = null;
+    let noticesCount = 0;
+    try {
+      NoticeModel = require('../models/Notice');
+      if (NoticeModel) {
+        noticesCount = await NoticeModel.countDocuments({
+          schoolId,
+          ...sFilter,
+          target: { $in: ['Teacher', 'All', 'Staff'] }
+        });
+      }
+    } catch (_) {
+      // Notice model doesn't exist - set count to 0
+      noticesCount = 0;
+    }
 
     // ===== PHASE 11: Attendance for teacher's classes today =====
     let attendanceMarked = 0;
