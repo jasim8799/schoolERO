@@ -2,7 +2,7 @@ const Student = require('../models/Student');
 const User = require('../models/User');
 const StudentDailyAttendance = require('../models/StudentDailyAttendance');
 const TeacherAttendance = require('../models/TeacherAttendance');
-const StudentFee = require('../models/StudentFee');
+const StudentFee = require('../models/StudentFee'); // Legacy - kept for backward compatibility only
 const FeePayment = require('../models/FeePayment');
 const ExamPayment = require('../models/ExamPayment');
 const StudentHostel = require('../models/StudentHostel');
@@ -11,7 +11,7 @@ const ExamForm = require('../models/ExamForm');
 const Homework = require('../models/Homework');
 const Exam = require('../models/Exam');
 const Result = require('../models/Result');
-const Bill = require('../models/Bill');
+const Bill = require('../models/Bill'); // Production financial module - single source of truth
 const LeaveApplication = require('../models/LeaveApplication');
 const SystemAnnouncement = require('../models/SystemAnnouncement');
 const AuditLog = require('../models/AuditLog');
@@ -56,12 +56,40 @@ const getPrincipalDashboard = async (req, res) => {
       date: { $gte: today, $lt: tomorrow }
     });
 
-    const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length;
+const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length;
     const todayAttendancePercent = todayAttendances.length > 0 ? ((presentCount / todayAttendances.length) * 100).toFixed(1) : 0;
 
-    // Fee due amount
-    const feeDues = await StudentFee.find({ schoolId, ...sFilter, status: { $in: ['Due', 'Partial'] } });
-    const totalFeeDue = feeDues.reduce((sum, fee) => sum + fee.dueAmount, 0);
+    // ============================================================
+    // FORENSIC FIX: Use Bill module as single source of truth
+    // (Previously used legacy StudentFee which caused mismatch)
+    // ============================================================
+    
+    // Fee due amount - use Bill module (same as Fee Dashboard)
+    const [unpaidBills, partialBills] = await Promise.all([
+      Bill.aggregate([
+        { $match: { schoolId, ...sFilter, status: 'UNPAID', dueAmount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$dueAmount' } } }
+      ]),
+      Bill.aggregate([
+        { $match: { schoolId, ...sFilter, status: 'PARTIAL', dueAmount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$dueAmount' } } }
+      ])
+    ]);
+    const totalFeeDue = (unpaidBills[0]?.total || 0) + (partialBills[0]?.total || 0);
+    
+    // Fee due count - count of unpaid + partial bills
+    const [unpaidCount, partialCount] = await Promise.all([
+      Bill.countDocuments({ schoolId, ...sFilter, status: 'UNPAID', dueAmount: { $gt: 0 } }),
+      Bill.countDocuments({ schoolId, ...sFilter, status: 'PARTIAL', dueAmount: { $gt: 0 } })
+    ]);
+    const feeDueCount = unpaidCount + partialCount;
+
+    // FORENSIC VERIFICATION LOG
+    console.log('========== FORENSIC FEE DUE VERIFICATION ==========');
+    console.log('SchoolId:', schoolId);
+    console.log('Principal Dashboard Fee Due:', totalFeeDue);
+    console.log('Fee Due Count (unpaid + partial):', feeDueCount);
+    console.log('==================================================');
 
     // Today collection
     const todayPayments = await FeePayment.find({
@@ -248,7 +276,7 @@ res.json({
         totalTeachers,
         todayAttendancePercent,
         totalFeeDue,
-        feeDueCount: feeDues.length,
+        feeDueCount: feeDueCount, // FIXED: Now uses Bill module count
         feeOverdueCount,
         todayCollection,
         pendingExamPayments,
