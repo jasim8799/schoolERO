@@ -160,7 +160,7 @@ const resolveActiveSessionId = async ({ schoolId, reqSessionId, mongoSession }) 
 };
 
 const normalizeTransportBillSource = async ({ bill, schoolId, sessionId, mongoSession }) => {
-  if (bill.billType !== 'TRANSPORT' || bill.sourceType !== 'StudentTransport') return;
+  if (bill.billType !== 'TRANSPORT') return;
 
   const directFee = await TransportFee.findOne({
     _id: bill.sourceId,
@@ -218,12 +218,13 @@ const normalizeTransportBillSource = async ({ bill, schoolId, sessionId, mongoSe
 
   if (feeRecord && String(bill.sourceId) !== String(feeRecord._id)) {
     bill.sourceId = feeRecord._id;
+    bill.sourceType = 'StudentTransport';
     await bill.save({ session: mongoSession });
   }
 };
 
 const normalizeHostelBillSource = async ({ bill, schoolId, mongoSession }) => {
-  if (bill.billType !== 'HOSTEL' || bill.sourceType !== 'StudentHostel') return;
+  if (bill.billType !== 'HOSTEL') return;
 
   const assignment = await StudentHostel.findOne({
     _id: bill.sourceId,
@@ -242,6 +243,7 @@ const normalizeHostelBillSource = async ({ bill, schoolId, mongoSession }) => {
   if (!fallbackAssignment) return;
 
   bill.sourceId = fallbackAssignment._id;
+  bill.sourceType = 'StudentHostel';
   await bill.save({ session: mongoSession });
 };
 
