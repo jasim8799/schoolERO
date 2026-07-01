@@ -3,15 +3,12 @@ const Payment = require('../models/Payment');
 const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
+const mongoose = require('mongoose');
 const { syncBillPaymentToSource } = require('../services/feeSync.service');
 const {
   ensureStudentPendingAssignmentBills,
   ensureSchoolPendingAssignmentBills,
 } = require('../services/feeAssignmentBillSync.service');
-
-// FORENSIC MASTER FIX: Import shared financial summary service
-// This ensures Fee Dashboard uses IDENTICAL calculation as Principal Dashboard
-const { getFinancialSummary } = require('../services/financialSummary.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
@@ -312,14 +309,21 @@ exports.getBillSummary = async (req, res) => {
       createdBy: userId,
     });
 
-    console.log('[getBillSummary] schoolId:', schoolId, 'sessionId:', sessionId);
+    const safeSchoolId = schoolId?._id
+      ? new mongoose.Types.ObjectId(schoolId._id.toString())
+      : new mongoose.Types.ObjectId(schoolId.toString());
+    const safeSessionId = sessionId
+      ? new mongoose.Types.ObjectId(sessionId.toString())
+      : null;
 
-    // FORENSIC MASTER FIX: Use shared service for fee due calculation
-    // This ensures Fee Dashboard uses IDENTICAL calculation as Principal Dashboard
-    const financialSummary = await getFinancialSummary({
-      schoolId,
-      sessionId
-    });
+    console.log('[BillSummary][Context] schoolId received:', schoolId);
+    console.log('[BillSummary][Context] schoolId used:', safeSchoolId.toString());
+    console.log('[BillSummary][Context] sessionId received:', sessionId || null);
+
+    const schoolMatch = { schoolId: safeSchoolId };
+    const schoolSessionMatch = safeSessionId
+      ? { schoolId: safeSchoolId, sessionId: safeSessionId }
+      : { schoolId: safeSchoolId };
 
     // Get payment data separately (not part of shared service)
     const today = new Date();
@@ -329,44 +333,109 @@ exports.getBillSummary = async (req, res) => {
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
-    const sessionMatch = sessionId ? { sessionId } : {};
-
-    const [totalPaid, todayPayments, allPayments, monthPayments] = await Promise.all([
+    const [
+      totalBillsCount,
+      paidBillsCount,
+      partialBillsCount,
+      unpaidBillsCount,
+      cancelledBillsCount,
+      waivedBillsCount,
+      billsFoundForSession,
+      paymentsFoundForSchool,
+      paymentsFoundForSession,
+      totalPaidAmountAgg,
+      dueByStatusAgg,
+      todayPayments,
+      allPayments,
+      monthPayments,
+      billsApiStyleCount,
+    ] = await Promise.all([
+      Bill.countDocuments(schoolMatch),
+      Bill.countDocuments({ ...schoolMatch, status: 'PAID' }),
+      Bill.countDocuments({ ...schoolMatch, status: 'PARTIAL' }),
+      Bill.countDocuments({ ...schoolMatch, status: 'UNPAID' }),
+      Bill.countDocuments({ ...schoolMatch, status: 'CANCELLED' }),
+      Bill.countDocuments({ ...schoolMatch, status: 'WAIVED' }),
+      Bill.countDocuments(schoolSessionMatch),
+      Payment.countDocuments(schoolMatch),
+      Payment.countDocuments(schoolSessionMatch),
       Bill.aggregate([
-        { $match: { schoolId, status: 'PAID', ...sessionMatch } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+        { $match: schoolMatch },
+        { $group: { _id: null, totalPaidAmount: { $sum: '$paidAmount' } } },
+      ]),
+      Bill.aggregate([
+        {
+          $match: {
+            ...schoolMatch,
+            status: { $in: ['UNPAID', 'PARTIAL'] },
+            dueAmount: { $gt: 0 },
+          },
+        },
+        {
+          $group: {
+            _id: '$status',
+            due: { $sum: '$dueAmount' },
+            count: { $sum: 1 },
+          },
+        },
       ]),
       Payment.aggregate([
-        { $match: { schoolId, ...sessionMatch, paymentDate: { $gte: today, $lt: tomorrow } } },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        { $match: { ...schoolMatch, paymentDate: { $gte: today, $lt: tomorrow } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       Payment.aggregate([
-        { $match: { schoolId, ...sessionMatch } },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        { $match: schoolMatch },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       Payment.aggregate([
-        { $match: { schoolId, ...sessionMatch, paymentDate: { $gte: monthStart, $lt: monthEnd } } },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-      ])
+        { $match: { ...schoolMatch, paymentDate: { $gte: monthStart, $lt: monthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]),
+      Bill.countDocuments({ ...schoolMatch, ...getSessionFilter(req) }),
     ]);
 
-    // FORENSIC MASTER LOG: Confirm totalDue calculation matches Principal Dashboard
-    const totalDue = financialSummary.totalDue;
-    console.log('[getBillSummary] Using SHARED service - Total Due:', totalDue);
-    console.log('[getBillSummary] This value = Principal Dashboard Fee Due (verified)');
+    const dueMap = dueByStatusAgg.reduce((acc, item) => {
+      acc[item._id] = { due: item.due || 0, count: item.count || 0 };
+      return acc;
+    }, {});
+
+    const unpaidDue = dueMap.UNPAID?.due || 0;
+    const partialDue = dueMap.PARTIAL?.due || 0;
+    const unpaidCount = dueMap.UNPAID?.count || 0;
+    const partialCount = dueMap.PARTIAL?.count || 0;
+    const totalDue = unpaidDue + partialDue;
+    const totalPaidAmount = totalPaidAmountAgg[0]?.totalPaidAmount || 0;
+
+    console.log('========== BILL SUMMARY FORENSIC AUDIT ==========' );
+    console.log('[BillSummary][DB] Total Bills:', totalBillsCount);
+    console.log('[BillSummary][DB] Paid Bills:', paidBillsCount);
+    console.log('[BillSummary][DB] Partial Bills:', partialBillsCount);
+    console.log('[BillSummary][DB] Unpaid Bills:', unpaidBillsCount);
+    console.log('[BillSummary][DB] Cancelled Bills:', cancelledBillsCount);
+    console.log('[BillSummary][DB] Waived Bills:', waivedBillsCount);
+    console.log('[BillSummary][DB] Bills found (school + session):', billsFoundForSession);
+    console.log('[BillSummary][DB] Bills found (/api/bills style):', billsApiStyleCount);
+    console.log('[BillSummary][DB] Total Payments:', paymentsFoundForSchool);
+    console.log('[BillSummary][DB] Payments found (school + session):', paymentsFoundForSession);
+    console.log('[BillSummary][DB] Today\'s Payments:', todayPayments[0]?.count || 0);
+    console.log('[BillSummary][DB] Current Month Payments:', monthPayments[0]?.count || 0);
+    console.log('[BillSummary][DB] Total Due Amount:', totalDue);
+    console.log('[BillSummary][DB] Total Paid Amount (Bill.paidAmount sum):', totalPaidAmount);
+    console.log('[BillSummary][Response] unpaidDue:', unpaidDue, 'partialDue:', partialDue, 'totalDue:', totalDue);
+    console.log('[BillSummary][Response] collectedToday:', todayPayments[0]?.total || 0, 'totalCollected:', allPayments[0]?.total || 0, 'thisMonthCollected:', monthPayments[0]?.total || 0);
+    console.log('===============================================');
 
     res.json({
       success: true,
       data: {
-        // Total Due - from shared service (matches Principal Dashboard)
         totalDue: totalDue,
-        unpaidDue: financialSummary.unpaidDue,
-        unpaidCount: financialSummary.unpaidCount,
-        partialDue: financialSummary.partialDue,
-        partialCount: financialSummary.partialCount,
+        unpaidDue,
+        unpaidCount,
+        partialDue,
+        partialCount,
         // Payment data
-        paidTotal: totalPaid[0]?.total || 0,
-        paidCount: totalPaid[0]?.count || 0,
+        paidTotal: totalPaidAmount,
+        paidCount: paidBillsCount,
         collectedToday: todayPayments[0]?.total || 0,
         paymentsToday: todayPayments[0]?.count || 0,
         totalCollected: allPayments[0]?.total || 0,
