@@ -41,7 +41,16 @@ const getAllFees = async (req, res) => {
         sourceId: fee._id,
       }).select('status totalAmount paidAmount dueAmount billNumber').lean();
 
-      return { ...fee, bill };
+      return {
+        ...fee,
+        cachedStatus: fee.status,
+        status: bill?.status || 'NOT_BILLED',
+        paymentStatus: bill?.status || 'NOT_BILLED',
+        amount: bill?.totalAmount ?? fee.amount,
+        paidAmount: bill?.paidAmount ?? 0,
+        dueAmount: bill?.dueAmount ?? (bill ? 0 : fee.amount),
+        bill,
+      };
     }));
 
     res.json({ success: true, data: enriched });

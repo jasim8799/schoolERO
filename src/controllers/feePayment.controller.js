@@ -1,7 +1,7 @@
-const FeePayment = require('../models/FeePayment');
 const StudentFee = require('../models/StudentFee');
 const Student = require('../models/Student');
 const OnlinePayment = require('../models/OnlinePayment');
+const Payment = require('../models/Payment');
 const Parent = require('../models/Parent');
 const PDFDocument = require('pdfkit');
 const School = require('../models/School');
@@ -16,13 +16,6 @@ const { processBillPayments, PaymentEngineError } = require('../services/payment
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
   return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
-};
-
-// Generate unique receipt number
-const generateReceiptNo = (schoolId) => {
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `RCP-${schoolId}-${timestamp}-${random}`;
 };
 
 // Manual fee payment
@@ -47,66 +40,39 @@ const payManual = async (req, res) => {
       return res.status(400).json({ message: 'Payment amount cannot exceed due amount' });
     }
 
-    // Generate unique receipt number
-    let receiptNo;
-    let attempts = 0;
-    do {
-      receiptNo = generateReceiptNo(schoolId);
-      attempts++;
-      if (attempts > 10) {
-        return res.status(500).json({ message: 'Failed to generate unique receipt number' });
-      }
-    } while (await FeePayment.findOne({ receiptNo }));
-
-    // Create payment record
-    const payment = await FeePayment.create({
-      studentFeeId,
-      amount,
-      mode,
-      date: new Date(),
-      collectedBy,
-      receiptNo,
+    const linkedBill = await Bill.findOne({
+      sourceType: 'StudentFee',
+      sourceId: studentFeeId,
       schoolId,
-      sessionId
+      ...getSessionFilter(req),
     });
-
-    // Update StudentFee
-    const newPaidAmount = studentFee.paidAmount + amount;
-    const newDueAmount = studentFee.dueAmount - amount;
-    let newStatus = 'Due';
-    if (newDueAmount === 0) {
-      newStatus = 'Paid';
-    } else if (newPaidAmount > 0) {
-      newStatus = 'Partial';
+    if (!linkedBill) {
+      return res.status(400).json({ message: 'No linked Bill found for this student fee' });
     }
 
-    await StudentFee.findByIdAndUpdate(studentFeeId, {
-      paidAmount: newPaidAmount,
-      dueAmount: newDueAmount,
-      status: newStatus
+    const engineResult = await processBillPayments({
+      schoolId,
+      actorId: collectedBy,
+      reqSessionId: sessionId,
+      paymentMode: mode,
+      notes: `Manual fee payment for StudentFee ${studentFeeId}`,
+      billItems: [{ billId: linkedBill._id, amount }],
+      allOrNothing: true,
     });
 
-    try {
-      const linkedBill = await Bill.findOne({
-        sourceType: 'StudentFee',
-        sourceId: studentFeeId,
-        schoolId,
-      });
-      if (linkedBill) {
-        linkedBill.paidAmount += amount;
-        await linkedBill.save();
-      }
-    } catch (billSyncErr) {
-      console.error('[payManual] Bill sync failed:', billSyncErr.message);
-    }
+    const canonicalPayment = await Payment.findById(engineResult.receipts[0].paymentId)
+      .populate('collectedBy', 'name')
+      .lean();
+
+    const refreshedStudentFee = await StudentFee.findById(studentFeeId).lean();
 
     // Audit log
     await auditLog({
       action: 'FEE_PAYMENT_MANUAL',
       userId: req.user._id,
       role: req.user.role,
-      entityType: 'FeePayment',
-      entityId: payment._id,
+      entityType: 'Payment',
+      entityId: canonicalPayment?._id,
       description: `Manual fee payment of ₹${amount} recorded for student fee ${studentFeeId}`,
       schoolId: req.user.schoolId,
       sessionId: req.user.sessionId,
@@ -115,16 +81,16 @@ const payManual = async (req, res) => {
 
     res.status(201).json({
       message: 'Payment recorded successfully',
-      payment,
+      payment: canonicalPayment,
       updatedStudentFee: {
-        paidAmount: newPaidAmount,
-        dueAmount: newDueAmount,
-        status: newStatus
+        paidAmount: Number(refreshedStudentFee?.paidAmount || 0),
+        dueAmount: Number(refreshedStudentFee?.dueAmount || 0),
+        status: refreshedStudentFee?.status || 'Due'
       }
     });
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(409).json({ message: 'Receipt number already exists. Please try again.' });
+    if (err instanceof PaymentEngineError) {
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
     res.status(500).json({ message: err.message });
   }
@@ -147,17 +113,35 @@ const getPaymentsByStudent = async (req, res) => {
       return res.status(400).json({ message: 'Invalid studentId' });
     }
 
-    // Get all student fees for this student
-    const studentFees = await StudentFee.find({ studentId, schoolId }).select('_id');
-    const studentFeeIds = studentFees.map(fee => fee._id);
+    const bills = await Bill.find({
+      studentId,
+      schoolId,
+      sourceType: 'StudentFee',
+      ...getSessionFilter(req),
+    }).select('_id sourceId totalAmount dueAmount status');
 
-    // Get payments for these student fees
-    const payments = await FeePayment.find({ studentFeeId: { $in: studentFeeIds }, ...getSessionFilter(req) })
-      .populate('studentFeeId', 'totalAmount paidAmount dueAmount status')
+    const billMap = new Map(bills.map((b) => [String(b._id), b]));
+    const payments = await Payment.find({
+      billId: { $in: bills.map((b) => b._id) },
+      schoolId,
+      ...getSessionFilter(req),
+    })
       .populate('collectedBy', 'name')
       .sort({ createdAt: -1 });
 
-    res.json(payments);
+    const normalized = payments.map((p) => {
+      const bill = billMap.get(String(p.billId));
+      return {
+        ...p.toObject(),
+        studentFeeId: bill?.sourceId || null,
+        mode: p.paymentMode,
+        date: p.paymentDate,
+        receiptNo: p.receiptNumber,
+        linkedBill: bill || null,
+      };
+    });
+
+    res.json(normalized);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -256,58 +240,43 @@ const verifyOnlinePayment = async (req, res) => {
     onlinePayment.status = status;
     await onlinePayment.save();
 
-    let feePayment = null;
+      let feePayment = null;
     let updatedStudentFee = null;
 
     if (status === 'Success') {
-      // Generate receipt number
-      let receiptNo;
-      let attempts = 0;
-      do {
-        receiptNo = generateReceiptNo(schoolId);
-        attempts++;
-        if (attempts > 10) {
-          return res.status(500).json({ message: 'Failed to generate unique receipt number' });
-        }
-      } while (await FeePayment.findOne({ receiptNo }));
-
-      // Update receipt number in online payment
-      onlinePayment.receiptNo = receiptNo;
-      await onlinePayment.save();
-
-      // Create FeePayment record
-      feePayment = await FeePayment.create({
-        studentFeeId: onlinePayment.studentFeeId,
-        amount: onlinePayment.amount,
-        mode: 'Online',
-        date: new Date(),
-        collectedBy: null, // No collector for online payments
-        receiptNo,
+      const linkedBill = await Bill.findOne({
+        sourceType: 'StudentFee',
+        sourceId: onlinePayment.studentFeeId,
         schoolId,
-        sessionId
+        ...getSessionFilter(req),
       });
-
-      // Update StudentFee
-      const studentFee = await StudentFee.findById(onlinePayment.studentFeeId);
-      const newPaidAmount = studentFee.paidAmount + onlinePayment.amount;
-      const newDueAmount = studentFee.dueAmount - onlinePayment.amount;
-      let newStatus = 'Due';
-      if (newDueAmount === 0) {
-        newStatus = 'Paid';
-      } else if (newPaidAmount > 0) {
-        newStatus = 'Partial';
+      if (!linkedBill) {
+        return res.status(400).json({ message: 'No linked Bill found for this online payment' });
       }
 
-      await StudentFee.findByIdAndUpdate(onlinePayment.studentFeeId, {
-        paidAmount: newPaidAmount,
-        dueAmount: newDueAmount,
-        status: newStatus
+      const engineResult = await processBillPayments({
+        schoolId,
+        actorId: req.user._id,
+        reqSessionId: sessionId,
+        paymentMode: 'Online',
+        notes: `Online payment ${gatewayRef}`,
+        billItems: [{ billId: linkedBill._id, amount: onlinePayment.amount }],
+        allOrNothing: true,
       });
 
+      onlinePayment.receiptNo = engineResult.receipts[0].receiptNumber;
+      await onlinePayment.save();
+
+      feePayment = await Payment.findById(engineResult.receipts[0].paymentId)
+        .populate('collectedBy', 'name')
+        .lean();
+
+      const studentFee = await StudentFee.findById(onlinePayment.studentFeeId).lean();
+
       updatedStudentFee = {
-        paidAmount: newPaidAmount,
-        dueAmount: newDueAmount,
-        status: newStatus
+        paidAmount: Number(studentFee?.paidAmount || 0),
+        dueAmount: Number(studentFee?.dueAmount || 0),
+        status: studentFee?.status || 'Due'
       };
     }
 
@@ -316,7 +285,7 @@ const verifyOnlinePayment = async (req, res) => {
       action: status === 'Success' ? 'FEE_PAYMENT_ONLINE_SUCCESS' : 'FEE_PAYMENT_ONLINE_FAILED',
       userId: req.user._id,
       role: req.user.role,
-      entityType: 'OnlinePayment',
+      entityType: 'Payment',
       entityId: onlinePayment._id,
       description: `Online payment ${status.toLowerCase()} for ₹${onlinePayment.amount}`,
       schoolId: req.user.schoolId,
@@ -331,8 +300,8 @@ const verifyOnlinePayment = async (req, res) => {
       updatedStudentFee
     });
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(409).json({ message: 'Receipt number already exists. Please try again.' });
+    if (err instanceof PaymentEngineError) {
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
     res.status(500).json({ message: err.message });
   }
@@ -354,16 +323,34 @@ const getMyPayments = async (req, res) => {
       return res.status(400).json({ message: 'Parent profile not found' });
     }
 
-    // Get all student fees for this student
-    const studentFees = await StudentFee.find({ studentId: { $in: parent.children }, schoolId }).select('_id');
-    const studentFeeIds = studentFees.map(fee => fee._id);
+    const bills = await Bill.find({
+      studentId: { $in: parent.children },
+      schoolId,
+      sourceType: 'StudentFee',
+      ...getSessionFilter(req),
+    }).select('_id sourceId totalAmount dueAmount status');
 
-    // Get payments for these student fees
-    const payments = await FeePayment.find({ studentFeeId: { $in: studentFeeIds }, ...getSessionFilter(req) })
-      .populate('studentFeeId', 'totalAmount paidAmount dueAmount status')
+    const billMap = new Map(bills.map((b) => [String(b._id), b]));
+    const payments = await Payment.find({
+      billId: { $in: bills.map((b) => b._id) },
+      schoolId,
+      ...getSessionFilter(req),
+    })
       .sort({ createdAt: -1 });
 
-    res.json(payments);
+    const normalized = payments.map((p) => {
+      const bill = billMap.get(String(p.billId));
+      return {
+        ...p.toObject(),
+        studentFeeId: bill?.sourceId || null,
+        mode: p.paymentMode,
+        date: p.paymentDate,
+        receiptNo: p.receiptNumber,
+        linkedBill: bill || null,
+      };
+    });
+
+    res.json(normalized);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -375,36 +362,48 @@ const getReceipt = async (req, res) => {
     const { receiptNo } = req.params;
     const { schoolId, role, _id: userId } = req.user;
 
-    // Find the payment by receipt number
-    const payment = await FeePayment.findOne({ receiptNo, schoolId, ...getSessionFilter(req) })
-      .populate('studentFeeId')
+    // Find the canonical payment by receipt number
+    const payment = await Payment.findOne({ receiptNumber: receiptNo, schoolId, ...getSessionFilter(req) })
+      .populate('billId')
       .populate('collectedBy', 'name');
     if (!payment) {
       return res.status(404).json({ message: 'Receipt not found' });
+    }
+
+    const linkedBill = payment.billId;
+    if (!linkedBill) {
+      return res.status(400).json({ message: 'Linked bill not found for receipt' });
     }
 
     // Access control based on role
     if (role === 'STUDENT') {
       // Student can only view their own receipts
       const student = await Student.findOne({ userId, schoolId });
-      if (!student || student._id.toString() !== payment.studentFeeId.studentId.toString()) {
+      if (!student || student._id.toString() !== linkedBill.studentId.toString()) {
         return res.status(403).json({ message: 'Access denied. You can only view your own receipts.' });
       }
     } else if (role === 'PARENT') {
       // Parent can only view their child's receipts
       const parent = await Parent.findOne({ userId, schoolId });
-      if (!parent || !parent.children.some(id => id.toString() === payment.studentFeeId.studentId.toString())) {
+      if (!parent || !parent.children.some(id => id.toString() === linkedBill.studentId.toString())) {
         return res.status(403).json({ message: 'Access denied. You can only view your child\'s receipts.' });
       }
     }
     // Principal/Operator can view all receipts (no additional check needed)
 
     // Get additional data for receipt
-    const student = await Student.findById(payment.studentFeeId.studentId)
+    const student = await Student.findById(linkedBill.studentId)
       .populate('classId', 'name')
       .populate('sectionId', 'name');
     const school = await School.findById(schoolId);
-    const feeStructure = await FeeStructure.findById(payment.studentFeeId.feeStructureId);
+    let studentFee = null;
+    let feeStructure = null;
+    if (linkedBill.sourceType === 'StudentFee' && linkedBill.sourceId) {
+      studentFee = await StudentFee.findById(linkedBill.sourceId).lean();
+      if (studentFee?.feeStructureId) {
+        feeStructure = await FeeStructure.findById(studentFee.feeStructureId).lean();
+      }
+    }
 
     // Create PDF document
     const doc = new PDFDocument({
@@ -435,8 +434,8 @@ const getReceipt = async (req, res) => {
 
     const receiptData = [
       ['Receipt Number:', receiptNo],
-      ['Date:', new Date(payment.date).toLocaleDateString()],
-      ['Payment Mode:', payment.mode],
+      ['Date:', new Date(payment.paymentDate).toLocaleDateString()],
+      ['Payment Mode:', payment.paymentMode],
       ['Amount Paid:', `₹${payment.amount}`],
     ];
 
@@ -470,9 +469,9 @@ const getReceipt = async (req, res) => {
 
     const feeData = [
       ['Fee Head:', feeStructure?.name || 'N/A'],
-      ['Total Amount:', `₹${payment.studentFeeId.totalAmount}`],
+      ['Total Amount:', `₹${linkedBill.totalAmount || 0}`],
       ['Amount Paid:', `₹${payment.amount}`],
-      ['Balance Due:', `₹${payment.studentFeeId.dueAmount}`],
+      ['Balance Due:', `₹${linkedBill.dueAmount || 0}`],
     ];
 
     feeData.forEach(([label, value]) => {

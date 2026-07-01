@@ -4,9 +4,6 @@ const StudentDailyAttendance = require('../models/StudentDailyAttendance');
 const TeacherAttendance = require('../models/TeacherAttendance');
 // FORENSIC MASTER FIX: Use shared financial summary service - single source of truth for fee due
 const { getFinancialSummary, getFeeOverdueCount, getTodayCollection } = require('../services/financialSummary.service');
-const StudentFee = require('../models/StudentFee'); // Legacy - kept for backward compatibility only
-const FeePayment = require('../models/FeePayment');
-const ExamPayment = require('../models/ExamPayment');
 const StudentHostel = require('../models/StudentHostel');
 const StudentTransport = require('../models/StudentTransport');
 const ExamForm = require('../models/ExamForm');
@@ -92,16 +89,21 @@ const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length
     console.log('[SHARED SERVICE] This value = Fee Dashboard Total Due');
     console.log('======================================================');
 
-    // Today collection
-    const todayPayments = await FeePayment.find({
+    // Today collection from canonical Payment model.
+    const todayCollectionSummary = await getTodayCollection({
+      schoolId,
+      sessionId: req.user?.sessionId,
+    });
+    const todayCollection = Number(todayCollectionSummary?.total || 0);
+
+    // Pending exam payments derived from Bills only.
+    const pendingExamPayments = await Bill.countDocuments({
       schoolId,
       ...sFilter,
-      paymentDate: { $gte: today, $lt: tomorrow }
+      billType: 'EXAM',
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 },
     });
-    const todayCollection = todayPayments.reduce((sum, payment) => sum + payment.amount, 0);
-
-    // Pending exam payments
-    const pendingExamPayments = await ExamPayment.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
     const [publishedExamsCount, publishedResultExamIds, feeOverdueCount, absentToday] = await Promise.all([
       Exam.countDocuments({ schoolId, ...sFilter, status: 'Published' }),
@@ -349,16 +351,21 @@ const getOperatorDashboard = async (req, res) => {
     const hostelDueAmount = financialSummary.hostelDueAmount || 0;
     const transportDueAmount = financialSummary.transportDueAmount || 0;
 
-    // Today collection
-    const todayPayments = await FeePayment.find({
+    // Today collection from canonical Payment model.
+    const todayCollectionSummary = await getTodayCollection({
+      schoolId,
+      sessionId: req.user?.sessionId,
+    });
+    const todayCollection = Number(todayCollectionSummary?.total || 0);
+
+    // Pending exam payments derived from Bills only.
+    const pendingExamPayments = await Bill.countDocuments({
       schoolId,
       ...sFilter,
-      paymentDate: { $gte: today, $lt: tomorrow }
+      billType: 'EXAM',
+      status: { $in: ['UNPAID', 'PARTIAL'] },
+      dueAmount: { $gt: 0 },
     });
-    const todayCollection = todayPayments.reduce((sum, payment) => sum + payment.amount, 0);
-
-    // Pending exam payments
-    const pendingExamPayments = await ExamPayment.countDocuments({ schoolId, ...sFilter, status: 'PENDING' });
 
     const [publishedExamsCount, publishedResultExamIds, feeOverdueCount, absentToday] = await Promise.all([
       Exam.countDocuments({ schoolId, ...sFilter, status: 'Published' }),
@@ -823,9 +830,25 @@ const getStudentDashboard = async (req, res) => {
     const presentCount = attendances.filter(a => a.status === 'PRESENT').length;
     const attendancePercent = attendances.length > 0 ? ((presentCount / attendances.length) * 100).toFixed(1) : 0;
 
-    // Fee due
-    const fees = await StudentFee.find({ studentId, schoolId, ...sFilter });
-    const totalDue = fees.reduce((sum, fee) => sum + fee.dueAmount, 0);
+    // Fee due from canonical Bill model only.
+    const dueAgg = await Bill.aggregate([
+      {
+        $match: {
+          studentId,
+          schoolId,
+          ...sFilter,
+          status: { $in: ['UNPAID', 'PARTIAL'] },
+          dueAmount: { $gt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalDue: { $sum: '$dueAmount' },
+        },
+      },
+    ]);
+    const totalDue = Number(dueAgg[0]?.totalDue || 0);
 
     // Exam status
     const results = await Result.find({ studentId, schoolId, ...sFilter }).populate('examId');

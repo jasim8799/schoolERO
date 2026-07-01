@@ -1,8 +1,43 @@
 const StudentTransport = require('../models/StudentTransport.js');
 const Student = require('../models/Student.js');
 const Route = require('../models/Route.js');
-const TransportFee = require('../models/TransportFee.js');
+const Bill = require('../models/Bill.js');
 const { getFinancialSummary } = require('../services/financialSummary.service');
+
+const _sessionFilter = (sessionId) =>
+  sessionId
+    ? {
+        $or: [
+          { sessionId },
+          { sessionId: null },
+          { sessionId: { $exists: false } },
+        ],
+      }
+    : {};
+
+const parseMonthYearFromDescription = (description = '') => {
+  const text = String(description || '');
+  const slashMatch = text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
+  if (slashMatch) {
+    const month = Number(slashMatch[1]);
+    const year = Number(slashMatch[2]);
+    if (month >= 1 && month <= 12) return { month, year };
+  }
+
+  const monthMap = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  const namedMatch = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b\s*(\d{4})/i);
+  if (namedMatch) {
+    return {
+      month: monthMap[namedMatch[1].slice(0, 3).toLowerCase()] || null,
+      year: Number(namedMatch[2]) || null,
+    };
+  }
+
+  return { month: null, year: null };
+};
 
 const assignTransport = async (req, res) => {
   try {
@@ -34,89 +69,6 @@ const assignTransport = async (req, res) => {
       schoolId,
     });
 
-    // ── Billing dual-write ──────────────────────────────────────────────
-    try {
-      const Bill = require('../models/Bill');
-      const AcademicSession = require('../models/AcademicSession');
-
-      const activeSession = await AcademicSession.findOne({
-        schoolId, isActive: true
-      });
-
-      if (activeSession) {
-        const admissionTransportBill = await Bill.findOne({
-          studentId,
-          schoolId,
-          billType: 'TRANSPORT',
-          sourceType: 'Admission',
-          status: 'PAID',
-        }).lean();
-
-        if (admissionTransportBill) {
-          console.log(
-            `Skipping auto-bill creation for transport assignment - student ${studentId} already paid admission transport fee`
-          );
-        } else {
-          const generateBillNumber = (sid) => {
-            const ts = Date.now();
-            const r = Math.floor(Math.random() * 1000)
-              .toString().padStart(3, '0');
-            return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
-          };
-
-          let billNumber;
-          let attempts = 0;
-          do {
-            billNumber = generateBillNumber(schoolId);
-            attempts++;
-          } while (attempts < 10 && await Bill.findOne({ billNumber }));
-
-          const description = route?.name
-            ? `Transport Fee — Route: ${route.name}`
-            : 'Transport Fee';
-
-          const monthlyFee = route?.monthlyFee || 0;
-
-          await Bill.create({
-            billNumber,
-            studentId,
-            schoolId,
-            sessionId: activeSession._id,
-            billType: 'TRANSPORT',
-            sourceType: 'StudentTransport',
-            sourceId: transport._id,
-            description,
-            totalAmount: monthlyFee,
-            paidAmount: 0,
-            dueAmount: monthlyFee,
-            status: 'UNPAID',
-            createdBy: req.user._id
-          });
-        }
-      }
-    } catch (billErr) {
-      console.error('Transport bill dual-write failed:', billErr.message);
-    }
-    // ── End billing dual-write ──────────────────────────────────────
-
-    // ── Transport fee record ────────────────────────────────────────
-    try {
-      const now = new Date();
-      await TransportFee.create({
-        studentId,
-        routeId,
-        vehicleId: route.vehicleId._id,
-        schoolId,
-        amount: route.monthlyFee || 0,
-        status: 'PENDING',
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
-      });
-    } catch (feeErr) {
-      console.error('Transport fee record creation failed:', feeErr.message);
-    }
-    // ── End transport fee record ────────────────────────────────────
-
     res.status(201).json(transport);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -126,7 +78,7 @@ const assignTransport = async (req, res) => {
 const getStudentTransport = async (req, res) => {
   try {
     const { id } = req.params;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId } = req.user;
 
     let transport = await StudentTransport.findOne({ studentId: id, schoolId, status: 'ACTIVE' })
       .populate('routeId', 'name stops monthlyFee')
@@ -147,22 +99,44 @@ const getStudentTransport = async (req, res) => {
       return res.json({ success: true, data: null });
     }
 
-    const studentIdToUse = transport.studentId;
-    const fees = await TransportFee.find({ studentId: studentIdToUse, schoolId })
-      .sort({ year: -1, month: -1 })
+    const studentIdToUse = transport.studentId?._id || transport.studentId;
+    const fees = await Bill.find({
+      studentId: studentIdToUse,
+      schoolId,
+      billType: 'TRANSPORT',
+      sourceType: { $ne: 'Admission' },
+      ..._sessionFilter(sessionId),
+    })
+      .sort({ createdAt: -1 })
       .lean();
 
     const totalPaid = fees
-      .filter((f) => f.status === 'PAID')
-      .reduce((sum, f) => sum + (f.amount || 0), 0);
+      .reduce((sum, f) => sum + Number(f.paidAmount || 0), 0);
     const totalPending = fees
-      .filter((f) => f.status !== 'PAID')
-      .reduce((sum, f) => sum + (f.amount || 0), 0);
+      .reduce((sum, f) => sum + Number(f.dueAmount || 0), 0);
     const totalAmount = totalPaid + totalPending;
+
+    const feeHistory = fees.map((bill) => {
+      const { month, year } = parseMonthYearFromDescription(bill.description);
+      return {
+        _id: bill._id,
+        billId: bill._id,
+        billNumber: bill.billNumber,
+        description: bill.description,
+        month,
+        year,
+        amount: Number(bill.totalAmount || 0),
+        paidAmount: Number(bill.paidAmount || 0),
+        dueAmount: Number(bill.dueAmount || 0),
+        status: bill.status,
+        createdAt: bill.createdAt,
+        updatedAt: bill.updatedAt,
+      };
+    });
 
     const enriched = {
       ...transport,
-      feeHistory: fees,
+      feeHistory,
       feeSummary: {
         total: totalAmount,
         paid: totalPaid,

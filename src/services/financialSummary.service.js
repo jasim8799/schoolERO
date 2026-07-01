@@ -13,11 +13,8 @@
 
 const mongoose = require('mongoose');
 const Bill = require('../models/Bill');
-const TransportFee = require('../models/TransportFee');
 const StudentHostel = require('../models/StudentHostel');
-const Hostel = require('../models/Hostel');
 const StudentTransport = require('../models/StudentTransport');
-const Route = require('../models/Route');
 
 const MONTH_NAMES = [
   '',
@@ -136,7 +133,7 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     ]),
   ]);
 
-  const [hostelAssignments, hostelBills, transportAssignments, transportBills, transportFees] =
+  const [hostelAssignments, hostelBills, transportAssignments, transportBills] =
     await Promise.all([
       StudentHostel.find({ schoolId: safeSchoolId, status: 'ACTIVE' })
         .populate('hostelId', 'monthlyFee')
@@ -149,9 +146,6 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
         .lean(),
       Bill.find({ schoolId: safeSchoolId, billType: 'TRANSPORT', ...sessionMatch, status: { $ne: 'CANCELLED' } })
         .select('studentId description status totalAmount dueAmount createdAt')
-        .lean(),
-      TransportFee.find({ schoolId: safeSchoolId, ...sessionMatch })
-        .select('studentId month year amount status')
         .lean(),
     ]);
 
@@ -190,14 +184,6 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
     if (!studentId) continue;
     if (!transportBillsByStudent.has(studentId)) transportBillsByStudent.set(studentId, []);
     transportBillsByStudent.get(studentId).push(bill);
-  }
-
-  const transportFeesByStudentMonth = new Map();
-  for (const fee of transportFees) {
-    const studentId = extractStudentId(fee);
-    if (!studentId) continue;
-    const key = `${studentId}|${fee.month}|${fee.year}`;
-    transportFeesByStudentMonth.set(key, fee);
   }
 
   let hostelDueTotal = 0;
@@ -243,9 +229,6 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
 
     for (const monthData of academicMonths) {
       const match = findMonthMatch(history, monthData.label, monthData.month, monthData.year);
-      const feeKey = `${studentId}|${monthData.month}|${monthData.year}`;
-      const feeRecord = transportFeesByStudentMonth.get(feeKey);
-
       let status = 'NOT_BILLED';
       let totalAmount = null;
       let dueAmount = null;
@@ -254,10 +237,6 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
         status = normalizeStatus(match.status);
         totalAmount = match.totalAmount;
         dueAmount = match.dueAmount;
-      } else if (feeRecord) {
-        status = normalizeStatus(feeRecord.status);
-        totalAmount = feeRecord.amount;
-        dueAmount = feeRecord.amount;
       }
 
       const effectiveAmount = status === 'PAID'
