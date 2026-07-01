@@ -9,11 +9,9 @@ const Class = require('../models/Class');
 const Section = require('../models/Section');
 const FeeStructure = require('../models/FeeStructure');
 const Bill = require('../models/Bill');
-const Payment = require('../models/Payment');
-const LedgerEntry = require('../models/LedgerEntry');
 const AcademicSession = require('../models/AcademicSession');
 const { auditLog } = require('../utils/auditLog');
-const { syncBillPaymentToSource } = require('../services/feeSync.service');
+const { processBillPayments, PaymentEngineError } = require('../services/paymentEngine.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
@@ -669,7 +667,7 @@ const generateAndPay = async (req, res) => {
       });
     }
 
-    // ── Step 3: Pay each queued bill ──────────────────────────────────────────
+    // ── Step 3: Pay queued bills via unified payment engine ───────────────────
     const noteParts = ['Advance payment'];
     if (referenceNumber) noteParts.push(`Ref: ${referenceNumber}`);
     if (discount && parseFloat(discount) > 0) {
@@ -679,68 +677,23 @@ const generateAndPay = async (req, res) => {
     }
     const notesBase = noteParts.join(' | ');
 
-    const receipts = [];
-
-    for (const { bill, payAmount } of billQueue) {
-      // Generate unique receipt number
-      let receiptNumber;
-      let attempts = 0;
-      do {
-        const ts = Date.now();
-        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
-        attempts++;
-        if (attempts > 10) break;
-      } while (await Payment.findOne({ receiptNumber }));
-
-      const payment = await Payment.create({
-        receiptNumber,
+    const result = await processBillPayments({
+      schoolId,
+      actorId: collectedBy,
+      reqSessionId: session._id,
+      paymentMode,
+      notes: notesBase,
+      billItems: billQueue.map(({ bill, payAmount }) => ({
         billId: bill._id,
-        studentId: bill.studentId,
-        schoolId,
-        sessionId: session._id,
         amount: payAmount,
-        paymentMode,
-        paymentDate: new Date(),
-        collectedBy,
-        notes: notesBase,
-      });
+      })),
+      allOrNothing: true,
+    });
 
-      // pre-save hook recalculates dueAmount + status
-      bill.paidAmount += payAmount;
-      await bill.save();
-
-      await syncBillPaymentToSource(bill);
-
-      // Ledger entry — never fail the parent payment
-      try {
-        await LedgerEntry.create({
-          schoolId,
-          sessionId: session._id,
-          entryType: 'DEBIT',
-          category: billTypeToCategory[bill.billType] || 'FEE_COLLECTION',
-          amount: payAmount,
-          sourceModel: 'Payment',
-          referenceId: payment._id,
-          description: `Advance fee collected — ${bill.description}`,
-          entryDate: new Date(),
-          performedBy: collectedBy,
-        });
-      } catch (ledgerErr) {
-        console.error('[ADVANCE PAY] Ledger error:', ledgerErr.message);
-      }
-
-      receipts.push({
-        receiptNumber,
-        billId: bill._id,
-        billNumber: bill.billNumber,
-        billType: bill.billType,
-        description: bill.description,
-        month,
-        amount: payAmount,
-        paymentId: payment._id,
-      });
-    }
+    const receipts = result.receipts.map((r) => ({
+      ...r,
+      month,
+    }));
 
     res.status(201).json({
       success: true,
@@ -750,6 +703,9 @@ const generateAndPay = async (req, res) => {
       totalPaid: receipts.reduce((s, r) => s + r.amount, 0),
     });
   } catch (err) {
+    if (err instanceof PaymentEngineError) {
+      return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+    }
     console.error('[ADVANCE PAY ERROR]', err.message);
     res.status(500).json({ success: false, message: err.message });
   }

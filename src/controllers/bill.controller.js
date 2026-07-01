@@ -4,7 +4,7 @@ const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
 const mongoose = require('mongoose');
-const { syncBillPaymentToSource } = require('../services/feeSync.service');
+const { processBillPayments, PaymentEngineError } = require('../services/paymentEngine.service');
 const {
   ensureStudentPendingAssignmentBills,
   ensureSchoolPendingAssignmentBills,
@@ -21,14 +21,6 @@ const generateBillNumber = (schoolId) => {
   const random = Math.floor(Math.random() * 1000)
     .toString().padStart(3, '0');
   return `BILL-${schoolId.toString().slice(-4)}-${timestamp}-${random}`;
-};
-
-// Generate receipt number
-const generateReceiptNumber = (schoolId) => {
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 1000)
-    .toString().padStart(3, '0');
-  return `RCP-${schoolId.toString().slice(-4)}-${timestamp}-${random}`;
 };
 
 // GET /api/bills/student/:studentId
@@ -218,79 +210,40 @@ exports.payBill = async (req, res) => {
       });
     }
 
-    const activeSessionId = sessionId || bill.sessionId;
-
-    // Generate receipt number
-    let receiptNumber;
-    let attempts = 0;
-    do {
-      receiptNumber = generateReceiptNumber(schoolId);
-      attempts++;
-      if (attempts > 10) throw new Error('Could not generate receipt');
-    } while (await Payment.findOne({ receiptNumber }));
-
-    // Create payment
-    const payment = await Payment.create({
-      receiptNumber,
-      billId: bill._id,
-      studentId: bill.studentId,
+    const result = await processBillPayments({
       schoolId,
-      sessionId: activeSessionId,
-      amount,
+      actorId: collectedBy,
+      reqSessionId: sessionId || bill.sessionId,
       paymentMode,
-      paymentDate: new Date(),
-      collectedBy,
-      notes: notes || ''
+      notes: notes || '',
+      billItems: [{ billId: bill._id, amount }],
+      allOrNothing: true,
     });
 
-    // Update bill
-    bill.paidAmount += amount;
-    await bill.save(); // pre-save hook updates dueAmount + status
-
-    // Keep source models (TransportFee / StudentHostel / StudentFee) in sync with Bill status
-    await syncBillPaymentToSource(bill);
-
-    // Ledger dual-write — never fail the payment
-    try {
-      const billTypeToCategory = {
-        TUITION: 'FEE_COLLECTION',
-        HOSTEL: 'HOSTEL_COLLECTION',
-        TRANSPORT: 'TRANSPORT_COLLECTION',
-        EXAM: 'EXAM_COLLECTION'
-      };
-      await LedgerEntry.create({
-        schoolId,
-        sessionId: activeSessionId,
-        entryType: 'DEBIT',
-        category: billTypeToCategory[bill.billType] || 'FEE_COLLECTION',
-        amount,
-        description: bill.description || `Payment for ${bill.billType}`,
-        referenceId: payment._id,
-        sourceModel: 'Payment',
-        performedBy: collectedBy,
-        entryDate: new Date()
-      });
-    } catch (ledgerErr) {
-      console.error('[LedgerEntry] bill payment dual-write failed:', ledgerErr.message);
-    }
+    const receipt = result.receipts[0];
+    const updatedBill = await Bill.findById(bill._id).lean();
+    const payment = await Payment.findById(receipt.paymentId).lean();
 
     res.status(201).json({
       success: true,
       data: {
         payment,
         bill: {
-          _id: bill._id,
-          billNumber: bill.billNumber,
-          totalAmount: bill.totalAmount,
-          paidAmount: bill.paidAmount,
-          dueAmount: bill.dueAmount,
-          status: bill.status
+          _id: updatedBill._id,
+          billNumber: updatedBill.billNumber,
+          totalAmount: updatedBill.totalAmount,
+          paidAmount: updatedBill.paidAmount,
+          dueAmount: updatedBill.dueAmount,
+          status: updatedBill.status
         }
       },
-      receiptNumber,
+      receiptNumber: receipt.receiptNumber,
       message: 'Payment recorded successfully'
     });
   } catch (err) {
+    if (err instanceof PaymentEngineError) {
+      return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -708,14 +661,37 @@ exports.getBillHtmlReceipt = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Bill not found' });
     }
 
-    // All payments for this bill, newest first
-    const payments = await Payment.find({ billId: bill._id, ...getSessionFilter(req) })
+    // Base payments for this bill, newest first
+    const billPayments = await Payment.find({ billId: bill._id, ...getSessionFilter(req) })
       .populate('collectedBy', 'name')
+      .populate('billId', 'billType description')
       .sort({ paymentDate: -1 })
       .lean();
 
-    if (payments.length === 0) {
+    if (billPayments.length === 0) {
       return res.status(404).json({ success: false, message: 'No payments found for this bill' });
+    }
+
+    const primaryPayment = billPayments[0];
+
+    // If this bill belongs to a grouped transaction, render all payment lines
+    // from that group so receipt shows all fee types collected together.
+    let receiptPayments = billPayments;
+    if (primaryPayment.transactionGroupId) {
+      const groupedPayments = await Payment.find({
+        transactionGroupId: primaryPayment.transactionGroupId,
+        schoolId,
+        studentId: bill.studentId?._id || bill.studentId,
+        ...getSessionFilter(req),
+      })
+        .populate('collectedBy', 'name')
+        .populate('billId', 'billType description')
+        .sort({ paymentDate: -1 })
+        .lean();
+
+      if (groupedPayments.length > 0) {
+        receiptPayments = groupedPayments;
+      }
     }
 
     const student     = bill.studentId || {};
@@ -736,21 +712,19 @@ exports.getBillHtmlReceipt = async (req, res) => {
       return m ? m[1].trim() : '—';
     };
 
-    const primaryPayment = payments[0];
-
     // Build fee-breakdown rows — one row per payment line
-    const tableRows = payments.map((p) => `
+    const tableRows = receiptPayments.map((p) => `
       <tr>
-        <td>${bill.billType}</td>
-        <td>${bill.description}</td>
+        <td>${p.billId?.billType || bill.billType}</td>
+        <td>${p.billId?.description || bill.description}</td>
         <td>${fmtDate(p.paymentDate)}</td>
         <td>${p.paymentMode}</td>
         <td>${parseRef(p.notes)}</td>
         <td class="amount">${fmt(p.amount)}</td>
       </tr>`).join('');
 
-    const totalPaid    = payments.reduce((s, p) => s + (p.amount || 0), 0);
-    const receiptNums  = payments.map((p) => p.receiptNumber).join(', ');
+    const totalPaid    = receiptPayments.reduce((s, p) => s + (p.amount || 0), 0);
+    const receiptNums  = receiptPayments.map((p) => p.receiptNumber).join(', ');
     const printDate    = fmtDate(new Date());
 
     const html = `<!DOCTYPE html>

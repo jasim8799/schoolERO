@@ -2,8 +2,8 @@ const Admission = require('../models/Admission');
 const Student   = require('../models/Student');
 const User      = require('../models/User');
 const Parent    = require('../models/Parent');
-const AcademicSession = require('../models/AcademicSession');
 const { hashPassword } = require('../utils/password');
+const { processAdmissionComponentsPayment } = require('../services/paymentEngine.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
@@ -153,87 +153,13 @@ exports.createAdmission = async (req, res) => {
 
     if (!payLater) {
       try {
-        const Bill = require('../models/Bill');
-        const Payment = require('../models/Payment');
-        const activeSession = req.activeSession || await AcademicSession.findOne({ schoolId, isActive: true });
-
-        const generateBillNumber = (sid) => {
-          const ts = Date.now();
-          const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-          return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
-        };
-
-        const createPaidBillAndPayment = async ({ amount, billType, description, notes }) => {
-          // Include description because multiple admission line items can share billType.
-          const existingBill = await Bill.findOne({
-            studentId,
-            schoolId,
-            billType,
-            sourceType: 'Admission',
-            sourceId: admission._id,
-            description,
-          });
-          if (existingBill) {
-            console.log(
-              `Skipping duplicate ${billType}/${description} bill for admission ${admission._id}`
-            );
-            return existingBill;
-          }
-
-          let billNumber;
-          let attempts = 0;
-          do {
-            billNumber = generateBillNumber(schoolId);
-            attempts++;
-          } while (attempts < 10 && await Bill.findOne({ billNumber }));
-
-          const bill = await Bill.create({
-            billNumber,
-            studentId,
-            schoolId,
-            sessionId: activeSession?._id,
-            billType,
-            sourceType: 'Admission',
-            sourceId: admission._id,
-            description,
-            totalAmount: amount,
-            paidAmount: amount,
-            dueAmount: 0,
-            status: 'PAID',
-            createdBy: req.user._id,
-          });
-
-          let receiptNumber;
-          attempts = 0;
-          do {
-            const ts = Date.now();
-            const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-            receiptNumber = `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
-            attempts++;
-          } while (attempts < 10 && await Payment.findOne({ receiptNumber }));
-
-          await Payment.create({
-            receiptNumber,
-            billId: bill._id,
-            studentId,
-            schoolId,
-            sessionId: activeSession?._id,
-            amount,
-            paymentMode: 'Cash',
-            paymentDate: new Date(),
-            collectedBy: req.user._id,
-            notes,
-          });
-
-          return bill;
-        };
+        const components = [];
 
         if (finalFee > 0) {
-          await createPaidBillAndPayment({
+          components.push({
             amount: finalFee,
             billType: 'ADMISSION',
             description: `Admission Fee — ${student.name}`,
-            notes: `Admission fee payment for ${student.name}`,
           });
         }
 
@@ -248,18 +174,22 @@ exports.createAdmission = async (req, res) => {
         for (const { key, billType, desc } of feeTypes) {
           const amt = Number(fees[key]) || 0;
           if (amt <= 0) continue;
-
-          try {
-            await createPaidBillAndPayment({
-              amount: amt,
-              billType,
-              description: `Admission — ${desc} — ${student.name}`,
-              notes: `Admission ${desc} for ${student.name}`,
-            });
-          } catch (err) {
-            console.error(`Admission ${key} bill dual-write failed:`, err.message);
-          }
+          components.push({
+            amount: amt,
+            billType,
+            description: `Admission — ${desc} — ${student.name}`,
+          });
         }
+
+        await processAdmissionComponentsPayment({
+          schoolId,
+          actorId: req.user._id,
+          reqSessionId: req.user?.sessionId,
+          studentId,
+          admissionId: admission._id,
+          components,
+          paymentMode: 'Cash',
+        });
       } catch (billErr) {
         console.error('Admission fee bill dual-write failed:', billErr.message);
       }

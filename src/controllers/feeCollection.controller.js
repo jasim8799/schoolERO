@@ -1,9 +1,6 @@
 const Bill = require('../models/Bill');
-const Payment = require('../models/Payment');
-const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
-const AcademicSession = require('../models/AcademicSession');
-const { syncBillPaymentToSource, syncByStudentAndType } = require('../services/feeSync.service');
+const { processBillPayments, PaymentEngineError } = require('../services/paymentEngine.service');
 const { ensureStudentPendingAssignmentBills } = require('../services/feeAssignmentBillSync.service');
 
 const getSessionFilter = (req) => {
@@ -64,14 +61,6 @@ const extractBillMonth = (bill) => {
   }
 
   return '';
-};
-
-// Generate receipt number
-const generateReceiptNumber = (schoolId) => {
-  const ts = Date.now();
-  const r = Math.floor(Math.random() * 1000)
-    .toString().padStart(3, '0');
-  return `RCP-${schoolId.toString().slice(-4)}-${ts}-${r}`;
 };
 
 // GET /api/fee-collection/search?q=searchTerm
@@ -208,138 +197,37 @@ exports.collectPayment = async (req, res) => {
       return res.status(400).json({ message: 'Payment mode required' });
     }
 
-    // Get active session
-    const session = await AcademicSession.findOne({
-      schoolId, isActive: true
+    const billItems = billIds.map((billId) => ({
+      billId,
+      amount: amounts?.[billId] ? parseFloat(amounts[billId]) : undefined,
+    }));
+
+    const result = await processBillPayments({
+      schoolId,
+      actorId: collectedBy,
+      reqSessionId: req.user?.sessionId,
+      paymentMode,
+      notes: notes || '',
+      billItems,
+      allOrNothing: true,
     });
 
-    const billTypeToCategory = {
-      TUITION: 'FEE_COLLECTION',
-      HOSTEL: 'HOSTEL_COLLECTION',
-      TRANSPORT: 'TRANSPORT_COLLECTION',
-      EXAM: 'EXAM_COLLECTION',
-      ADMISSION: 'FEE_COLLECTION',
-      LIBRARY: 'FEE_COLLECTION',
-      SPORTS: 'FEE_COLLECTION',
-      MISCELLANEOUS: 'FEE_COLLECTION'
-    };
-
-    const receipts = [];
-    const errors = [];
-
-    for (const billId of billIds) {
-      let bill;
-      try {
-        bill = await Bill.findOne({ _id: billId, schoolId, ...getSessionFilter(req) });
-      } catch (findErr) {
-        errors.push({ billId, error: 'Bill lookup failed' });
-        continue;
-      }
-      if (!bill) {
-        errors.push({ billId, error: 'Bill not found' });
-        continue;
-      }
-      if (bill.status === 'PAID') {
-        errors.push({ billId, error: 'Already paid' });
-        continue;
-      }
-
-      // Use specified amount or full due amount
-      const amount = amounts?.[billId]
-        ? parseFloat(amounts[billId])
-        : bill.dueAmount;
-
-      if (amount <= 0 || amount > bill.dueAmount) continue;
-
-      const sessionId = session?._id || bill.sessionId;
-      if (!sessionId) continue;
-
-      // Generate unique receipt number
-      let receiptNumber;
-      let attempts = 0;
-      do {
-        receiptNumber = generateReceiptNumber(schoolId);
-        attempts++;
-        if (attempts > 10) break;
-      } while (await Payment.findOne({ receiptNumber }));
-
-      // Create payment
-      const payment = await Payment.create({
-        receiptNumber,
-        billId: bill._id,
-        studentId: bill.studentId,
-        schoolId,
-        sessionId,
-        amount,
-        paymentMode,
-        paymentDate: new Date(),
-        collectedBy,
-        notes: notes || ''
-      });
-
-      // Update bill (pre-save hook recalculates dueAmount and status)
-      bill.paidAmount += amount;
-      await bill.save();
-
-      await syncBillPaymentToSource(bill);
-
-      if (!bill.sourceId && ['TRANSPORT', 'HOSTEL'].includes(bill.billType)) {
-        await syncByStudentAndType({
-          studentId: bill.studentId,
-          schoolId,
-          billType: bill.billType,
-          sessionId: session?._id,
-        });
-      }
-
-      // Ledger entry — never fail the parent payment
-      try {
-        await LedgerEntry.create({
-          schoolId,
-          sessionId,
-          entryType: 'DEBIT',
-          category: billTypeToCategory[bill.billType] || 'FEE_COLLECTION',
-          amount,
-          sourceModel: 'Payment',
-          referenceId: payment._id,
-          description: `Fee collected — ${bill.description}`,
-          entryDate: new Date(),
-          performedBy: collectedBy
-        });
-      } catch (ledgerErr) {
-        console.error('Ledger error:', ledgerErr.message);
-      }
-
-      receipts.push({
-        receiptNumber,
-        billId: bill._id,
-        billNumber: bill.billNumber,
-        billType: bill.billType,
-        description: bill.description,
-        amount,
-        paymentId: payment._id
-      });
-    }
-
-    if (receipts.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: errors.length > 0
-          ? `No payments processed: ${errors.map(e => e.error).join(', ')}`
-          : 'No valid bills to process',
-        errors
-      });
-    }
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: `${receipts.length} payment(s) recorded successfully`,
-      receipts,
-      billIds: receipts.map(r => r.billId.toString()),
-      totalCollected: receipts.reduce((s, r) => s + r.amount, 0),
-      ...(errors.length > 0 ? { warnings: errors } : {})
+      message: `${result.receipts.length} payment(s) recorded successfully`,
+      receipts: result.receipts,
+      billIds: result.billIds,
+      totalCollected: result.totalCollected,
+      ...(result.warnings?.length ? { warnings: result.warnings } : {}),
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    if (err instanceof PaymentEngineError) {
+      return res.status(err.statusCode || 400).json({
+        success: false,
+        message: err.message,
+        ...(err.details ? { errors: Array.isArray(err.details) ? err.details : [err.details] } : {}),
+      });
+    }
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

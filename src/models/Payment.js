@@ -45,6 +45,10 @@ const PaymentSchema = new mongoose.Schema({
   },
   notes: {
     type: String
+  },
+  transactionGroupId: {
+    type: String,
+    index: true,
   }
 }, { timestamps: true });
 

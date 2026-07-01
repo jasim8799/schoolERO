@@ -4,44 +4,37 @@ const StudentFee = require('../models/StudentFee');
 const StudentFeeAssignment = require('../models/StudentFeeAssignment');
 const ExamPayment = require('../models/ExamPayment');
 
+const getExactSessionFilter = (sessionId) => (sessionId ? { sessionId } : {});
+
 /**
  * After any Bill payment, sync the status back to the source model.
- * Call this after bill.paidAmount is updated and bill.save() is called.
+ * opts = { mongoSession, sessionId, month, year }
  */
-const syncBillPaymentToSource = async (bill) => {
+const syncBillPaymentToSource = async (bill, opts = {}) => {
   if (!bill?.sourceId || !bill?.sourceType) return;
+
+  const { mongoSession, sessionId, month, year } = opts;
 
   try {
     switch (bill.sourceType) {
       case 'StudentTransport': {
         if (bill.status === 'PAID') {
-          let synced = await TransportFee.findByIdAndUpdate(
-            bill.sourceId,
-            {
-              status: 'PAID',
-              paymentDate: new Date(),
-            },
-            { new: true }
+          const query = {
+            _id: bill.sourceId,
+            studentId: bill.studentId,
+            schoolId: bill.schoolId,
+            ...(month && year ? { month, year } : {}),
+            ...getExactSessionFilter(sessionId || bill.sessionId),
+          };
+
+          await TransportFee.findOneAndUpdate(
+            query,
+            { status: 'PAID', paymentDate: new Date() },
+            { new: true, session: mongoSession }
           );
 
-          // Some transport bills point sourceId to StudentTransport assignment.
-          // In that case, sync the latest pending monthly TransportFee row.
-          if (!synced) {
-            synced = await TransportFee.findOneAndUpdate(
-              {
-                studentId: bill.studentId,
-                schoolId: bill.schoolId,
-                status: 'PENDING',
-              },
-              {
-                status: 'PAID',
-                paymentDate: new Date(),
-              },
-              {
-                sort: { createdAt: -1 },
-                new: true,
-              }
-            );
+          if (!(month && year)) {
+            console.warn(`[FeeSync] Transport sync executed without month/year for bill ${bill._id}`);
           }
         }
         break;
@@ -49,65 +42,57 @@ const syncBillPaymentToSource = async (bill) => {
 
       case 'StudentHostel': {
         if (bill.status === 'PAID') {
-          let synced = await StudentHostel.findByIdAndUpdate(
-            bill.sourceId,
+          await StudentHostel.findOneAndUpdate(
             {
-              feeStatus: 'PAID',
-              lastPaymentDate: new Date(),
+              _id: bill.sourceId,
+              studentId: bill.studentId,
+              schoolId: bill.schoolId,
             },
-            { new: true }
+            { feeStatus: 'PAID', lastPaymentDate: new Date() },
+            { new: true, session: mongoSession }
           );
-
-          // Backward compatibility for bills missing direct source linkage.
-          if (!synced) {
-            synced = await StudentHostel.findOneAndUpdate(
-              {
-                studentId: bill.studentId,
-                schoolId: bill.schoolId,
-                status: 'ACTIVE',
-              },
-              {
-                feeStatus: 'PAID',
-                lastPaymentDate: new Date(),
-              },
-              { new: true }
-            );
-          }
         }
         break;
       }
 
       case 'ExamPayment': {
         if (bill.status === 'PAID') {
-          await ExamPayment.findByIdAndUpdate(bill.sourceId, {
-            status: 'Paid',
-          });
+          await ExamPayment.findOneAndUpdate(
+            {
+              _id: bill.sourceId,
+              studentId: bill.studentId,
+              schoolId: bill.schoolId,
+              ...getExactSessionFilter(sessionId || bill.sessionId),
+            },
+            { status: 'Paid' },
+            { session: mongoSession }
+          );
         }
         break;
       }
 
       case 'StudentFee': {
-        const studentFee = await StudentFee.findById(bill.sourceId);
+        const studentFee = await StudentFee.findById(bill.sourceId).session(mongoSession);
         if (studentFee) {
           studentFee.paidAmount = bill.paidAmount;
           studentFee.dueAmount = bill.dueAmount;
           if (bill.status === 'PAID') studentFee.status = 'Paid';
           else if (bill.paidAmount > 0) studentFee.status = 'Partial';
           else studentFee.status = 'Due';
-          await studentFee.save();
+          await studentFee.save({ session: mongoSession });
         }
         break;
       }
 
       case 'StudentFeeAssignment': {
-        const assignment = await StudentFeeAssignment.findById(bill.sourceId);
+        const assignment = await StudentFeeAssignment.findById(bill.sourceId).session(mongoSession);
         if (assignment) {
           assignment.paidAmount = bill.paidAmount;
           assignment.dueAmount = bill.dueAmount;
           if (bill.status === 'PAID') assignment.status = 'PAID';
           else if (bill.paidAmount > 0) assignment.status = 'PARTIAL';
           else assignment.status = 'PENDING';
-          await assignment.save();
+          await assignment.save({ session: mongoSession });
         }
         break;
       }
@@ -120,27 +105,4 @@ const syncBillPaymentToSource = async (bill) => {
   }
 };
 
-/**
- * When collecting fees by billType without a sourceId,
- * find the most recent pending source record and mark it paid.
- */
-const syncByStudentAndType = async ({ studentId, schoolId, billType }) => {
-  try {
-    if (billType === 'TRANSPORT') {
-      await TransportFee.findOneAndUpdate(
-        { studentId, schoolId, status: 'PENDING' },
-        { status: 'PAID', paymentDate: new Date() },
-        { sort: { createdAt: -1 } }
-      );
-    } else if (billType === 'HOSTEL') {
-      await StudentHostel.findOneAndUpdate(
-        { studentId, schoolId, status: 'ACTIVE' },
-        { feeStatus: 'PAID', lastPaymentDate: new Date() }
-      );
-    }
-  } catch (err) {
-    console.error('[FeeSync] syncByStudentAndType failed:', err.message);
-  }
-};
-
-module.exports = { syncBillPaymentToSource, syncByStudentAndType };
+module.exports = { syncBillPaymentToSource };
