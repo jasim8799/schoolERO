@@ -1,56 +1,12 @@
 const TransportFee = require('../models/TransportFee');
 const StudentHostel = require('../models/StudentHostel');
+const StudentTransport = require('../models/StudentTransport');
 const StudentFee = require('../models/StudentFee');
 const StudentFeeAssignment = require('../models/StudentFeeAssignment');
 const ExamPayment = require('../models/ExamPayment');
+const { extractBillMonthYear } = require('./billMonth.service');
 
 const getExactSessionFilter = (sessionId) => (sessionId ? { sessionId } : {});
-
-const MONTHS = [
-  'january',
-  'february',
-  'march',
-  'april',
-  'may',
-  'june',
-  'july',
-  'august',
-  'september',
-  'october',
-  'november',
-  'december',
-];
-
-const parseBillMonthYear = (bill) => {
-  const description = String(bill?.description || '');
-
-  const slashMatch = description.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
-  if (slashMatch) {
-    const month = Number(slashMatch[1]);
-    const year = Number(slashMatch[2]);
-    if (month >= 1 && month <= 12) return { month, year };
-  }
-
-  for (let i = 0; i < MONTHS.length; i++) {
-    const regex = new RegExp(`\\b${MONTHS[i]}\\b\\s*(\\d{4})?`, 'i');
-    const match = description.match(regex);
-    if (match?.[1]) {
-      return { month: i + 1, year: Number(match[1]) };
-    }
-  }
-
-  const dueDate = bill?.dueDate ? new Date(bill.dueDate) : null;
-  if (dueDate && !Number.isNaN(dueDate.getTime())) {
-    return { month: dueDate.getMonth() + 1, year: dueDate.getFullYear() };
-  }
-
-  const createdAt = bill?.createdAt ? new Date(bill.createdAt) : null;
-  if (createdAt && !Number.isNaN(createdAt.getTime())) {
-    return { month: createdAt.getMonth() + 1, year: createdAt.getFullYear() };
-  }
-
-  return { month: null, year: null };
-};
 
 /**
  * After any Bill payment, sync the status back to the source model.
@@ -65,7 +21,7 @@ const syncBillPaymentToSource = async (bill, opts = {}) => {
     switch (bill.sourceType) {
       case 'StudentTransport': {
         if (bill.status === 'PAID') {
-          const { month, year } = parseBillMonthYear(bill);
+          const { month, year } = extractBillMonthYear(bill);
           const query = {
             _id: bill.sourceId,
             studentId: bill.studentId,
@@ -111,6 +67,21 @@ const syncBillPaymentToSource = async (bill, opts = {}) => {
                 await bill.save({ session: mongoSession });
               }
             }
+          }
+
+          const transportAssignment = await StudentTransport.findOne({
+            studentId: bill.studentId,
+            schoolId: bill.schoolId,
+            routeId: transportFee?.routeId,
+            status: 'ACTIVE',
+          }).session(mongoSession);
+
+          if (transportAssignment) {
+            await StudentTransport.updateOne(
+              { _id: transportAssignment._id },
+              { $set: { updatedAt: new Date() } },
+              { session: mongoSession }
+            );
           }
 
           if (!month || !year) {

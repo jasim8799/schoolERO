@@ -8,6 +8,7 @@ const StudentTransport = require('../models/StudentTransport');
 const TransportFee = require('../models/TransportFee');
 const ExamPayment = require('../models/ExamPayment');
 const { syncBillPaymentToSource } = require('./feeSync.service');
+const { extractBillMonthYear } = require('./billMonth.service');
 
 class PaymentEngineError extends Error {
   constructor(message, statusCode = 400, details = null) {
@@ -29,26 +30,6 @@ const BILL_TYPE_TO_CATEGORY = {
   MISCELLANEOUS: 'FEE_COLLECTION',
   DRESS: 'FEE_COLLECTION',
   BOOKS: 'FEE_COLLECTION',
-};
-
-const MONTHS = [
-  'january',
-  'february',
-  'march',
-  'april',
-  'may',
-  'june',
-  'july',
-  'august',
-  'september',
-  'october',
-  'november',
-  'december',
-];
-
-const monthNameToNumber = (value) => {
-  const idx = MONTHS.indexOf(String(value || '').toLowerCase());
-  return idx >= 0 ? idx + 1 : null;
 };
 
 const makeReceiptNumber = (schoolId) => {
@@ -87,35 +68,7 @@ const getSessionFilter = (sessionId) => {
 };
 
 const getBillMonthYear = (bill) => {
-  const description = String(bill?.description || '');
-
-  const slashMatch = description.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
-  if (slashMatch) {
-    const month = Number(slashMatch[1]);
-    const year = Number(slashMatch[2]);
-    if (month >= 1 && month <= 12) return { month, year };
-  }
-
-  for (let i = 0; i < MONTHS.length; i++) {
-    const regex = new RegExp(`\\b${MONTHS[i]}\\b\\s*(\\d{4})?`, 'i');
-    const m = description.match(regex);
-    if (m) {
-      const year = m[1] ? Number(m[1]) : null;
-      if (year) return { month: i + 1, year };
-    }
-  }
-
-  const dueDate = bill?.dueDate ? new Date(bill.dueDate) : null;
-  if (dueDate && !Number.isNaN(dueDate.getTime())) {
-    return { month: dueDate.getMonth() + 1, year: dueDate.getFullYear() };
-  }
-
-  const createdAt = bill?.createdAt ? new Date(bill.createdAt) : null;
-  if (createdAt && !Number.isNaN(createdAt.getTime())) {
-    return { month: createdAt.getMonth() + 1, year: createdAt.getFullYear() };
-  }
-
-  return { month: null, year: null };
+  return extractBillMonthYear(bill);
 };
 
 const ensureUniqueReceiptNumber = async ({ schoolId, mongoSession }) => {
@@ -303,10 +256,29 @@ const processBillPayments = async ({
         }
 
         if (bill.status === 'PAID') {
-          if (allOrNothing) {
-            throw new PaymentEngineError('Bill is already paid', 400, { billId: item.billId });
+          const existingPayment = await Payment.findOne({
+            billId: bill._id,
+            schoolId,
+          })
+            .sort({ paymentDate: -1 })
+            .session(sessionHandle)
+            .lean();
+
+          if (existingPayment) {
+            receipts.push({
+              receiptNumber: existingPayment.receiptNumber,
+              billId: bill._id,
+              billNumber: bill.billNumber,
+              billType: bill.billType,
+              description: bill.description,
+              amount: Number(existingPayment.amount || bill.paidAmount || 0),
+              paymentId: existingPayment._id,
+              transactionGroupId: existingPayment.transactionGroupId || groupId,
+              existing: true,
+            });
+          } else {
+            warnings.push({ billId: item.billId, error: 'Already paid (no receipt found)' });
           }
-          warnings.push({ billId: item.billId, error: 'Already paid' });
           continue;
         }
 

@@ -18,6 +18,9 @@ const _sessionFilter = (sessionId) =>
       }
     : {};
 
+const buildMonthRegex = (month, year) =>
+  new RegExp(`\\b(${month}\\s*/\\s*${year}|${year}\\s*-\\s*${String(month).padStart(2, '0')}|${String(month).padStart(2, '0')}\\s*-\\s*${year})\\b`, 'i');
+
 const getAllFees = async (req, res) => {
   try {
     const { schoolId, sessionId } = req.user;
@@ -37,18 +40,26 @@ const getAllFees = async (req, res) => {
 
     const enriched = await Promise.all(fees.map(async (fee) => {
       const bill = await Bill.findOne({
-        sourceType: 'StudentTransport',
-        sourceId: fee._id,
-      }).select('status totalAmount paidAmount dueAmount billNumber').lean();
+        schoolId,
+        studentId: fee.studentId,
+        billType: 'TRANSPORT',
+        ..._sessionFilter(sessionId),
+        $or: [
+          { sourceType: 'StudentTransport', sourceId: fee._id },
+          { description: { $regex: buildMonthRegex(fee.month, fee.year) } },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .select('status totalAmount paidAmount dueAmount billNumber description receiptNumber')
+        .lean();
 
       return {
         ...fee,
-        cachedStatus: fee.status,
-        status: bill?.status || 'NOT_BILLED',
-        paymentStatus: bill?.status || 'NOT_BILLED',
-        amount: bill?.totalAmount ?? fee.amount,
-        paidAmount: bill?.paidAmount ?? 0,
-        dueAmount: bill?.dueAmount ?? (bill ? 0 : fee.amount),
+        status: bill?.status || null,
+        paymentStatus: bill?.status || null,
+        amount: bill?.totalAmount ?? null,
+        paidAmount: bill?.paidAmount ?? null,
+        dueAmount: bill?.dueAmount ?? null,
         bill,
       };
     }));
