@@ -4,6 +4,7 @@ const StudentTransport = require('../models/StudentTransport.js');
 const Bill = require('../models/Bill.js');
 const Payment = require('../models/Payment.js');
 const AcademicSession = require('../models/AcademicSession.js');
+const { syncBillPaymentToSource } = require('../services/feeSync.service');
 
 const _sessionFilter = (sessionId) =>
   sessionId
@@ -206,12 +207,7 @@ const payFee = async (req, res) => {
             collectedBy: paidBy,
           });
 
-          await TransportFee.findByIdAndUpdate(feeRecord._id, {
-            status: 'PAID',
-            paymentDate: new Date(),
-            paymentMethod: paymentMethod || 'CASH',
-            paidBy,
-          });
+          await syncBillPaymentToSource(unpaidAssignmentBill);
 
           results.push({
             month,
@@ -274,12 +270,7 @@ const payFee = async (req, res) => {
         collectedBy: paidBy,
       });
 
-      await TransportFee.findByIdAndUpdate(feeRecord._id, {
-        status: 'PAID',
-        paymentDate: new Date(),
-        paymentMethod: paymentMethod || 'CASH',
-        paidBy,
-      });
+      await syncBillPaymentToSource(bill);
 
       results.push({ month, year, billNumber, receiptNumber, amount });
     }

@@ -292,38 +292,6 @@ exports.collectPayment = async (req, res) => {
         });
       }
 
-      if (bill.billType === 'TRANSPORT' && bill.status === 'PAID') {
-        try {
-          const TransportFee = require('../models/TransportFee');
-          const updated = await TransportFee.findOneAndUpdate(
-            { studentId: bill.studentId, schoolId, status: 'PENDING' },
-            { status: 'PAID', paymentDate: new Date() },
-            { sort: { createdAt: -1 }, new: true }
-          );
-
-          if (updated && !bill.sourceId) {
-            await Bill.findByIdAndUpdate(bill._id, {
-              sourceType: 'StudentTransport',
-              sourceId: updated._id,
-            });
-          }
-        } catch (e) {
-          console.error('[FeeCollection] Transport sync failed:', e.message);
-        }
-      }
-
-      if (bill.billType === 'HOSTEL' && bill.status === 'PAID') {
-        try {
-          const StudentHostel = require('../models/StudentHostel');
-          await StudentHostel.findOneAndUpdate(
-            { studentId: bill.studentId, schoolId, status: 'ACTIVE' },
-            { feeStatus: 'PAID', lastPaymentDate: new Date() }
-          );
-        } catch (e) {
-          console.error('[FeeCollection] Hostel sync failed:', e.message);
-        }
-      }
-
       // Ledger entry — never fail the parent payment
       try {
         await LedgerEntry.create({

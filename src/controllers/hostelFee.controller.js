@@ -3,6 +3,7 @@ const StudentHostel = require('../models/StudentHostel');
 const Bill = require('../models/Bill');
 const Payment = require('../models/Payment');
 const AcademicSession = require('../models/AcademicSession');
+const { syncBillPaymentToSource } = require('../services/feeSync.service');
 
 const _sessionFilter = (sessionId) =>
   sessionId
@@ -92,6 +93,8 @@ const payHostelFee = async (req, res) => {
           collectedBy: paidBy,
         });
 
+        await syncBillPaymentToSource(unpaidAssignmentBill);
+
         results.push({
           month,
           year,
@@ -168,13 +171,10 @@ const payHostelFee = async (req, res) => {
         collectedBy: paidBy,
       });
 
+      await syncBillPaymentToSource(bill);
+
       results.push({ month, year, billNumber, receiptNumber, amount, description });
     }
-
-    await StudentHostel.findOneAndUpdate(
-      { studentId: studentObjId, hostelId: hostelObjId, schoolId: schoolObjId, status: 'ACTIVE' },
-      { feeStatus: 'PAID', lastPaymentDate: new Date() }
-    );
 
     return res.status(201).json({
       success: true,

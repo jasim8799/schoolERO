@@ -2,6 +2,7 @@ const TransportFee = require('../models/TransportFee');
 const StudentHostel = require('../models/StudentHostel');
 const StudentFee = require('../models/StudentFee');
 const StudentFeeAssignment = require('../models/StudentFeeAssignment');
+const ExamPayment = require('../models/ExamPayment');
 
 /**
  * After any Bill payment, sync the status back to the source model.
@@ -14,19 +15,72 @@ const syncBillPaymentToSource = async (bill) => {
     switch (bill.sourceType) {
       case 'StudentTransport': {
         if (bill.status === 'PAID') {
-          await TransportFee.findByIdAndUpdate(bill.sourceId, {
-            status: 'PAID',
-            paymentDate: new Date(),
-          });
+          let synced = await TransportFee.findByIdAndUpdate(
+            bill.sourceId,
+            {
+              status: 'PAID',
+              paymentDate: new Date(),
+            },
+            { new: true }
+          );
+
+          // Some transport bills point sourceId to StudentTransport assignment.
+          // In that case, sync the latest pending monthly TransportFee row.
+          if (!synced) {
+            synced = await TransportFee.findOneAndUpdate(
+              {
+                studentId: bill.studentId,
+                schoolId: bill.schoolId,
+                status: 'PENDING',
+              },
+              {
+                status: 'PAID',
+                paymentDate: new Date(),
+              },
+              {
+                sort: { createdAt: -1 },
+                new: true,
+              }
+            );
+          }
         }
         break;
       }
 
       case 'StudentHostel': {
         if (bill.status === 'PAID') {
-          await StudentHostel.findByIdAndUpdate(bill.sourceId, {
-            feeStatus: 'PAID',
-            lastPaymentDate: new Date(),
+          let synced = await StudentHostel.findByIdAndUpdate(
+            bill.sourceId,
+            {
+              feeStatus: 'PAID',
+              lastPaymentDate: new Date(),
+            },
+            { new: true }
+          );
+
+          // Backward compatibility for bills missing direct source linkage.
+          if (!synced) {
+            synced = await StudentHostel.findOneAndUpdate(
+              {
+                studentId: bill.studentId,
+                schoolId: bill.schoolId,
+                status: 'ACTIVE',
+              },
+              {
+                feeStatus: 'PAID',
+                lastPaymentDate: new Date(),
+              },
+              { new: true }
+            );
+          }
+        }
+        break;
+      }
+
+      case 'ExamPayment': {
+        if (bill.status === 'PAID') {
+          await ExamPayment.findByIdAndUpdate(bill.sourceId, {
+            status: 'Paid',
           });
         }
         break;
