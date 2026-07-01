@@ -4,6 +4,10 @@ const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
 const { syncBillPaymentToSource } = require('../services/feeSync.service');
+const {
+  ensureStudentPendingAssignmentBills,
+  ensureSchoolPendingAssignmentBills,
+} = require('../services/feeAssignmentBillSync.service');
 
 // FORENSIC MASTER FIX: Import shared financial summary service
 // This ensures Fee Dashboard uses IDENTICAL calculation as Principal Dashboard
@@ -35,8 +39,15 @@ const generateReceiptNumber = (schoolId) => {
 exports.getStudentBills = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId, _id: userId } = req.user;
     const { status, billType } = req.query;
+
+    await ensureStudentPendingAssignmentBills({
+      schoolId,
+      studentId,
+      sessionId,
+      createdBy: userId,
+    });
 
     const filter = { studentId, schoolId, ...getSessionFilter(req) };
     if (status) filter.status = status;
@@ -291,7 +302,15 @@ exports.payBill = async (req, res) => {
 // Dashboard summary for school - Uses shared service for fee due calculation
 exports.getBillSummary = async (req, res) => {
   try {
-    const { schoolId, sessionId } = req.user;
+    const { schoolId, sessionId, _id: userId } = req.user;
+
+    // Ensure assignment-backed tuition bills (all pending months)
+    // are present before aggregating dashboard summary cards.
+    await ensureSchoolPendingAssignmentBills({
+      schoolId,
+      sessionId,
+      createdBy: userId,
+    });
 
     console.log('[getBillSummary] schoolId:', schoolId, 'sessionId:', sessionId);
 

@@ -1,6 +1,7 @@
 const TransportFee = require('../models/TransportFee');
 const StudentHostel = require('../models/StudentHostel');
 const StudentFee = require('../models/StudentFee');
+const StudentFeeAssignment = require('../models/StudentFeeAssignment');
 
 /**
  * After any Bill payment, sync the status back to the source model.
@@ -40,6 +41,19 @@ const syncBillPaymentToSource = async (bill) => {
           else if (bill.paidAmount > 0) studentFee.status = 'Partial';
           else studentFee.status = 'Due';
           await studentFee.save();
+        }
+        break;
+      }
+
+      case 'StudentFeeAssignment': {
+        const assignment = await StudentFeeAssignment.findById(bill.sourceId);
+        if (assignment) {
+          assignment.paidAmount = bill.paidAmount;
+          assignment.dueAmount = bill.dueAmount;
+          if (bill.status === 'PAID') assignment.status = 'PAID';
+          else if (bill.paidAmount > 0) assignment.status = 'PARTIAL';
+          else assignment.status = 'PENDING';
+          await assignment.save();
         }
         break;
       }

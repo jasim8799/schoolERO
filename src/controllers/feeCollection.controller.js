@@ -4,10 +4,66 @@ const LedgerEntry = require('../models/LedgerEntry');
 const Student = require('../models/Student');
 const AcademicSession = require('../models/AcademicSession');
 const { syncBillPaymentToSource, syncByStudentAndType } = require('../services/feeSync.service');
+const { ensureStudentPendingAssignmentBills } = require('../services/feeAssignmentBillSync.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
   return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const extractBillMonth = (bill) => {
+  const direct = bill?.month?.toString();
+  if (direct && direct.trim()) return direct;
+
+  const description = bill?.description?.toString() || '';
+  for (const monthName of MONTH_NAMES) {
+    if (description.includes(monthName)) return monthName;
+  }
+
+  const shortMonths = {
+    Jan: 'January',
+    Feb: 'February',
+    Mar: 'March',
+    Apr: 'April',
+    May: 'May',
+    Jun: 'June',
+    Jul: 'July',
+    Aug: 'August',
+    Sep: 'September',
+    Oct: 'October',
+    Nov: 'November',
+    Dec: 'December',
+  };
+  for (const [abbr, full] of Object.entries(shortMonths)) {
+    if (description.includes(abbr)) return full;
+  }
+
+  if (bill?.dueDate) {
+    const dt = new Date(bill.dueDate);
+    if (!Number.isNaN(dt.getTime())) return MONTH_NAMES[dt.getMonth()];
+  }
+
+  if (bill?.createdAt) {
+    const dt = new Date(bill.createdAt);
+    if (!Number.isNaN(dt.getTime())) return MONTH_NAMES[dt.getMonth()];
+  }
+
+  return '';
 };
 
 // Generate receipt number
@@ -96,7 +152,16 @@ exports.searchStudents = async (req, res) => {
 exports.getStudentDues = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const { schoolId } = req.user;
+    const { schoolId, sessionId, _id: userId } = req.user;
+
+    // Keep monthly tuition/assignment bills consistent with Hostel/Transport behavior:
+    // if an assignment exists for the current flow but Bill is missing, backfill once.
+    await ensureStudentPendingAssignmentBills({
+      schoolId,
+      studentId,
+      sessionId,
+      createdBy: userId,
+    });
 
     const bills = await Bill.find({
       studentId,
@@ -108,14 +173,19 @@ exports.getStudentDues = async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
 
+    const enrichedBills = bills.map((bill) => ({
+      ...bill,
+      month: extractBillMonth(bill),
+    }));
+
     // Calculate total due
-    const totalDue = bills.reduce(
+    const totalDue = enrichedBills.reduce(
       (sum, b) => sum + (b.dueAmount || 0), 0
     );
 
     res.json({
       success: true,
-      data: bills,
+      data: enrichedBills,
       totalDue
     });
   } catch (err) {
