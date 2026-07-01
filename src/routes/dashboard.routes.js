@@ -14,15 +14,15 @@ router.get('/nav-badges', requireRole(USER_ROLES.SUPER_ADMIN), getNavBadges);
 router.use(checkSchoolStatus);
 
 // Principal dashboard
-router.get('/principal', getPrincipalDashboard);
+router.get('/principal', requireRole(USER_ROLES.PRINCIPAL), getPrincipalDashboard);
 
 // Operator dashboard
-router.get('/operator', getOperatorDashboard);
+router.get('/operator', requireRole(USER_ROLES.OPERATOR), getOperatorDashboard);
 
 // Teacher dashboard
-router.get('/teacher', getTeacherDashboard);
+router.get('/teacher', requireRole(USER_ROLES.TEACHER), getTeacherDashboard);
 
 // Student/Parent dashboard
-router.get('/student', getStudentDashboard);
+router.get('/student', requireRole(USER_ROLES.STUDENT, USER_ROLES.PARENT), getStudentDashboard);
 
 module.exports = router;

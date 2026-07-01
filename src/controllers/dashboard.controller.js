@@ -482,12 +482,9 @@ const getTeacherDashboard = async (req, res) => {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const todayStr = today.toISOString().split('T')[0];
 
     // ===== PHASE 1: Assigned classes (from teacher assignments) =====
     const TeacherAssignment = require('../models/TeacherAssignment.js');
-    const Class = require('../models/Class.js');
-    const Section = require('../models/Section.js');
     const Student = require('../models/Student.js');
 
     // Get teacher's class assignments
@@ -499,10 +496,12 @@ const getTeacherDashboard = async (req, res) => {
 
     // Extract unique classIds
     const assignedClassIds = [...new Set(teacherAssignments.map(a => a.classId?.toString()).filter(Boolean))];
-    const assignedSections = teacherAssignments.filter(a => a.sectionId).map(a => ({
-      classId: a.classId,
-      sectionId: a.sectionId
-    }));
+    const assignedSectionPairs = teacherAssignments
+      .filter(a => a.classId && a.sectionId)
+      .map(a => ({
+        classId: a.classId,
+        sectionId: a.sectionId
+      }));
 
     // ===== PHASE 2: Today's attendance status =====
     const todayAttendance = await TeacherAttendance.findOne({
@@ -528,16 +527,20 @@ const getTeacherDashboard = async (req, res) => {
       subjectName: a.subjectId?.name || 'Unknown',
       startTime: a.startTime,
       endTime: a.endTime,
-      period: a.period
+      period: a.periodNumber ?? a.period
     })).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 
     // ===== PHASE 5: Total students in assigned classes =====
     let totalStudents = 0;
-    if (assignedClassIds.length > 0) {
+    if (assignedSectionPairs.length > 0) {
       totalStudents = await Student.countDocuments({
         schoolId,
         ...sFilter,
-        classId: { $in: assignedClassIds }
+        status: 'ACTIVE',
+        $or: assignedSectionPairs.map(({ classId, sectionId }) => ({
+          classId,
+          sectionId
+        }))
       });
     }
 
@@ -564,6 +567,8 @@ const getTeacherDashboard = async (req, res) => {
     const leaveApplicationsPending = await LeaveApplication.countDocuments({
       schoolId,
       ...sFilter,
+      applicantId: teacherId,
+      applicantRole: 'TEACHER',
       status: 'PENDING'
     });
 
@@ -575,13 +580,25 @@ const getTeacherDashboard = async (req, res) => {
     try {
       PTMModel = require('../models/Ptm');
       if (PTMModel) {
+        const Teacher = require('../models/Teacher');
+        const teacherProfile = await Teacher.findOne({
+          userId: teacherId,
+          schoolId,
+          ...sFilter,
+        }).select('_id').lean();
+
+        if (!teacherProfile?._id) {
+          todayPTMsCount = 0;
+        } else {
         const todayPTMs = await PTMModel.find({
           schoolId,
           ...sFilter,
+          teacherId: teacherProfile._id,
           date: { $gte: today, $lt: tomorrow },
           status: { $ne: 'CANCELLED' }
         }).lean();
         todayPTMsCount = todayPTMs.length;
+        }
       }
     } catch (_) {
       // PTM model doesn't exist - set count to 0
@@ -595,10 +612,36 @@ const getTeacherDashboard = async (req, res) => {
     try {
       NoticeModel = require('../models/Notice');
       if (NoticeModel) {
-        noticesCount = await NoticeModel.countDocuments({
+        const teacherClassIds = await NoticeModel.distinct('classId', {
           schoolId,
           ...sFilter,
-          target: { $in: ['Teacher', 'All', 'Staff'] }
+          createdBy: teacherId,
+          target: 'Class',
+          classId: { $ne: null },
+        });
+
+        const audienceConditions = [
+          { target: 'All School' },
+          { target: 'Teachers' },
+          ...teacherClassIds.map(classId => ({ target: 'Class', classId })),
+        ];
+
+        const activeExpiryFilter = {
+          $or: [
+            { expiryDate: null },
+            { expiryDate: { $exists: false } },
+            { expiryDate: { $gte: new Date() } },
+          ],
+        };
+
+        noticesCount = await NoticeModel.countDocuments({
+          schoolId,
+          isActive: true,
+          ...sFilter,
+          $and: [
+            { $or: audienceConditions },
+            activeExpiryFilter,
+          ],
         });
       }
     } catch (_) {
@@ -609,11 +652,14 @@ const getTeacherDashboard = async (req, res) => {
     // ===== PHASE 11: Attendance for teacher's classes today =====
     let attendanceMarked = 0;
     let attendanceTotal = 0;
-    if (assignedClassIds.length > 0) {
+    if (assignedSectionPairs.length > 0) {
       const classAttendance = await StudentDailyAttendance.find({
         schoolId,
         ...sFilter,
-        classId: { $in: assignedClassIds },
+        $or: assignedSectionPairs.map(({ classId, sectionId }) => ({
+          classId,
+          sectionId
+        })),
         date: { $gte: today, $lt: tomorrow },
         markedBy: teacherId
       }).lean();
@@ -623,7 +669,10 @@ const getTeacherDashboard = async (req, res) => {
       attendanceTotal = await Student.countDocuments({
         schoolId,
         ...sFilter,
-        classId: { $in: assignedClassIds },
+        $or: assignedSectionPairs.map(({ classId, sectionId }) => ({
+          classId,
+          sectionId
+        })),
         status: 'ACTIVE'
       });
     }
