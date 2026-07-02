@@ -2,11 +2,11 @@ const StudentFee = require('../models/StudentFee');
 const Student = require('../models/Student');
 const FeeStructure = require('../models/FeeStructure');
 const AcademicSession = require('../models/AcademicSession');
-const { dispatchAutomationTrigger } = require('../services/automation.service');
+const { createStudentFeeFromStructure } = require('../services/studentFeeAutoAssign.service');
 
 const assignFee = async (req, res) => {
   try {
-    const { studentId, feeStructureId } = req.body;
+    const { studentId, feeStructureId, overrideAmount } = req.body;
     const { schoolId, _id: assignedBy } = req.user;
 
     // Validate student belongs to same school
@@ -28,74 +28,27 @@ const assignFee = async (req, res) => {
     }
 
     const sessionId = activeSession._id;
+    const normalizedOverride =
+      req.user.role === 'PRINCIPAL' && Number.isFinite(Number(overrideAmount))
+        ? Number(overrideAmount)
+        : undefined;
 
-    const totalAmount = feeStructure.amount;
-    const paidAmount = 0;
-    const dueAmount = totalAmount;
-    const status = 'Due';
-
-    const studentFee = await StudentFee.create({
+    const result = await createStudentFeeFromStructure({
       studentId,
-      feeStructureId,
-      totalAmount,
-      paidAmount,
-      dueAmount,
-      status,
-      sessionId,
       schoolId,
+      sessionId,
       assignedBy,
+      feeStructure,
+      overrideAmount: normalizedOverride,
     });
 
-    // Dual write — create Bill alongside StudentFee
-    try {
-      const Bill = require('../models/Bill');
-      const generateBillNumber = (sid) => {
-        const ts = Date.now();
-        const r = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        return `BILL-${sid.toString().slice(-4)}-${ts}-${r}`;
-      };
-      let billNumber;
-      let attempts = 0;
-      do {
-        billNumber = generateBillNumber(schoolId);
-        attempts++;
-      } while (attempts < 10 && await Bill.findOne({ billNumber }));
-
-      await Bill.create({
-        billNumber,
-        studentId,
-        schoolId,
-        sessionId,
-        billType: feeStructure.feeType || 'TUITION',
-        sourceType: 'StudentFee',
-        sourceId: studentFee._id,
-        description: feeStructure.name,
-        totalAmount,
-        paidAmount: 0,
-        dueAmount: totalAmount,
-        status: 'UNPAID',
-        dueDate: feeStructure.dueDate || null,
-        createdBy: assignedBy
-      });
-    } catch (billErr) {
-      // Bill creation failure should NOT fail the fee assignment
-      console.error('Bill dual-write failed:', billErr.message);
+    if (!result.created && result.reason === 'ALREADY_ASSIGNED') {
+      return res.status(409).json({ message: 'This fee is already assigned to the student' });
     }
-
-    await dispatchAutomationTrigger(schoolId, 'FEE_DUE', {
-      entityId: studentFee._id,
-      entityType: 'StudentFee',
-      studentId,
-      feeStructureId,
-      dueAmount,
-      totalAmount,
-      feeName: feeStructure.name,
-      message: `${feeStructure.name} fee has been assigned and is now due.`,
-    });
 
     res.status(201).json({
       success: true,
-      data: studentFee,
+      data: result.studentFee,
       message: 'Fee assigned successfully',
     });
   } catch (err) {

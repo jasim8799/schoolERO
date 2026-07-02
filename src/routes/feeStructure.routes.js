@@ -1,5 +1,13 @@
 const express = require('express');
-const { createFeeStructure, getFeeStructures } = require('../controllers/feeStructure.controller.js');
+const {
+  createFeeStructure,
+  getFeeStructures,
+  getFeeStructureById,
+  updateFeeStructure,
+  setFeeStructureStatus,
+  duplicateFeeStructure,
+  deleteFeeStructure,
+} = require('../controllers/feeStructure.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
 const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
 const { USER_ROLES, HTTP_STATUS } = require('../config/constants.js');
@@ -35,5 +43,10 @@ router.use(requirePrincipalOrOperator);
 
 router.post('/', createFeeStructure);
 router.get('/', getFeeStructures);
+router.get('/:id', getFeeStructureById);
+router.patch('/:id', updateFeeStructure);
+router.patch('/:id/status', setFeeStructureStatus);
+router.post('/:id/duplicate', duplicateFeeStructure);
+router.delete('/:id', deleteFeeStructure);
 
 module.exports = router;

@@ -50,5 +50,15 @@ const FeeStructureSchema = new mongoose.Schema({
 
 FeeStructureSchema.index({ name: 1, classId: 1, sessionId: 1 }, { unique: true });
 FeeStructureSchema.index({ schoolId: 1, sessionId: 1 });
+FeeStructureSchema.index(
+  { schoolId: 1, sessionId: 1, classId: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: 'ACTIVE',
+      isOptional: { $ne: true },
+    },
+  }
+);
 
 module.exports = mongoose.model('FeeStructure', FeeStructureSchema);

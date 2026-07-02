@@ -4,6 +4,7 @@ const User      = require('../models/User');
 const Parent    = require('../models/Parent');
 const { hashPassword } = require('../utils/password');
 const { processAdmissionComponentsPayment } = require('../services/paymentEngine.service');
+const { autoAssignClassTuitionFee } = require('../services/studentFeeAutoAssign.service');
 
 const getSessionFilter = (req) => {
   const sessionId = req.user?.sessionId;
@@ -150,6 +151,26 @@ exports.createAdmission = async (req, res) => {
       payLater,
       paymentStatus: payLater ? 'PENDING' : 'PAID',
     });
+
+    // Auto-assign class-wise tuition fee structure for this student.
+    // Admission must never fail if no active fee structure exists.
+    try {
+      const autoAssignResult = await autoAssignClassTuitionFee({
+        studentId,
+        classId: student.classId,
+        schoolId,
+        sessionId: req.user?.sessionId || req.activeSession?._id || null,
+        assignedBy: req.user._id,
+      });
+
+      if (!autoAssignResult.assigned && autoAssignResult.reason === 'NO_ACTIVE_FEE_STRUCTURE') {
+        console.warn(
+          `[Admission] No active fee structure found for selected class. student=${studentId} class=${student.classId} school=${schoolId}`
+        );
+      }
+    } catch (autoAssignErr) {
+      console.error('[Admission] Tuition auto-assignment failed:', autoAssignErr.message);
+    }
 
     if (!payLater) {
       try {

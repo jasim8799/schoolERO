@@ -1,0 +1,37 @@
+{
+  "scenario1_feeCollection_to_hostelScreen_paid": {
+    "pass": true,
+    "authoritativeStatus": "PAID",
+    "assignmentStatus": "ACTIVE",
+    "feeStatus": "PAID"
+  },
+  "scenario2_hostelScreen_to_feeDashboard_paid": {
+    "pass": true,
+    "billStatus": "PAID",
+    "apiStatusForBill": "PAID"
+  },
+  "scenario3_direct_hostel_payment_paid": {
+    "pass": true,
+    "sampleCount": 3,
+    "sampleBillIds": [
+      "69db73992349212ed67be8c9",
+      "6a450b38ad82865be341af1f",
+      "6a450b69ad82865be341afe0"
+    ]
+  },
+  "scenario4_previously_paid_months_remain_paid": {
+    "pass": true,
+    "paidBillCountInHistory": 3
+  },
+  "scenario5_unpaid_months_remain_pending": {
+    "pass": true,
+    "fallbackPaymentStatus": "NOT_BILLED",
+    "badgeText": "PENDING"
+  },
+  "scenario6_assignment_active_not_affect_payment": {
+    "pass": true,
+    "statusInput": "ACTIVE",
+    "feeStatusInput": "PAID",
+    "resolvedPaymentStatus": "PAID"
+  }
+}

@@ -10,6 +10,7 @@ const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 const { hashPassword } = require('../utils/password.js');
+const { autoAssignClassTuitionFee } = require('../services/studentFeeAutoAssign.service');
 
 // Create Student
 const createStudent = async (req, res) => {
@@ -143,6 +144,30 @@ const createStudent = async (req, res) => {
     }
     await parent.save();
 
+    // Auto-assign class-wise tuition structure for new student.
+    // Student creation must not fail if no active structure is configured.
+    let tuitionAutoAssigned = false;
+    let tuitionAssignmentReason = null;
+    try {
+      const autoAssignResult = await autoAssignClassTuitionFee({
+        studentId: newStudent._id,
+        classId,
+        schoolId,
+        sessionId,
+        assignedBy: req.user._id || req.user.userId,
+      });
+      tuitionAutoAssigned = autoAssignResult.assigned;
+      tuitionAssignmentReason = autoAssignResult.reason;
+      if (!autoAssignResult.assigned && autoAssignResult.reason === 'NO_ACTIVE_FEE_STRUCTURE') {
+        console.warn(
+          `[Student] No active fee structure found for selected class. student=${newStudent._id} class=${classId} school=${schoolId}`
+        );
+      }
+    } catch (assignErr) {
+      console.error('[Student] Tuition auto-assignment failed:', assignErr.message);
+      tuitionAssignmentReason = 'AUTO_ASSIGN_FAILED';
+    }
+
     // Audit log
     await auditLog({
       action: 'STUDENT_CREATED',
@@ -164,7 +189,9 @@ const createStudent = async (req, res) => {
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'Student created successfully',
-      data: newStudent
+      data: newStudent,
+      tuitionAutoAssigned,
+      tuitionAssignmentReason,
     });
   } catch (error) {
     logger.error('Create student error:', error.message);
@@ -329,6 +356,8 @@ const updateStudent = async (req, res) => {
       dateOfBirth,
       classId,
       sectionId,
+      updateTuitionOnClassChange,
+      tuitionOverrideAmount,
     } = req.body;
 
     const student = await Student.findOne({ _id: id, schoolId });
@@ -336,6 +365,18 @@ const updateStudent = async (req, res) => {
     if (!student) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
+
+    const previousClassId = student.classId?.toString() || null;
+    const nextClassId = classId !== undefined && classId !== null
+      ? classId.toString()
+      : previousClassId;
+    const classChanged = Boolean(
+      classId !== undefined &&
+      classId !== null &&
+      previousClassId &&
+      nextClassId &&
+      previousClassId !== nextClassId
+    );
 
     const studentUpdates = {};
     if (name !== undefined) studentUpdates.name = name;
@@ -353,6 +394,33 @@ const updateStudent = async (req, res) => {
         { $set: studentUpdates },
         { new: true, runValidators: true }
       );
+    }
+
+    let tuitionUpdated = false;
+    let tuitionUpdateReason = null;
+    if (classChanged && updateTuitionOnClassChange === true) {
+      const override =
+        req.user.role === 'PRINCIPAL' && Number.isFinite(Number(tuitionOverrideAmount))
+          ? Number(tuitionOverrideAmount)
+          : undefined;
+
+      try {
+        const autoAssignResult = await autoAssignClassTuitionFee({
+          studentId: id,
+          classId: nextClassId,
+          schoolId,
+          sessionId: req.user.sessionId,
+          assignedBy: req.user._id || req.user.userId,
+          overrideAmount: override,
+        });
+        tuitionUpdated = autoAssignResult.assigned;
+        tuitionUpdateReason = autoAssignResult.reason;
+      } catch (assignErr) {
+        tuitionUpdateReason = 'AUTO_ASSIGN_FAILED';
+        console.error('[Student] Class-change tuition assignment failed:', assignErr.message);
+      }
+    } else if (classChanged) {
+      tuitionUpdateReason = 'CLASS_CHANGED_CONFIRMATION_REQUIRED';
     }
 
     if (student.userId) {
@@ -393,6 +461,13 @@ const updateStudent = async (req, res) => {
       success: true,
       message: 'Student updated successfully',
       data: updatedStudent,
+      classChanged,
+      tuitionUpdated,
+      tuitionUpdateReason,
+      classChangePrompt:
+        classChanged && updateTuitionOnClassChange !== true
+          ? 'This student moved to another class. Would you like to update the tuition fee structure?'
+          : null,
     });
   } catch (err) {
     if (err.code === 11000) {

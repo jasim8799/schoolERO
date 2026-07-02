@@ -1,0 +1,119 @@
+{
+  "assignment_raw": {
+    "_id": "69d34d264ce0225b3b3d2df0",
+    "studentId": {
+      "_id": "69d34c6d4ce0225b3b3d2d2f",
+      "name": "Md Abdullah",
+      "rollNumber": "1",
+      "classId": {
+        "_id": "69c925daedfcc84952b6d12b",
+        "name": "CLASS 9"
+      }
+    },
+    "hostelId": {
+      "_id": "69c76bbd4c206b8c9fce4039",
+      "name": "Rsvm",
+      "capacity": 500,
+      "monthlyFee": 5000,
+      "wardenEmail": "warden@gmail.com",
+      "wardenName": "Testwarden",
+      "wardenPhone": "7864512786",
+      "address": "",
+      "gender": "MIXED"
+    },
+    "roomId": {
+      "_id": "69d34d004ce0225b3b3d2da3",
+      "roomNumber": "3",
+      "totalBeds": 35,
+      "availableBeds": 28,
+      "wardenEmail": "test2@gmail.com",
+      "wardenName": "test2",
+      "wardenPhone": "5678903412"
+    },
+    "bedNumber": 1,
+    "status": "ACTIVE",
+    "schoolId": "69c674538d383364a3211db3",
+    "entryDate": "2026-04-06T06:05:26.102Z",
+    "createdAt": "2026-04-06T06:05:26.102Z",
+    "updatedAt": "2026-07-01T13:59:09.364Z",
+    "__v": 0,
+    "feeStatus": "PAID",
+    "lastPaymentDate": "2026-07-01T13:59:09.364Z"
+  },
+  "hostel_status": "ACTIVE",
+  "feeStatus": "PAID",
+  "paymentStatus": null,
+  "bill_status": null,
+  "history_status": [
+    {
+      "billId": "6a451d2af178f8e5ea8640ab",
+      "status": "PAID",
+      "description": "July HOSTEL Fee",
+      "month": null,
+      "year": null,
+      "paidAmount": 5000,
+      "dueAmount": 0
+    },
+    {
+      "billId": "69db73992349212ed67be8c9",
+      "status": "PAID",
+      "description": "Hostel Fee — Jul 2026",
+      "month": null,
+      "year": null,
+      "paidAmount": 5000,
+      "dueAmount": 0
+    },
+    {
+      "billId": "69d34d274ce0225b3b3d2df6",
+      "status": "PAID",
+      "description": "Hostel Fee — Rsvm Room 1",
+      "month": null,
+      "year": null,
+      "paidAmount": 0,
+      "dueAmount": 0
+    }
+  ],
+  "normalizedStatus_returned": {
+    "hostel_status": "NOT_BILLED",
+    "feeStatus": "PAID",
+    "paymentStatus": "NOT_BILLED",
+    "bill_status": "NOT_BILLED"
+  },
+  "authoritativeHostelStatus_returned": "NOT_BILLED",
+  "_getMonthStatusForAssignment_returned": "NOT_BILLED",
+  "_buildMonthPaymentGrid_returned": [
+    {
+      "month": 4,
+      "year": 2026,
+      "label": "Apr 2026",
+      "status": "NOT_BILLED",
+      "billId": null,
+      "amount": null,
+      "dueAmount": null,
+      "paidDate": null
+    },
+    {
+      "month": 5,
+      "year": 2026,
+      "label": "May 2026",
+      "status": "NOT_BILLED",
+      "billId": null,
+      "amount": null,
+      "dueAmount": null,
+      "paidDate": null
+    },
+    {
+      "month": 6,
+      "year": 2026,
+      "label": "Jun 2026",
+      "status": "NOT_BILLED",
+      "billId": null,
+      "amount": null,
+      "dueAmount": null,
+      "paidDate": null
+    }
+  ],
+  "_assignmentStatusForCurrentFilters_returned": "NOT_BILLED",
+  "_statusBadge_received": false,
+  "_statusBadge_text": "PENDING"
+}

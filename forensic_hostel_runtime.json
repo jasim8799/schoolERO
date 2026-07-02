@@ -1,0 +1,159 @@
+{
+  "step2_execution": {
+    "collectPayment": {
+      "status": 201,
+      "response": {
+        "success": true,
+        "message": "1 payment(s) recorded successfully",
+        "receipts": [
+          {
+            "receiptNumber": "RCP-1db3-1782914348663-340",
+            "billId": "6a451d2af178f8e5ea8640ab",
+            "billNumber": "BILL-1db3-1782914346322-4517",
+            "billType": "HOSTEL",
+            "description": "July HOSTEL Fee",
+            "amount": 5000,
+            "paymentId": "6a451d2cf178f8e5ea8640bf",
+            "transactionGroupId": "PTX-1db3-1782914346792-2851",
+            "existing": true
+          }
+        ],
+        "billIds": [
+          "6a451d2af178f8e5ea8640ab"
+        ],
+        "totalCollected": 5000
+      }
+    },
+    "trace": [
+      "collectPayment()",
+      "processBillPayments()",
+      "Payment created or existing",
+      "syncBillPaymentToSource()",
+      "Returned receipt"
+    ],
+    "receiptFields": {
+      "billId": "6a451d2af178f8e5ea8640ab",
+      "studentId": "69d34c6d4ce0225b3b3d2d2f",
+      "receipt": "RCP-1db3-1782914348663-340",
+      "existing": true,
+      "transactionGroupId": "PTX-1db3-1782914346792-2851"
+    },
+    "syncTrace": {
+      "calledFrom": "processBillPayments()",
+      "service": "syncBillPaymentToSource()",
+      "input": {
+        "billId": "6a451d2af178f8e5ea8640ab",
+        "sourceType": "StudentHostel",
+        "sourceId": "69d34d264ce0225b3b3d2df0",
+        "status": "PAID"
+      }
+    }
+  },
+  "step3_db": {
+    "bill": {
+      "_id": "6a451d2af178f8e5ea8640ab",
+      "status": "PAID",
+      "billType": "HOSTEL",
+      "sourceType": "StudentHostel",
+      "sourceId": "69d34d264ce0225b3b3d2df0",
+      "paidAmount": 5000,
+      "dueAmount": 0,
+      "month": null,
+      "year": null,
+      "description": "July HOSTEL Fee"
+    },
+    "payment": {
+      "billId": "6a451d2af178f8e5ea8640ab",
+      "amount": 5000,
+      "receipt": "RCP-1db3-1782914348663-340"
+    },
+    "studentHostel": {
+      "status": "ACTIVE",
+      "paymentStatus": null,
+      "paidAmount": null,
+      "dueAmount": null,
+      "paidMonths": null,
+      "feeStatus": "PAID",
+      "lastPaymentDate": "2026-07-01T13:59:09.364Z"
+    },
+    "hostelFee": null
+  },
+  "step4_api": {
+    "status": 200,
+    "json": {
+      "success": true,
+      "data": [
+        {
+          "_id": "6a451d2af178f8e5ea8640ab",
+          "billNumber": "BILL-1db3-1782914346322-4517",
+          "studentId": {
+            "_id": "69d34c6d4ce0225b3b3d2d2f",
+            "name": "Md Abdullah",
+            "rollNumber": "1"
+          },
+          "schoolId": "69c674538d383364a3211db3",
+          "sessionId": "69c674558d383364a3211db8",
+          "billType": "HOSTEL",
+          "sourceType": "StudentHostel",
+          "description": "July HOSTEL Fee",
+          "totalAmount": 5000,
+          "paidAmount": 5000,
+          "dueAmount": 0,
+          "status": "PAID",
+          "dueDate": "2026-07-10T00:00:00.000Z",
+          "createdBy": "69c674558d383364a3211db6",
+          "createdAt": "2026-07-01T13:59:06.555Z",
+          "updatedAt": "2026-07-01T13:59:09.130Z",
+          "__v": 0,
+          "sourceId": "69d34d264ce0225b3b3d2df0"
+        },
+        {
+          "_id": "69db73992349212ed67be8c9",
+          "billNumber": "BILL-1db3-1775989657122-933",
+          "studentId": {
+            "_id": "69d34c6d4ce0225b3b3d2d2f",
+            "name": "Md Abdullah",
+            "rollNumber": "1"
+          },
+          "schoolId": "69c674538d383364a3211db3",
+          "sessionId": "69c674558d383364a3211db8",
+          "billType": "HOSTEL",
+          "sourceType": "StudentHostel",
+          "sourceId": "69d34d004ce0225b3b3d2da3",
+          "description": "Hostel Fee — Jul 2026",
+          "totalAmount": 5000,
+          "paidAmount": 5000,
+          "dueAmount": 0,
+          "status": "PAID",
+          "createdBy": "69c674558d383364a3211db6",
+          "createdAt": "2026-04-12T10:27:37.352Z",
+          "updatedAt": "2026-04-12T10:27:37.352Z",
+          "__v": 0
+        },
+        {
+          "_id": "69d34d274ce0225b3b3d2df6",
+          "billNumber": "BILL-1db3-1775455526782-197",
+          "studentId": {
+            "_id": "69d34c6d4ce0225b3b3d2d2f",
+            "name": "Md Abdullah",
+            "rollNumber": "1"
+          },
+          "schoolId": "69c674538d383364a3211db3",
+          "sessionId": "69c674558d383364a3211db8",
+          "billType": "HOSTEL",
+          "sourceType": "StudentHostel",
+          "sourceId": "69d34d264ce0225b3b3d2df0",
+          "description": "Hostel Fee — Rsvm Room 1",
+          "totalAmount": 0,
+          "paidAmount": 0,
+          "dueAmount": 0,
+          "status": "PAID",
+          "createdBy": "69c674558d383364a3211db6",
+          "createdAt": "2026-04-06T06:05:27.225Z",
+          "updatedAt": "2026-04-06T06:05:27.225Z",
+          "__v": 0
+        }
+      ]
+    }
+  }
+}
