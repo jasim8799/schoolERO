@@ -137,9 +137,10 @@ exports.createAdmission = async (req, res) => {
     const monthlyFee   = Number(fees.monthlyFee)   || 0;
     const dressFee     = Number(fees.dressFee)     || 0;
     const bookFee      = Number(fees.bookFee)      || 0;
-    const transportFee = Number(fees.transportFee) || 0;
-    const hostelFee    = Number(fees.hostelFee)    || 0;
-    const totalPayable = finalFee + monthlyFee + dressFee + bookFee + transportFee + hostelFee;
+    // Temporary business rule: Admission never collects hostel/transport.
+    const transportFee = 0;
+    const hostelFee    = 0;
+    const totalPayable = finalFee + monthlyFee + dressFee + bookFee;
 
     const admission = await Admission.create({
       studentId,
@@ -188,8 +189,6 @@ exports.createAdmission = async (req, res) => {
           { key: 'monthlyFee', billType: 'TUITION', desc: 'Monthly Fee' },
           { key: 'dressFee', billType: 'DRESS', desc: 'Dress Fee' },
           { key: 'bookFee', billType: 'BOOKS', desc: 'Book Fee' },
-          { key: 'transportFee', billType: 'TRANSPORT', desc: 'Transport Fee' },
-          { key: 'hostelFee', billType: 'HOSTEL', desc: 'Hostel Fee' },
         ];
 
         for (const { key, billType, desc } of feeTypes) {
