@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { USER_STATUS } = require('../config/constants');
+const { extractBillMonthYear } = require('./billMonth.service');
 
 function normalizeSchoolId(schoolId) {
   if (!schoolId) return schoolId;
@@ -323,6 +324,7 @@ async function generateMonthlyFees(schoolId, month) {
   const Student = mongoose.model('Student');
   const FeeStructure = mongoose.model('FeeStructure');
   const AcademicSession = mongoose.model('AcademicSession');
+  const Bill = mongoose.model('Bill');
 
   if (!month) {
     const now = new Date();
@@ -332,12 +334,30 @@ async function generateMonthlyFees(schoolId, month) {
   const session = await AcademicSession.findOne({ schoolId, isActive: true }).lean();
   if (!session) return 0;
 
+  const [targetYearStr, targetMonthStr] = String(month).split('-');
+  const targetYear = Number(targetYearStr);
+  const targetMonth = Number(targetMonthStr);
+
   const students = await Student.find({ schoolId, status: 'ACTIVE' })
     .select('_id classId')
     .lean();
 
   let generated = 0;
   for (const student of students) {
+    const paidTuitionBills = await Bill.find({
+      studentId: student._id,
+      schoolId,
+      billType: 'TUITION',
+      status: 'PAID',
+      $or: [
+        { sessionId: session._id },
+        { sessionId: null },
+        { sessionId: { $exists: false } },
+      ],
+    })
+      .select('description dueDate createdAt')
+      .lean();
+
     const structures = await FeeStructure.find({
       schoolId,
       sessionId: session._id,
@@ -346,6 +366,17 @@ async function generateMonthlyFees(schoolId, month) {
     }).lean();
 
     for (const fs of structures) {
+      const hasPaidThisStructureForTargetMonth = paidTuitionBills.some((b) => {
+        const { month: bm, year: by } = extractBillMonthYear(b);
+        if (bm !== targetMonth || by !== targetYear) return false;
+        return String(b.description || '').trim() === String(fs.name || '').trim();
+      });
+
+      if (hasPaidThisStructureForTargetMonth) {
+        // Admission-month component already settled through canonical billing.
+        continue;
+      }
+
       const exists = await StudentFeeAssignment.exists({
         studentId: student._id,
         feeStructureId: fs._id,

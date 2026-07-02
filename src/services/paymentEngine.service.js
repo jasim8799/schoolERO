@@ -726,25 +726,60 @@ const processAdmissionComponentsPayment = async ({
   admissionId,
   components,
   paymentMode = 'Cash',
+  admissionDate,
 }) => {
   const mongoSession = await mongoose.startSession();
   try {
     return await mongoSession.withTransaction(async () => {
       const sessionId = await resolveActiveSessionId({ schoolId, reqSessionId, mongoSession });
+      const normalizedAdmissionDate = admissionDate ? new Date(admissionDate) : new Date();
+      const admissionMonth = normalizedAdmissionDate.getMonth() + 1;
+      const admissionYear = normalizedAdmissionDate.getFullYear();
+
+      const findLinkedMonthBill = async (component) => {
+        const candidates = await Bill.find({
+          studentId,
+          schoolId,
+          billType: component.billType,
+          ...getSessionFilter(sessionId),
+          status: { $in: ['UNPAID', 'PARTIAL', 'PAID'] },
+        }).session(mongoSession);
+
+        const monthMatched = candidates.filter((b) => {
+          const { month, year } = extractBillMonthYear(b);
+          return month === admissionMonth && year === admissionYear;
+        });
+        if (!monthMatched.length) return null;
+
+        // Prefer canonical module bills over Admission-source bills
+        const nonAdmission = monthMatched.find((b) => b.sourceType !== 'Admission');
+        if (nonAdmission) return nonAdmission;
+
+        // Fallback to same admission bill if already present.
+        return monthMatched.find(
+          (b) =>
+            b.sourceType === 'Admission' &&
+            String(b.sourceId || '') === String(admissionId || '')
+        ) || null;
+      };
 
       const billItems = [];
       for (const component of components || []) {
         const amount = Number(component.amount || 0);
         if (amount <= 0) continue;
 
-        let bill = await Bill.findOne({
-          studentId,
-          schoolId,
-          billType: component.billType,
-          sourceType: 'Admission',
-          sourceId: admissionId,
-          description: component.description,
-        }).session(mongoSession);
+        let bill = await findLinkedMonthBill(component);
+
+        if (!bill) {
+          bill = await Bill.findOne({
+            studentId,
+            schoolId,
+            billType: component.billType,
+            sourceType: 'Admission',
+            sourceId: admissionId,
+            description: component.description,
+          }).session(mongoSession);
+        }
 
         if (!bill) {
           const billNumber = await ensureUniqueBillNumber({ schoolId, mongoSession });
@@ -768,7 +803,10 @@ const processAdmissionComponentsPayment = async ({
         }
 
         if (bill.status !== 'PAID') {
-          billItems.push({ billId: bill._id, amount: Math.min(amount, Number(bill.dueAmount || amount)) });
+          billItems.push({
+            billId: bill._id,
+            amount: Math.min(amount, Number(bill.dueAmount || amount)),
+          });
         }
       }
 
@@ -797,6 +835,7 @@ const processAdmissionComponentsPayment = async ({
     await mongoSession.endSession();
   }
 };
+
 
 module.exports = {
   PaymentEngineError,

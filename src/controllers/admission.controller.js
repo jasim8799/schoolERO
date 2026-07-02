@@ -208,6 +208,7 @@ exports.createAdmission = async (req, res) => {
           reqSessionId: req.user?.sessionId,
           studentId,
           admissionId: admission._id,
+          admissionDate: admission.createdAt,
           components,
           paymentMode: 'Cash',
         });
