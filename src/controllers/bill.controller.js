@@ -1073,13 +1073,83 @@ exports.getBillHtmlReceipt = async (req, res) => {
   .signature-label { font-size: 11px; color: #555; }
 
   /* ── Print ──────────────────────────────── */
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
   @media print {
-    body { background: #fff; padding: 0; }
+    html, body {
+      width: 100%;
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+      display: block;
+    }
+
     .receipt {
       box-shadow: none;
       border: none;
       max-width: 100%;
+      width: 100%;
+      margin: 0;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      overflow: hidden;
     }
+
+    .header,
+    .status-bar,
+    .body,
+    .info-grid,
+    .info-section,
+    .table-wrap,
+    .summary-wrap,
+    .summary-box,
+    .footer,
+    .signature-block {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    table,
+    thead,
+    tbody,
+    tr,
+    td,
+    th {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+
+    /* Print-only spacing compaction to avoid spillover onto a blank page. */
+    .header { padding: 18px 20px 14px; }
+    .status-bar { padding: 8px 20px; }
+    .body { padding: 14px 20px; }
+    .info-section { padding: 10px 12px; }
+    .table-wrap,
+    .summary-wrap { margin-bottom: 12px; }
+    .footer { padding: 12px 20px 10px; }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    .receipt,
+    .body,
+    .table-wrap,
+    .summary-wrap,
+    .footer {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
     .print-btn { display: none !important; }
   }
 
