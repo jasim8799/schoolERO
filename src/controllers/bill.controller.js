@@ -1347,7 +1347,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
   /* ── Print ──────────────────────────────── */
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 10mm;
   }
 
   @media print {
@@ -1360,6 +1360,8 @@ exports.getBillHtmlReceipt = async (req, res) => {
       margin: 0;
       padding: 0;
       display: block;
+      font-size: 11px;
+      line-height: 1.25;
     }
 
     .receipt {
@@ -1370,7 +1372,8 @@ exports.getBillHtmlReceipt = async (req, res) => {
       margin: 0;
       page-break-inside: avoid;
       break-inside: avoid;
-      overflow: hidden;
+      overflow: visible;
+      border-radius: 0;
     }
 
     .header,
@@ -1400,14 +1403,117 @@ exports.getBillHtmlReceipt = async (req, res) => {
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
 
-    /* Print-only spacing compaction to avoid spillover onto a blank page. */
-    .header { padding: 18px 20px 14px; }
-    .status-bar { padding: 8px 20px; }
-    .body { padding: 14px 20px; }
-    .info-section { padding: 10px 12px; }
+    /* Print-only compact layout to keep one A4 page when content is moderate. */
+    .header {
+      padding: 10px 12px 8px;
+    }
+    .header .school-name {
+      font-size: 16px;
+      margin-bottom: 2px;
+      letter-spacing: .2px;
+    }
+    .header .school-meta {
+      font-size: 10px;
+      line-height: 1.25;
+    }
+    .header .receipt-badge {
+      margin-top: 6px;
+      padding: 2px 10px;
+      font-size: 9px;
+      letter-spacing: 1px;
+    }
+
+    .status-bar {
+      padding: 5px 12px;
+      font-size: 10px;
+      border-bottom-width: 2px;
+    }
+    .status-bar .status-label {
+      gap: 4px;
+      font-size: 10px;
+    }
+    .status-bar .status-label::before {
+      font-size: 12px;
+    }
+    .status-bar .receipt-no {
+      font-size: 10px;
+    }
+
+    .body { padding: 8px 10px; }
+
+    .info-grid {
+      margin-bottom: 8px;
+      border-radius: 6px;
+    }
+    .info-section { padding: 7px 9px; }
+    .info-section h3 {
+      font-size: 9px;
+      margin-bottom: 5px;
+      padding-bottom: 3px;
+      letter-spacing: .8px;
+    }
+    .info-row {
+      padding: 2px 0;
+      font-size: 10px;
+    }
+    .info-row .lbl { margin-right: 8px; }
+
+    .table-title {
+      padding: 6px 10px;
+      font-size: 9px;
+      letter-spacing: .8px;
+    }
+    table {
+      font-size: 10px;
+    }
+    thead th {
+      padding: 5px 7px;
+      font-size: 10px;
+      letter-spacing: .2px;
+    }
+    tbody td {
+      padding: 4px 7px;
+      font-size: 10px;
+      line-height: 1.2;
+    }
+
     .table-wrap,
-    .summary-wrap { margin-bottom: 12px; }
-    .footer { padding: 12px 20px 10px; }
+    .summary-wrap { margin-bottom: 8px; }
+
+    .summary-box {
+      min-width: 220px;
+    }
+    .summary-row {
+      padding: 5px 10px;
+      font-size: 10px;
+    }
+    .summary-row.total-row .s-lbl,
+    .summary-row.total-row .s-val {
+      font-size: 11px;
+    }
+
+    .footer {
+      padding: 8px 10px 6px;
+      gap: 10px;
+      align-items: flex-end;
+      flex-wrap: nowrap;
+    }
+    .footer-note {
+      font-size: 9px;
+      line-height: 1.35;
+      max-width: none;
+      flex: 1;
+    }
+    .signature-block {
+      min-width: 120px;
+    }
+    .signature-line {
+      width: 120px;
+      margin-bottom: 3px;
+    }
+    .signature-label {
+      font-size: 9px;
+    }
 
     *, *::before, *::after {
       box-sizing: border-box;
@@ -1422,7 +1528,15 @@ exports.getBillHtmlReceipt = async (req, res) => {
       overflow-wrap: anywhere;
     }
 
-    .print-btn { display: none !important; }
+    .print-btn,
+    script,
+    noscript {
+      display: none !important;
+      visibility: hidden !important;
+    }
+
+    /* Avoid accidental trailing blank page in Chromium print engine. */
+    body > *:last-child { margin-bottom: 0 !important; }
   }
 
   /* ── Print Button ───────────────────────── */
