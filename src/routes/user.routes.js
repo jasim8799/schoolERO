@@ -8,6 +8,7 @@ const {
   deleteUser,
   reactivateUser,
   setUserPassword,
+  changeMyPassword,
   updateMyProfile,
   uploadStaffDocument,
   getStaffDocumentData,
@@ -64,6 +65,13 @@ router.get(
 
 // PATCH /api/users/me - update own profile (email/photo)
 router.patch('/me', updateMyProfile);
+
+// PATCH /api/users/me/change-password - Change authenticated principal password
+router.patch(
+  '/me/change-password',
+  requireRole(USER_ROLES.PRINCIPAL),
+  changeMyPassword
+);
 
 // GET /api/users/analytics - User IAM analytics (SUPER_ADMIN)
 // Must come BEFORE /:id
@@ -127,10 +135,10 @@ router.patch(
 );
 
 // PATCH /api/users/:id/set-password - Set user password
-// Only OPERATOR and above can reset passwords
+// Only PRINCIPAL and SUPER_ADMIN can reset passwords
 router.patch(
   '/:id/set-password',
-  requireMinRole(USER_ROLES.OPERATOR),
+  requireMinRole(USER_ROLES.PRINCIPAL),
   setUserPassword
 );
 

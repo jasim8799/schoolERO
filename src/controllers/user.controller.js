@@ -2,7 +2,7 @@ const User = require('../models/User.js');
 const School = require('../models/School.js');
 const LoginSession = require('../models/LoginSession.js');
 const UserActivityLog = require('../models/UserActivityLog.js');
-const { hashPassword } = require('../utils/password.js');
+const { hashPassword, comparePassword } = require('../utils/password.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
@@ -728,10 +728,10 @@ const setUserPassword = async (req, res) => {
     const { password } = req.body;
 
     // Validate password
-    if (!password || password.length < 6) {
+    if (!password || password.length < 8) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Password must be at least 6 characters long'
+        message: 'Password must be at least 8 characters long'
       });
     }
 
@@ -744,11 +744,40 @@ const setUserPassword = async (req, res) => {
       });
     }
 
-    // School-level safety check
-    if (user.schoolId && user.schoolId.toString() !== req.user.schoolId && req.user.role !== USER_ROLES.SUPER_ADMIN) {
+    const requesterRole = (req.user?.role || '').toString().toUpperCase();
+    const requesterSchoolId = (
+      req.user?.schoolId?._id ||
+      req.user?.schoolId ||
+      ''
+    ).toString();
+    const targetSchoolId = (user.schoolId || '').toString();
+    const targetRole = (user.role || '').toString().toUpperCase();
+
+    // SUPER_ADMIN can reset all users across schools (existing behavior).
+    if (requesterRole === USER_ROLES.PRINCIPAL) {
+      if (!requesterSchoolId || !targetSchoolId || requesterSchoolId !== targetSchoolId) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'Access denied. Cannot reset password for users from other schools'
+        });
+      }
+
+      const allowedTargetRoles = [
+        USER_ROLES.OPERATOR,
+        USER_ROLES.TEACHER,
+        USER_ROLES.STUDENT,
+        USER_ROLES.PARENT,
+      ];
+      if (!allowedTargetRoles.includes(targetRole)) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: 'Access denied. Principal can only reset Operator, Teacher, Student, or Parent passwords'
+        });
+      }
+    } else if (requesterRole !== USER_ROLES.SUPER_ADMIN) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        message: 'Access denied. Cannot reset password for users from other schools'
+        message: 'Access denied. Insufficient permissions.'
       });
     }
 
@@ -778,10 +807,25 @@ const setUserPassword = async (req, res) => {
     // Create audit log
     await auditLog({
       action: 'PASSWORD_RESET',
+      category: 'USER',
       userId: req.user.userId,
+      userName: req.user.name,
+      role: req.user.role,
+      entityType: 'USER',
+      entityId: user._id,
+      entityName: user.name,
+      description:
+        requesterRole === USER_ROLES.PRINCIPAL
+          ? `Principal reset password for ${user.role} ${user.name}`
+          : `Password reset for ${user.role} ${user.name}`,
       schoolId: user.schoolId,
+      schoolName: req.user?.schoolName || null,
       targetUserId: user._id,
-      details: { resetBy: req.user.role },
+      details: {
+        resetBy: req.user.role,
+        targetRole: user.role,
+        targetName: user.name,
+      },
       req
     });
 
@@ -795,6 +839,81 @@ const setUserPassword = async (req, res) => {
       success: false,
       message: 'Error resetting password',
       error: error.message
+    });
+  }
+};
+
+const changeMyPassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body || {};
+
+    if (!currentPassword) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Current password is required',
+      });
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'New password must be at least 8 characters long',
+      });
+    }
+
+    if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Confirm password does not match',
+      });
+    }
+
+    const user = await User.findById(req.user.userId).select('+password');
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const matches = await comparePassword(currentPassword, user.password);
+    if (!matches) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Current password is incorrect',
+      });
+    }
+
+    user.password = await hashPassword(newPassword);
+    user.lockedUntil = null;
+    user.failedLogins = 0;
+    await user.save();
+
+    await auditLog({
+      action: 'PASSWORD_CHANGED',
+      category: 'USER',
+      userId: req.user.userId,
+      userName: req.user.name,
+      role: req.user.role,
+      entityType: 'USER',
+      entityId: user._id,
+      entityName: user.name,
+      description: `${req.user.name} changed own password`,
+      schoolId: user.schoolId,
+      details: { changedBy: req.user.role },
+      req,
+    });
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    logger.error('Change my password error:', error.message);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Error changing password',
+      error: error.message,
     });
   }
 };
@@ -1007,6 +1126,7 @@ module.exports = {
   deleteUser,
   reactivateUser,
   setUserPassword,
+  changeMyPassword,
   updateMyProfile,
   uploadStaffDocument,
   getStaffDocumentData,
