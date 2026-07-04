@@ -744,26 +744,115 @@ exports.getBillHtmlReceipt = async (req, res) => {
     }
 
     const primaryPayment = billPayments[0];
+    const studentIdValue = bill.studentId?._id || bill.studentId;
 
-    // If this bill belongs to a grouped transaction, render all payment lines
-    // from that group so receipt shows all fee types collected together.
-    let receiptPayments = billPayments;
-    if (primaryPayment.transactionGroupId) {
+    const monthNumberFromName = (txt) => {
+      const names = {
+        january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+        july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+        jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+      };
+      return names[String(txt || '').trim().toLowerCase()] || null;
+    };
+
+    const parseMonthFromDescription = (description) => {
+      const txt = String(description || '');
+      const match = txt.match(/(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*[,-]?\s*(20\d{2})/i);
+      if (!match) return null;
+      const month = monthNumberFromName(match[1]);
+      const year = Number(match[2]);
+      if (!month || !year) return null;
+      return new Date(year, month - 1, 1);
+    };
+
+    const parseDate = (raw) => {
+      if (!raw) return null;
+      const dt = new Date(raw);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const monthKeyForBill = (b, fallbackDate = null) => {
+      const due = parseDate(b?.dueDate);
+      if (due) return `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}`;
+      const created = parseDate(b?.createdAt);
+      if (created) return `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
+      const fromDesc = parseMonthFromDescription(b?.description);
+      if (fromDesc) {
+        return `${fromDesc.getFullYear()}-${String(fromDesc.getMonth() + 1).padStart(2, '0')}`;
+      }
+      if (fallbackDate) {
+        return `${fallbackDate.getFullYear()}-${String(fallbackDate.getMonth() + 1).padStart(2, '0')}`;
+      }
+      return 'unknown';
+    };
+
+    const primaryPaymentDate = parseDate(primaryPayment?.paymentDate);
+    const selectedMonthKey = monthKeyForBill(bill, primaryPaymentDate);
+
+    const allStudentBills = await Bill.find({
+      schoolId,
+      studentId: studentIdValue,
+      ...getSessionFilter(req),
+    })
+      .select('billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status dueDate createdAt sessionId')
+      .lean();
+
+    let monthlyBills = allStudentBills.filter((b) => {
+      const status = String(b?.status || '').toUpperCase();
+      if (status !== 'PAID' && status !== 'PARTIAL') return false;
+      if ((Number(b?.paidAmount) || 0) <= 0) return false;
+      return monthKeyForBill(b, primaryPaymentDate) === selectedMonthKey;
+    });
+
+    if (!monthlyBills.some((b) => String(b._id) === String(bill._id))) {
+      monthlyBills = [bill, ...monthlyBills];
+    }
+
+    const monthlyBillIds = monthlyBills.map((b) => b._id);
+
+    let receiptPayments = await Payment.find({
+      schoolId,
+      studentId: studentIdValue,
+      billId: { $in: monthlyBillIds },
+      ...getSessionFilter(req),
+    })
+      .populate('collectedBy', 'name')
+      .populate('billId', 'billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status dueDate createdAt sessionId')
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    // Fallback for legacy flows: if month-based consolidation returns no lines,
+    // keep the prior transaction-group behavior.
+    if (receiptPayments.length === 0 && primaryPayment.transactionGroupId) {
       const groupedPayments = await Payment.find({
         transactionGroupId: primaryPayment.transactionGroupId,
         schoolId,
-        studentId: bill.studentId?._id || bill.studentId,
+        studentId: studentIdValue,
         ...getSessionFilter(req),
       })
         .populate('collectedBy', 'name')
-        .populate('billId', 'billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status')
+        .populate('billId', 'billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status dueDate createdAt sessionId')
         .sort({ paymentDate: -1 })
         .lean();
 
       if (groupedPayments.length > 0) {
         receiptPayments = groupedPayments;
+      } else {
+        receiptPayments = billPayments;
       }
     }
+
+    const monthlyBillTypeSummary = monthlyBills
+      .map((b) => `${b.billNumber || 'N/A'}:${b.billType || 'N/A'}`)
+      .join(', ');
+    console.info(
+      '[ReceiptRootCause] student=%s session=%s month=%s bills=%d details=%s',
+      String(studentIdValue || 'N/A'),
+      String(bill.sessionId || 'N/A'),
+      selectedMonthKey,
+      monthlyBills.length,
+      monthlyBillTypeSummary || 'NONE'
+    );
 
     const student     = bill.studentId || {};
     const className   = student.classId?.name   || '—';
