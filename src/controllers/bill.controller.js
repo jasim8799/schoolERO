@@ -520,6 +520,73 @@ exports.getBillReceipt = async (req, res) => {
     const bill = payment.billId;
     const student = payment.studentId;
 
+    let receiptPayments = [payment];
+    if (payment.transactionGroupId) {
+      const groupedPayments = await Payment.find({
+        transactionGroupId: payment.transactionGroupId,
+        schoolId,
+        studentId: payment.studentId?._id || payment.studentId,
+        ...getSessionFilter(req),
+      })
+        .populate(
+          'billId',
+          'billNumber billType description totalAmount paidAmount dueAmount status'
+        )
+        .sort({ paymentDate: -1 })
+        .lean();
+
+      if (groupedPayments.length > 0) {
+        receiptPayments = groupedPayments;
+      }
+    }
+
+    const normalizeBillType = (value) =>
+      String(value || '')
+        .trim()
+        .toUpperCase();
+
+    const billById = new Map();
+    for (const p of receiptPayments) {
+      const billDoc = p?.billId && typeof p.billId === 'object' ? p.billId : null;
+      const billId = billDoc?._id || p?.billId;
+      const key = billId ? String(billId) : '';
+      if (!key || billById.has(key)) continue;
+      if (billDoc) {
+        billById.set(key, billDoc);
+      }
+    }
+    if (bill?._id && !billById.has(String(bill._id))) {
+      billById.set(String(bill._id), bill);
+    }
+    const receiptBills = Array.from(billById.values());
+
+    const billTypes = Array.from(
+      new Set(
+        receiptPayments
+          .map((p) => normalizeBillType(p?.billId?.billType || bill?.billType))
+          .filter(Boolean)
+      )
+    );
+    const computedBillType =
+      billTypes.length === 0
+        ? normalizeBillType(bill?.billType) || 'N/A'
+        : billTypes.length === 1
+        ? billTypes[0]
+        : `MULTIPLE FEES (${billTypes.length})`;
+
+    const aggregatedBillTotal = receiptBills.reduce(
+      (sum, b) => sum + (Number(b?.totalAmount) || 0),
+      0
+    );
+    const aggregatedPaidSoFar = receiptBills.reduce(
+      (sum, b) => sum + (Number(b?.paidAmount) || 0),
+      0
+    );
+    const aggregatedBalanceDue = receiptBills.reduce(
+      (sum, b) => sum + (Number(b?.dueAmount) || 0),
+      0
+    );
+
     const School = require('../models/School');
     const school = await School.findById(schoolId).lean();
 
@@ -568,7 +635,9 @@ exports.getBillReceipt = async (req, res) => {
         day: '2-digit', month: 'long', year: 'numeric'
       })],
       ['Payment Mode', payment.paymentMode],
-      ['Amount Paid', `Rs. ${(payment.amount || 0).toLocaleString('en-IN')}`],
+      ['Amount Paid', `Rs. ${receiptPayments
+        .reduce((sum, p) => sum + (Number(p?.amount) || 0), 0)
+        .toLocaleString('en-IN')}`],
     ];
 
     receiptRows.forEach(([label, value]) => {
@@ -599,11 +668,11 @@ exports.getBillReceipt = async (req, res) => {
     doc.moveDown(0.5);
 
     [['Bill Number',   bill?.billNumber || 'N/A'],
-     ['Bill Type',     bill?.billType || 'N/A'],
+     ['Bill Type',     computedBillType],
      ['Description',   bill?.description || 'N/A'],
-     ['Total Amount',  `Rs. ${(bill?.totalAmount || 0).toLocaleString('en-IN')}`],
-     ['Amount Paid',   `Rs. ${(bill?.paidAmount || 0).toLocaleString('en-IN')}`],
-     ['Balance Due',   `Rs. ${(bill?.dueAmount || 0).toLocaleString('en-IN')}`],
+     ['Total Amount',  `Rs. ${aggregatedBillTotal.toLocaleString('en-IN')}`],
+     ['Amount Paid',   `Rs. ${aggregatedPaidSoFar.toLocaleString('en-IN')}`],
+     ['Balance Due',   `Rs. ${aggregatedBalanceDue.toLocaleString('en-IN')}`],
      ['Bill Status',   bill?.status || 'N/A']].forEach(([label, value]) => {
       doc.fontSize(11).font('Helvetica-Bold')
         .text(label + ':', { continued: true, width: 160 });
@@ -664,7 +733,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
     // Base payments for this bill, newest first
     const billPayments = await Payment.find({ billId: bill._id, ...getSessionFilter(req) })
       .populate('collectedBy', 'name')
-      .populate('billId', 'billType description')
+      .populate('billId', 'billNumber billType description totalAmount paidAmount dueAmount status')
       .sort({ paymentDate: -1 })
       .lean();
 
@@ -685,7 +754,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
         ...getSessionFilter(req),
       })
         .populate('collectedBy', 'name')
-        .populate('billId', 'billType description')
+        .populate('billId', 'billNumber billType description totalAmount paidAmount dueAmount status')
         .sort({ paymentDate: -1 })
         .lean();
 
@@ -722,6 +791,53 @@ exports.getBillHtmlReceipt = async (req, res) => {
         <td>${parseRef(p.notes)}</td>
         <td class="amount">${fmt(p.amount)}</td>
       </tr>`).join('');
+
+    const normalizeBillType = (value) =>
+      String(value || '')
+        .trim()
+        .toUpperCase();
+
+    const receiptBillMap = new Map();
+    for (const p of receiptPayments) {
+      const billDoc = p?.billId && typeof p.billId === 'object' ? p.billId : null;
+      const billId = billDoc?._id || p?.billId;
+      const key = billId ? String(billId) : '';
+      if (!key || receiptBillMap.has(key)) continue;
+      if (billDoc) {
+        receiptBillMap.set(key, billDoc);
+      }
+    }
+    if (bill?._id && !receiptBillMap.has(String(bill._id))) {
+      receiptBillMap.set(String(bill._id), bill);
+    }
+    const receiptBills = Array.from(receiptBillMap.values());
+
+    const paidFeeTypes = Array.from(
+      new Set(
+        receiptPayments
+          .map((p) => normalizeBillType(p?.billId?.billType || bill?.billType))
+          .filter(Boolean)
+      )
+    );
+    const billTypeLabel =
+      paidFeeTypes.length === 0
+        ? normalizeBillType(bill?.billType) || 'N/A'
+        : paidFeeTypes.length === 1
+        ? paidFeeTypes[0]
+        : `MULTIPLE FEES (${paidFeeTypes.length})`;
+
+    const aggregatedBillTotal = receiptBills.reduce(
+      (sum, b) => sum + (Number(b?.totalAmount) || 0),
+      0
+    );
+    const aggregatedPaidSoFar = receiptBills.reduce(
+      (sum, b) => sum + (Number(b?.paidAmount) || 0),
+      0
+    );
+    const aggregatedBalanceDue = receiptBills.reduce(
+      (sum, b) => sum + (Number(b?.dueAmount) || 0),
+      0
+    );
 
     const totalPaid    = receiptPayments.reduce((s, p) => s + (p.amount || 0), 0);
     const receiptNums  = receiptPayments.map((p) => p.receiptNumber).join(', ');
@@ -1039,7 +1155,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
         </div>
         <div class="info-row">
           <span class="lbl">Bill Type</span>
-          <span class="val">${escHtml(bill.billType)}</span>
+          <span class="val">${escHtml(billTypeLabel)}</span>
         </div>
         <div class="info-row">
           <span class="lbl">Payment Mode</span>
@@ -1082,15 +1198,15 @@ exports.getBillHtmlReceipt = async (req, res) => {
       <div class="summary-box">
         <div class="summary-row">
           <span class="s-lbl">Bill Total</span>
-          <span class="s-val">${fmt(bill.totalAmount)}</span>
+          <span class="s-val">${fmt(aggregatedBillTotal)}</span>
         </div>
         <div class="summary-row">
           <span class="s-lbl">Paid So Far</span>
-          <span class="s-val">${fmt(bill.paidAmount)}</span>
+          <span class="s-val">${fmt(aggregatedPaidSoFar)}</span>
         </div>
         <div class="summary-row">
           <span class="s-lbl">Balance Due</span>
-          <span class="s-val">${fmt(bill.dueAmount)}</span>
+          <span class="s-val">${fmt(aggregatedBalanceDue)}</span>
         </div>
         <div class="summary-row total-row">
           <span class="s-lbl">This Receipt</span>
