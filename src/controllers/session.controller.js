@@ -934,6 +934,65 @@ const deleteSession = async (req, res) => {
   }
 };
 
+// GET /api/sessions/:id/stats
+const getSessionStats = async (req, res) => {
+  try {
+    const sessionId = req.params.id || req.params.sessionId;
+    const session = await AcademicSession.findById(sessionId).lean();
+    if (!session) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Session not found' });
+    }
+    if (!_isSchoolAllowed(req, session.schoolId)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, message: 'Access denied' });
+    }
+
+    const schoolId = session.schoolId;
+    const [
+      classes,
+      sections,
+      students,
+      teachers,
+      attendanceDaily,
+      attendanceSubject,
+      feePayments,
+      payments,
+      results,
+      promotedCount,
+      retainedCount,
+      graduatedCount,
+    ] = await Promise.all([
+      Class.countDocuments({ schoolId, sessionId }),
+      Section.countDocuments({ schoolId, sessionId }),
+      Student.countDocuments({ schoolId, sessionId }),
+      TeacherAssignment.countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentDailyAttendance').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentSubjectAttendance').countDocuments({ schoolId, sessionId }),
+      mongoose.model('FeePayment').countDocuments({ schoolId, sessionId }),
+      mongoose.model('Payment').countDocuments({ schoolId, sessionId }),
+      mongoose.model('Result').countDocuments({ schoolId, sessionId }),
+      AcademicHistory.countDocuments({ schoolId, sessionId, status: 'Promoted' }),
+      AcademicHistory.countDocuments({ schoolId, sessionId, status: 'Retained' }),
+      AcademicHistory.countDocuments({ schoolId, sessionId, status: 'Graduated' }),
+    ]);
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: {
+        classes,
+        sections,
+        students,
+        teachers,
+        attendanceRecords: attendanceDaily + attendanceSubject,
+        feeCollections: feePayments + payments,
+        results,
+        promotionStatus: `Promoted: ${promotedCount}, Retained: ${retainedCount}, Graduated: ${graduatedCount}`,
+      },
+    });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createSession,
   listSessions,
@@ -946,4 +1005,5 @@ module.exports = {
   activateSession,
   closeSession,
   deleteSession,
+  getSessionStats,
 };

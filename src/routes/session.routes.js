@@ -9,6 +9,7 @@ const {
   duplicateSessionSetup,
   getSessionReadiness,
   activateSession,
+  getSessionStats,
   closeSession,
   deleteSession
 } = require('../controllers/session.controller.js');
@@ -90,6 +91,12 @@ router.post(
   '/:id/close',
   requireMinRole(USER_ROLES.PRINCIPAL),
   closeSession
+);
+
+router.get(
+  '/:id/stats',
+  requireMinRole(USER_ROLES.PRINCIPAL),
+  getSessionStats
 );
 
 module.exports = router;
