@@ -1353,7 +1353,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
   @media print {
     html, body {
       width: 100%;
-      height: auto;
+      height: 100%;
       min-height: 0;
       overflow: visible;
       background: #fff;
@@ -1370,6 +1370,9 @@ exports.getBillHtmlReceipt = async (req, res) => {
       max-width: 100%;
       width: 100%;
       margin: 0;
+      min-height: calc(297mm - 20mm);
+      display: flex;
+      flex-direction: column;
       page-break-inside: avoid;
       break-inside: avoid;
       overflow: visible;
@@ -1440,6 +1443,11 @@ exports.getBillHtmlReceipt = async (req, res) => {
     }
 
     .body { padding: 8px 10px; }
+    .body {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
 
     .info-grid {
       margin-bottom: 8px;
@@ -1497,6 +1505,8 @@ exports.getBillHtmlReceipt = async (req, res) => {
       gap: 10px;
       align-items: flex-end;
       flex-wrap: nowrap;
+      margin-top: auto;
+      padding-bottom: 6mm;
     }
     .footer-note {
       font-size: 9px;
