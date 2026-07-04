@@ -5,6 +5,7 @@ const {
   executeAllPromotion
 } = require('../controllers/promotion.controller.js');
 const { authenticate } = require('../middlewares/auth.middleware.js');
+const { capturePromotionExecute } = require('../middlewares/activityCapture.middleware');
 const { requireRole } = require('../middlewares/role.middleware.js');
 const { enforceSchoolIsolation } = require('../middlewares/school.middleware.js');
 const { USER_ROLES } = require('../config/constants.js');
@@ -24,6 +25,7 @@ router.post(
   authenticate,
   enforceSchoolIsolation,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  capturePromotionExecute,
   executePromotion
 );
 
@@ -32,6 +34,7 @@ router.post(
   authenticate,
   enforceSchoolIsolation,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  capturePromotionExecute,
   executeAllPromotion
 );
 

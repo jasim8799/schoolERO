@@ -16,6 +16,10 @@ const { checkSchoolStatus } = require('../middlewares/school.middleware.js');
 const Bill = require('../models/Bill');
 const Student = require('../models/Student');
 const Parent = require('../models/Parent');
+const {
+  captureBillCreate,
+  captureBillPayment,
+} = require('../middlewares/activityCapture.middleware');
 
 // Token-from-query middleware (for iframe receipt requests that cannot send headers)
 const injectTokenFromQuery = (req, res, next) => {
@@ -117,6 +121,7 @@ router.get(
 router.post(
   '/',
   requireRole('PRINCIPAL', 'OPERATOR'),
+  captureBillCreate,
   createBill
 );
 
@@ -124,6 +129,7 @@ router.post(
 router.post(
   '/:billId/pay',
   requireRole('PRINCIPAL', 'OPERATOR', 'PARENT'),
+  captureBillPayment,
   payBill
 );
 

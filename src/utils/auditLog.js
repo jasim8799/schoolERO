@@ -116,6 +116,7 @@ const _severity = severity || _deriveSeverity(action, details);
       action,
       category: _category,
       userId: userId || null,
+      userName: resolvedUserName || null,
       role: role || 'SYSTEM',
       entityType: entityType || 'SYSTEM',
       entityId: entityId || null,

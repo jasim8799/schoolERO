@@ -5,6 +5,11 @@ const { authenticate }  = require('../middlewares/auth.middleware');
 const { requireRole }   = require('../middlewares/role.middleware');
 const { USER_ROLES }    = require('../config/constants');
 const admissionCtrl     = require('../controllers/admission.controller');
+const {
+  captureAdmissionCreate,
+  captureAdmissionUpdate,
+  captureAdmissionDelete,
+} = require('../middlewares/activityCapture.middleware');
 const { uploadDocuments } = require('../controllers/upload.controller');
 const fileUpload = require('express-fileupload');
 
@@ -21,6 +26,7 @@ router.post(
   '/',
   authenticate,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  captureAdmissionCreate,
   admissionCtrl.createAdmission
 );
 
@@ -50,6 +56,7 @@ router.patch(
   '/:id',
   authenticate,
   requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  captureAdmissionUpdate,
   admissionCtrl.updateAdmission
 );
 
@@ -67,6 +74,7 @@ router.delete(
   '/:id',
   authenticate,
   requireRole(USER_ROLES.PRINCIPAL),
+  captureAdmissionDelete,
   admissionCtrl.deleteAdmission
 );
 

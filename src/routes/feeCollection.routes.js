@@ -7,6 +7,7 @@ const {
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requireRole } = require('../middlewares/role.middleware');
 const { checkSchoolStatus } = require('../middlewares/school.middleware');
+const { captureFeeCollection } = require('../middlewares/activityCapture.middleware');
 
 const router = express.Router();
 router.use(authenticate);
@@ -15,6 +16,6 @@ router.use(requireRole('PRINCIPAL', 'OPERATOR'));
 
 router.get('/search', searchStudents);
 router.get('/student/:studentId/dues', getStudentDues);
-router.post('/collect', collectPayment);
+router.post('/collect', captureFeeCollection, collectPayment);
 
 module.exports = router;

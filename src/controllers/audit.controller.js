@@ -65,6 +65,73 @@ function _mapDevice(log) {
   return 'Chrome/Linux';
 }
 
+function _normalizeRole(role) {
+  return (role || '').toString().toUpperCase();
+}
+
+function _moduleFromLog(log) {
+  if (log.details?.module) return log.details.module;
+
+  const actorRole = _normalizeRole(log.details?.role || log.details?.targetRole || log.details?.createdRole);
+  if (log.entityType === 'USER' && actorRole) {
+    if (actorRole === 'OPERATOR') return 'Operator';
+    if (actorRole === 'TEACHER') return 'Teacher';
+    if (actorRole === 'PARENT') return 'Parent';
+    if (actorRole === 'STUDENT') return 'Student';
+  }
+
+  const action = (log.action || '').toUpperCase();
+  const entityType = (log.entityType || '').toUpperCase();
+
+  if (/ADMISSION/.test(action) || entityType === 'ADMISSION') return 'Admission';
+  if (/ATTENDANCE/.test(action) || entityType.startsWith('ATTENDANCE')) return 'Attendance';
+  if (/HOMEWORK/.test(action) || entityType === 'HOMEWORK') return 'Homework';
+  if (/NOTICE/.test(action) || entityType === 'NOTICE') return 'Notice';
+  if (/EXAM|RESULT|ADMIT_CARD|QUESTION_PAPER|SEATING/.test(action) || ['EXAM', 'EXAM_FORM', 'EXAM_PAYMENT', 'RESULT', 'ADMIT_CARD', 'SEATING', 'QUESTION_PAPER'].includes(entityType)) return 'Exams';
+  if (/FEE|BILL|PAYMENT/.test(action) || ['FEE_PAYMENT', 'FEE_STRUCTURE', 'FEE_ASSIGNMENT', 'BILL', 'BILLING'].includes(entityType)) return 'Fees';
+  if (/SALARY/.test(action) || entityType.startsWith('SALARY')) return 'Salary';
+  if (/EXPENSE/.test(action) || entityType === 'EXPENSE') return 'Expense';
+  if (/TRANSPORT/.test(action) || entityType === 'TRANSPORT') return 'Transport';
+  if (/HOSTEL|ROOM/.test(action) || entityType === 'HOSTEL') return 'Hostel';
+  if (/PROMOTION/.test(action) || entityType === 'PROMOTION') return 'Promotion';
+  if (/TC_ISSUED|TC_REQUESTED/.test(action) || entityType === 'TC') return 'Transfer Certificate';
+  if (/LEAVE/.test(action) || entityType === 'LEAVE') return 'Leave';
+  if (/AUTOMATION/.test(action) || entityType === 'AUTOMATION') return 'Automation';
+  if (/TEACHER/.test(action) || entityType === 'TEACHER') return 'Teacher';
+  if (/PARENT/.test(action) || entityType === 'PARENT') return 'Parent';
+  if (/STUDENT/.test(action) || entityType === 'STUDENT') return 'Student';
+  if (/USER|OPERATOR|PRINCIPAL/.test(action) || entityType === 'USER') return 'User';
+
+  return entityType || _mapCategory(log) || 'System';
+}
+
+function _actionLabel(log) {
+  if (log.details?.activityAction) return log.details.activityAction;
+  const action = (log.action || '').toUpperCase();
+  if (/(^|_)CREATED$/.test(action) || /_CREATED_/.test(action)) return 'Created';
+  if (/(^|_)UPDATED$/.test(action) || /_UPDATED_/.test(action)) return 'Updated';
+  if (/(^|_)DELETED$/.test(action)) return 'Deleted';
+  if (/ASSIGNED/.test(action)) return 'Assigned';
+  if (/REJECTED/.test(action)) return 'Rejected';
+  if (/APPROVED/.test(action)) return 'Approved';
+  if (/COLLECTED/.test(action)) return 'Collected';
+  if (/PAID|PROCESSED/.test(action)) return 'Paid';
+  if (/GENERATED/.test(action)) return 'Generated';
+  if (/EXECUTED|TRIGGERED/.test(action)) return 'Executed';
+  if (/ISSUED/.test(action)) return 'Issued';
+  if (/APPLIED/.test(action)) return 'Applied';
+  if (/LOGIN/.test(action)) return 'Login';
+  if (/LOGOUT/.test(action)) return 'Logout';
+  return action.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function _statusLabel(log) {
+  const severity = _mapSeverity(log);
+  if (severity === 'CRITICAL' || severity === 'ERROR') return 'Alert';
+  if (severity === 'WARNING') return 'Warning';
+  return 'Success';
+}
+
 function _formatLogForFrontend(log, idx) {
   const severity = _mapSeverity(log);
   const category = _mapCategory(log);
@@ -82,13 +149,22 @@ function _formatLogForFrontend(log, idx) {
     timestamp: log.createdAt,
     level: severity,
     severity,
+    role: log.role || 'SYSTEM',
+    module: _moduleFromLog(log),
+    actionLabel: _actionLabel(log),
+    status: _statusLabel(log),
     path: log.endpoint || `/api/${category.toLowerCase()}`,
     endpoint: log.endpoint || `/api/${category.toLowerCase()}`,
     action: log.action,
     entityType: log.entityType,
+    entityId: log.entityId,
+    entityName: log.entityName || log.details?.entityName || null,
     details: log.description || log.message || log.action?.replace(/_/g, ' ') || 'System event',
+    rawDetails: log.details || {},
+    description: log.description || log.message || log.action?.replace(/_/g, ' ') || 'System event',
     message: log.description || log.message || log.action?.replace(/_/g, ' ') || 'System event',
     user: log.userId ? { name: log.details?.userName || 'system', _id: log.userId } : { name: 'system' },
+    performedBy: log.details?.userName || log.userName || 'system',
     service,
     requestId,
     ipAddress: ip,
@@ -104,6 +180,7 @@ function _formatLogForFrontend(log, idx) {
 const getAuditLogsController = async (req, res) => {
   try {
     const { role, schoolId } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
     const allowedRoles = [USER_ROLES.PRINCIPAL, USER_ROLES.SUPER_ADMIN, USER_ROLES.OPERATOR];
     if (!allowedRoles.includes(role)) {
       return res.status(403).json({ success: false, message: 'Access denied. Insufficient permissions.' });
@@ -117,13 +194,15 @@ const getAuditLogsController = async (req, res) => {
       severity,
       service,
       category,
+      search,
+      actorRole,
       startDate,
       endDate,
       limit = 50,
       skip = 0,
     } = req.query;
 
-    const cacheKey = `audit:feed:${role}:${level}:${severity}:${service}:${category}:${skip}:${limit}`;
+    const cacheKey = `audit:feed:${role}:${normalizedSchoolId || 'global'}:${level}:${severity}:${service}:${category}:${action || 'ALL'}:${entityType || 'ALL'}:${actorRole || 'ALL'}:${search || ''}:${startDate || ''}:${endDate || ''}:${skip}:${limit}`;
     const cached = await redis.get(cacheKey).catch(() => null);
     if (cached && !req.query.nocache) {
       return res.json({ success: true, ...JSON.parse(cached), cached: true });
@@ -131,16 +210,28 @@ const getAuditLogsController = async (req, res) => {
 
     const query = {};
     if (role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR) {
-      query.schoolId = schoolId;
+      query.schoolId = normalizedSchoolId;
     }
 
     if (action) query.action = action;
     if (entityType) query.entityType = entityType;
     if (userId) query.userId = userId;
+    if (actorRole && actorRole !== 'ALL') query.role = String(actorRole).toUpperCase();
     if (severity && severity !== 'ALL') query.severity = String(severity).toUpperCase();
     if (level === 'error') query.severity = { $in: ['ERROR', 'CRITICAL'] };
     if (service && service !== 'ALL') query.sourceService = service;
     if (category && category !== 'All') query.category = category;
+    if (search) {
+      query.$or = [
+        { action: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { entityType: { $regex: search, $options: 'i' } },
+        { entityName: { $regex: search, $options: 'i' } },
+        { userName: { $regex: search, $options: 'i' } },
+        { 'details.userName': { $regex: search, $options: 'i' } },
+        { 'details.entityName': { $regex: search, $options: 'i' } },
+      ];
+    }
 
     if (startDate || endDate) {
       query.createdAt = {};
@@ -152,17 +243,17 @@ const getAuditLogsController = async (req, res) => {
     const parsedSkip = parseInt(skip, 10) || 0;
 
     const dayAgo = new Date(Date.now() - 86400000);
-    const weekAgo = new Date(Date.now() - 7 * 86400000);
+    const baseQuery = { ...query };
 
     const [logs, totalCount, totalEvents24h, criticalCount, errorCount, failedAuthCount, activeSessions, weeklyLogCount, infraMetrics, threatCards] = await Promise.all([
-      AuditLog.find({ ...query, createdAt: { $gte: weekAgo } }).sort({ createdAt: -1 }).skip(parsedSkip).limit(parsedLimit).lean(),
-      AuditLog.countDocuments({ ...query, createdAt: { $gte: weekAgo } }),
-      AuditLog.countDocuments({ createdAt: { $gte: dayAgo } }),
-      AuditLog.countDocuments({ severity: 'CRITICAL', createdAt: { $gte: dayAgo } }),
-      AuditLog.countDocuments({ severity: 'ERROR', createdAt: { $gte: dayAgo } }),
-      AuditLog.countDocuments({ action: { $in: ['LOGIN_FAILED', 'UNAUTHORIZED_ACCESS'] }, createdAt: { $gte: dayAgo } }),
+      AuditLog.find(baseQuery).sort({ createdAt: -1 }).skip(parsedSkip).limit(parsedLimit).lean(),
+      AuditLog.countDocuments(baseQuery),
+      AuditLog.countDocuments({ ...(role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR ? { schoolId: normalizedSchoolId } : {}), createdAt: { $gte: dayAgo } }),
+      AuditLog.countDocuments({ ...(role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR ? { schoolId: normalizedSchoolId } : {}), severity: 'CRITICAL', createdAt: { $gte: dayAgo } }),
+      AuditLog.countDocuments({ ...(role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR ? { schoolId: normalizedSchoolId } : {}), severity: 'ERROR', createdAt: { $gte: dayAgo } }),
+      AuditLog.countDocuments({ ...(role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR ? { schoolId: normalizedSchoolId } : {}), action: { $in: ['LOGIN_FAILED', 'UNAUTHORIZED_ACCESS'] }, createdAt: { $gte: dayAgo } }),
       require('../models/LoginSession').countDocuments({ isActive: true }).catch(() => 218),
-      AuditLog.countDocuments({ createdAt: { $gte: weekAgo } }),
+      AuditLog.countDocuments({ ...(role === USER_ROLES.PRINCIPAL || role === USER_ROLES.OPERATOR ? { schoolId: normalizedSchoolId } : {}) }),
       getInfrastructureMetrics(),
       getThreatIntelligence(),
     ]);
