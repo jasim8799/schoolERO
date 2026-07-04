@@ -16,7 +16,7 @@ router.post(
   '/preview',
   authenticate,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  requireRole(USER_ROLES.PRINCIPAL),
   previewPromotion
 );
 
@@ -24,7 +24,7 @@ router.post(
   '/execute',
   authenticate,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  requireRole(USER_ROLES.PRINCIPAL),
   capturePromotionExecute,
   executePromotion
 );
@@ -33,7 +33,7 @@ router.post(
   '/execute-all',
   authenticate,
   enforceSchoolIsolation,
-  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  requireRole(USER_ROLES.PRINCIPAL),
   capturePromotionExecute,
   executeAllPromotion
 );
