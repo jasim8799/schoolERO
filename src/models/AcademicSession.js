@@ -62,6 +62,9 @@ academicSessionSchema.index(
   { unique: true }
 );
 
+academicSessionSchema.index({ schoolId: 1, isActive: 1, lifecycleStatus: 1 });
+academicSessionSchema.index({ schoolId: 1, lifecycleStatus: 1 });
+
 // Pre-save middleware to ensure only one active session per school
 academicSessionSchema.pre('save', async function(next) {
   if (this.isActive) {

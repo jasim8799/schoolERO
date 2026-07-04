@@ -50,6 +50,129 @@ const _invalidateSessionCaches = async (schoolId) => {
   }
 };
 
+const _activationTimer = () => {
+  const startedAt = Date.now();
+  const nowIso = () => new Date().toISOString();
+
+  const begin = (step) => {
+    const stepStart = Date.now();
+    const startIso = nowIso();
+    logger.info(`[SESSION_ACTIVATE_TIMING] Step=${step} Start=${startIso}`);
+    return {
+      finish: (meta = '') => {
+        const finishedAt = Date.now();
+        const finishIso = nowIso();
+        const duration = finishedAt - stepStart;
+        const metaPart = meta ? ` Meta=${meta}` : '';
+        logger.info(
+          `[SESSION_ACTIVATE_TIMING] Step=${step} Finish=${finishIso} DurationMs=${duration}${metaPart}`
+        );
+      }
+    };
+  };
+
+  const total = () => {
+    logger.info(
+      `[SESSION_ACTIVATE_TIMING] Step=TOTAL Finish=${nowIso()} DurationMs=${Date.now() - startedAt}`
+    );
+  };
+
+  return { begin, total };
+};
+
+const _runPostActivationTasks = ({ req, schoolId, targetSession, previousActiveId, previousActiveName }) => {
+  setImmediate(async () => {
+    const timer = _activationTimer();
+    try {
+      const tasks = [];
+
+      tasks.push((async () => {
+        const cacheStep = timer.begin('BackgroundCacheInvalidation');
+        await _invalidateSessionCaches(_asId(schoolId));
+        cacheStep.finish(`SchoolId=${_asId(schoolId)}`);
+      })());
+
+      tasks.push((async () => {
+        const recipientsStep = timer.begin('BackgroundLoadRecipients');
+        const recipients = await User.find(
+          {
+            schoolId,
+            role: { $in: ['PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT'] },
+            status: 'active',
+            isDeleted: { $ne: true }
+          },
+          { _id: 1, role: 1 }
+        ).lean();
+        recipientsStep.finish(`Recipients=${recipients.length}`);
+
+        if (recipients.length > 0) {
+          const queueStep = timer.begin('BackgroundQueueNotifications');
+          const NotificationQueue = mongoose.model('NotificationQueue');
+          const docs = recipients.map((u) => ({
+            schoolId,
+            recipientId: u._id,
+            recipientRole: u.role,
+            type: 'GENERAL',
+            title: `Academic Session ${targetSession.name} has started.`,
+            body: `New Academic Session Activated ${targetSession.name}. School data has been refreshed.`,
+            relatedEntityId: targetSession._id,
+            relatedEntityType: 'AcademicSession'
+          }));
+          await NotificationQueue.insertMany(docs, { ordered: false });
+          queueStep.finish(`Queued=${docs.length}`);
+        }
+      })());
+
+      tasks.push((async () => {
+        const auditQueueStep = timer.begin('BackgroundAuditQueued');
+        const auditPayload = {
+          action: 'SESSION_ACTIVATED',
+          userId: req.user.userId,
+          schoolId,
+          details: {
+            oldSessionId: previousActiveId || null,
+            oldSessionName: previousActiveName || null,
+            newSessionId: targetSession._id,
+            newSessionName: targetSession.name,
+          },
+          req
+        };
+        setImmediate(() => {
+          const auditExecStep = timer.begin('BackgroundAuditExecute');
+          auditLog(auditPayload)
+            .then(() => auditExecStep.finish())
+            .catch((err) => {
+              auditExecStep.finish('Error');
+              logger.error(`[SESSION_ACTIVATE_BG_AUDIT] ${err.message}`);
+            });
+        });
+        auditQueueStep.finish();
+      })());
+
+      tasks.push((async () => {
+        const socketStep = timer.begin('BackgroundSocketBroadcast');
+        setImmediate(() => {
+          if (global.io?.emit) {
+            global.io.emit('session:activated', {
+              schoolId: _asId(schoolId),
+              sessionId: _asId(targetSession._id),
+              sessionName: targetSession.name,
+              previousSessionId: previousActiveId ? _asId(previousActiveId) : null,
+            });
+          }
+          socketStep.finish();
+        });
+      })());
+
+      await Promise.allSettled(tasks);
+    } catch (bgError) {
+      logger.error(`[SESSION_ACTIVATE_BG] ${bgError.message}`);
+    } finally {
+      timer.total();
+    }
+  });
+};
+
 // Create Academic Session
 const createSession = async (req, res) => {
   try {
@@ -690,133 +813,162 @@ const getSessionReadiness = async (req, res) => {
 };
 
 const activateSession = async (req, res) => {
+  const timer = _activationTimer();
   try {
+    const validationStep = timer.begin('ValidateRoleAndInput');
     const sessionId = req.params.sessionId || req.params.id;
     const { schoolId, role } = req.user;
 
     if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
+      validationStep.finish('ForbiddenRole');
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         message: 'Only Principal or Operator can activate sessions'
       });
     }
+    validationStep.finish(`SessionId=${sessionId}`);
 
+    const readinessStep = timer.begin('ValidateSessionReadiness');
     const classCount = await Class.countDocuments({ sessionId, schoolId, status: 'active' });
     if (classCount === 0) {
+      readinessStep.finish('Classes=0');
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Cannot activate: no classes set up for this session. Run session setup first.'
       });
     }
+    readinessStep.finish(`Classes=${classCount}`);
 
+    const loadTargetStep = timer.begin('LoadTargetSession');
     const targetSession = await AcademicSession.findOne({ _id: sessionId, schoolId });
     if (!targetSession) {
+      loadTargetStep.finish('TargetSessionNotFound');
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'Session not found'
       });
     }
+    loadTargetStep.finish(`TargetSession=${_asId(targetSession._id)}`);
 
+    const schoolStep = timer.begin('LoadSchoolSessionPolicy');
     const school = await School.findById(schoolId).select('forceLogoutOnSessionChange');
     const shouldForceLogout = !!school?.forceLogoutOnSessionChange;
+    schoolStep.finish(`ForceLogoutOnSessionChange=${shouldForceLogout}`);
 
     const mongoSession = await mongoose.startSession();
     let previousActive = null;
 
     try {
-      await mongoSession.withTransaction(async () => {
-        previousActive = await AcademicSession.findOne({
-          schoolId,
-          isActive: true,
-          _id: { $ne: sessionId }
-        }).session(mongoSession);
+      const txStart = timer.begin('StartTransaction');
+      mongoSession.startTransaction();
+      txStart.finish();
 
-        await AcademicSession.updateMany(
-          { schoolId, _id: { $ne: sessionId } },
-          { isActive: false },
-          { session: mongoSession }
-        );
+      const previousStep = timer.begin('LoadCurrentActiveSession');
+      previousActive = await AcademicSession.findOne({
+        schoolId,
+        isActive: true,
+        _id: { $ne: sessionId }
+      }).session(mongoSession).lean();
+      previousStep.finish(`PreviousActive=${previousActive?._id ? _asId(previousActive._id) : 'none'}`);
 
-        targetSession.isActive = true;
-        targetSession.lifecycleStatus = 'ACTIVE';
-        targetSession.activatedAt = new Date();
-        targetSession.activatedBy = req.user.userId;
-        await targetSession.save({ session: mongoSession });
+      const deactivateStep = timer.begin('DeactivateOtherSessions');
+      await AcademicSession.updateMany(
+        { schoolId, _id: { $ne: sessionId } },
+        { isActive: false },
+        { session: mongoSession }
+      );
+      deactivateStep.finish();
 
-        if (previousActive) {
-          previousActive.lifecycleStatus = 'CLOSED';
-          previousActive.closedAt = new Date();
-          previousActive.isActive = false;
-          await previousActive.save({ session: mongoSession });
-        }
+      const activateStep = timer.begin('ActivateTargetSession');
+      await AcademicSession.updateOne(
+        { _id: targetSession._id, schoolId },
+        {
+          $set: {
+            isActive: true,
+            lifecycleStatus: 'ACTIVE',
+            activatedAt: new Date(),
+            activatedBy: req.user.userId,
+          }
+        },
+        { session: mongoSession }
+      );
+      activateStep.finish();
 
-        await School.findByIdAndUpdate(
-          schoolId,
+      if (previousActive?._id) {
+        const closePrevStep = timer.begin('ClosePreviousActiveSession');
+        await AcademicSession.updateOne(
+          { _id: previousActive._id, schoolId },
           {
-            activeSessionId: targetSession._id,
-            currentSessionId: targetSession._id,
-            $inc: { sessionVersion: 1 },
-            ...(shouldForceLogout ? { forceLogoutAt: new Date() } : {})
+            $set: {
+              lifecycleStatus: 'CLOSED',
+              closedAt: new Date(),
+              isActive: false,
+            }
           },
           { session: mongoSession }
         );
-      });
+        closePrevStep.finish(`PreviousClosed=${_asId(previousActive._id)}`);
+      }
+
+      const schoolUpdateStep = timer.begin('UpdateSchoolSessionVersion');
+      await School.findByIdAndUpdate(
+        schoolId,
+        {
+          activeSessionId: targetSession._id,
+          currentSessionId: targetSession._id,
+          $inc: { sessionVersion: 1 },
+        },
+        { session: mongoSession }
+      );
+      schoolUpdateStep.finish();
+
+      const commitStep = timer.begin('CommitTransaction');
+      await mongoSession.commitTransaction();
+      commitStep.finish();
+    } catch (transactionError) {
+      const abortStep = timer.begin('AbortTransaction');
+      await mongoSession.abortTransaction().catch(() => {});
+      abortStep.finish();
+      throw transactionError;
     } finally {
+      const endStep = timer.begin('EndTransactionSession');
       await mongoSession.endSession();
+      endStep.finish();
     }
 
-    await _invalidateSessionCaches(_asId(schoolId));
-
-    // In-app notification for all users in this school.
-    const recipients = await User.find(
-      {
-        schoolId,
-        role: { $in: ['PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT'] },
-        status: 'active',
-        isDeleted: { $ne: true }
-      },
-      { _id: 1, role: 1 }
-    ).lean();
-
-    if (recipients.length > 0) {
-      const NotificationQueue = mongoose.model('NotificationQueue');
-      const docs = recipients.map((u) => ({
-        schoolId,
-        recipientId: u._id,
-        recipientRole: u.role,
-        type: 'GENERAL',
-        title: `Academic Session ${targetSession.name} has started.`,
-        body: `New Academic Session Activated ${targetSession.name}. School data has been refreshed.`,
-        relatedEntityId: targetSession._id,
-        relatedEntityType: 'AcademicSession'
-      }));
-      await NotificationQueue.insertMany(docs, { ordered: false });
-    }
-
-    await auditLog({
-      action: 'SESSION_ACTIVATED',
-      userId: req.user.userId,
-      schoolId,
-      details: {
-        oldSessionId: previousActive?._id || null,
-        newSessionId: targetSession._id,
-        newSessionName: targetSession.name,
-      },
-      req
-    });
-
-    return res.status(HTTP_STATUS.OK).json({
+    const responseStep = timer.begin('SendHttpResponse');
+    const responsePayload = {
       success: true,
-      message: shouldForceLogout
-        ? `Session "${targetSession.name}" activated. All users must re-login.`
-        : `Session "${targetSession.name}" activated. School context refreshed without logout.`,
+      message: 'Academic session activated successfully',
       data: {
-        session: targetSession,
+        session: {
+          ...targetSession.toObject(),
+          isActive: true,
+          lifecycleStatus: 'ACTIVE',
+          activatedBy: req.user.userId,
+        },
         previousClosedSessionId: previousActive?._id || null,
         forceLogoutOnSessionChange: shouldForceLogout,
       }
+    };
+    res.status(HTTP_STATUS.OK).json(responsePayload);
+    responseStep.finish();
+
+    _runPostActivationTasks({
+      req,
+      schoolId,
+      targetSession: {
+        _id: targetSession._id,
+        name: targetSession.name,
+      },
+      previousActiveId: previousActive?._id || null,
+      previousActiveName: previousActive?.name || null,
     });
+
+    timer.total();
+    return;
   } catch (error) {
+    timer.total();
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: error.message

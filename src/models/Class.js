@@ -33,6 +33,7 @@ const classSchema = new mongoose.Schema({
 
 // Compound unique index: one class name per session per school
 classSchema.index({ name: 1, schoolId: 1, sessionId: 1 }, { unique: true });
+classSchema.index({ schoolId: 1, sessionId: 1, status: 1 });
 
 const Class = mongoose.model('Class', classSchema);
 
