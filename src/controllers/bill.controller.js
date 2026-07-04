@@ -715,6 +715,8 @@ exports.getBillHtmlReceipt = async (req, res) => {
     const { schoolId } = req.user;
 
     const School = require('../models/School');
+    const StudentFeeAssignment = require('../models/StudentFeeAssignment');
+    const StudentFee = require('../models/StudentFee');
 
     const [bill, school] = await Promise.all([
       Bill.findOne({ _id: id, schoolId, ...getSessionFilter(req) })
@@ -733,7 +735,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
     // Base payments for this bill, newest first
     const billPayments = await Payment.find({ billId: bill._id, ...getSessionFilter(req) })
       .populate('collectedBy', 'name')
-      .populate('billId', 'billNumber billType description totalAmount paidAmount dueAmount status')
+      .populate('billId', 'billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status')
       .sort({ paymentDate: -1 })
       .lean();
 
@@ -754,7 +756,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
         ...getSessionFilter(req),
       })
         .populate('collectedBy', 'name')
-        .populate('billId', 'billNumber billType description totalAmount paidAmount dueAmount status')
+        .populate('billId', 'billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status')
         .sort({ paymentDate: -1 })
         .lean();
 
@@ -775,21 +777,131 @@ exports.getBillHtmlReceipt = async (req, res) => {
         day: '2-digit', month: 'long', year: 'numeric',
       });
 
+    const fmtMonth = (monthStr) => {
+      if (!monthStr || typeof monthStr !== 'string') return '—';
+      const [y, m] = monthStr.split('-').map((v) => Number(v));
+      if (!y || !m || m < 1 || m > 12) return '—';
+      return new Date(y, m - 1, 1).toLocaleDateString('en-IN', {
+        month: 'long',
+        year: 'numeric',
+      });
+    };
+
+    const humanizeToken = (value) =>
+      String(value || '')
+        .trim()
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
     // Parse ref number from notes field ("Ref: XXXX | ...")
     const parseRef = (notes = '') => {
       const m = notes.match(/Ref:\s*([^|]+)/);
       return m ? m[1].trim() : '—';
     };
 
+    const assignmentSourceIds = [];
+    const studentFeeSourceIds = [];
+    for (const p of receiptPayments) {
+      const b = p?.billId;
+      if (!b || typeof b !== 'object') continue;
+      const sourceId = b.sourceId ? String(b.sourceId) : '';
+      if (!sourceId) continue;
+      if (b.sourceType === 'StudentFeeAssignment') {
+        assignmentSourceIds.push(sourceId);
+      } else if (b.sourceType === 'StudentFee') {
+        studentFeeSourceIds.push(sourceId);
+      }
+    }
+
+    const [assignmentDocs, studentFeeDocs] = await Promise.all([
+      assignmentSourceIds.length
+        ? StudentFeeAssignment.find({ _id: { $in: assignmentSourceIds } })
+            .populate('feeStructureId', 'name')
+            .select('_id month feeStructureId')
+            .lean()
+        : Promise.resolve([]),
+      studentFeeSourceIds.length
+        ? StudentFee.find({ _id: { $in: studentFeeSourceIds } })
+            .populate('feeStructureId', 'name')
+            .select('_id feeStructureId')
+            .lean()
+        : Promise.resolve([]),
+    ]);
+
+    const assignmentMetaById = new Map(
+      assignmentDocs.map((doc) => [
+        String(doc._id),
+        {
+          feeName: doc?.feeStructureId?.name || '',
+          billingMonth: fmtMonth(doc?.month),
+        },
+      ])
+    );
+    const studentFeeMetaById = new Map(
+      studentFeeDocs.map((doc) => [
+        String(doc._id),
+        {
+          feeName: doc?.feeStructureId?.name || '',
+          billingMonth: '—',
+        },
+      ])
+    );
+
+    const deriveLineMeta = (paymentLine) => {
+      const billDoc = paymentLine?.billId && typeof paymentLine.billId === 'object'
+        ? paymentLine.billId
+        : null;
+      const sourceType = billDoc?.sourceType || '';
+      const sourceId = billDoc?.sourceId ? String(billDoc.sourceId) : '';
+      const fromAssignment = sourceId && sourceType === 'StudentFeeAssignment'
+        ? assignmentMetaById.get(sourceId)
+        : null;
+      const fromStudentFee = sourceId && sourceType === 'StudentFee'
+        ? studentFeeMetaById.get(sourceId)
+        : null;
+
+      const feeNameFromSource = fromAssignment?.feeName || fromStudentFee?.feeName || '';
+      const billingMonth = fromAssignment?.billingMonth || fromStudentFee?.billingMonth || '—';
+      const billType = humanizeToken(billDoc?.billType || bill?.billType || '');
+      const description = (billDoc?.description || bill?.description || '').toString().trim();
+
+      const feeType = feeNameFromSource || billType || description || 'Fee';
+      return {
+        feeType,
+        description: description || feeType,
+        billingMonth,
+      };
+    };
+
+    const receiptLines = receiptPayments
+      .map((p) => {
+        const amount = Number(p?.amount || 0);
+        if (amount <= 0) return null;
+        const meta = deriveLineMeta(p);
+        return {
+          feeType: meta.feeType,
+          description: meta.description,
+          billingMonth: meta.billingMonth,
+          paymentDate: fmtDate(p.paymentDate),
+          paymentMode: p.paymentMode || '—',
+          reference: parseRef(p.notes),
+          amount,
+        };
+      })
+      .filter(Boolean);
+
     // Build fee-breakdown rows — one row per payment line
-    const tableRows = receiptPayments.map((p) => `
+    const tableRows = receiptLines.map((line) => `
       <tr>
-        <td>${p.billId?.billType || bill.billType}</td>
-        <td>${p.billId?.description || bill.description}</td>
-        <td>${fmtDate(p.paymentDate)}</td>
-        <td>${p.paymentMode}</td>
-        <td>${parseRef(p.notes)}</td>
-        <td class="amount">${fmt(p.amount)}</td>
+        <td>${escHtml(line.feeType)}</td>
+        <td>${escHtml(line.description)}</td>
+        <td>${escHtml(line.billingMonth)}</td>
+        <td>${escHtml(line.paymentDate)}</td>
+        <td>${escHtml(line.paymentMode)}</td>
+        <td>${escHtml(line.reference)}</td>
+        <td class="amount">${fmt(line.amount)}</td>
       </tr>`).join('');
 
     const normalizeBillType = (value) =>
@@ -842,6 +954,17 @@ exports.getBillHtmlReceipt = async (req, res) => {
     const totalPaid    = receiptPayments.reduce((s, p) => s + (p.amount || 0), 0);
     const receiptNums  = receiptPayments.map((p) => p.receiptNumber).join(', ');
     const printDate    = fmtDate(new Date());
+    const alreadyPaid = Math.max(aggregatedPaidSoFar - totalPaid, 0);
+    const discountTotal = receiptLines.reduce((sum, line) => {
+      const hay = `${line.feeType} ${line.description}`.toLowerCase();
+      return hay.includes('discount') ? sum + line.amount : sum;
+    }, 0);
+    const lateFineTotal = receiptLines.reduce((sum, line) => {
+      const hay = `${line.feeType} ${line.description}`.toLowerCase();
+      return hay.includes('late fine') || hay.includes('late fee')
+        ? sum + line.amount
+        : sum;
+    }, 0);
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1251,6 +1374,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
           <tr>
             <th>Fee Type</th>
             <th>Description</th>
+            <th>Billing Month</th>
             <th>Date</th>
             <th>Mode</th>
             <th>Reference</th>
@@ -1271,6 +1395,22 @@ exports.getBillHtmlReceipt = async (req, res) => {
           <span class="s-val">${fmt(aggregatedBillTotal)}</span>
         </div>
         <div class="summary-row">
+          <span class="s-lbl">Already Paid</span>
+          <span class="s-val">${fmt(alreadyPaid)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="s-lbl">Current Receipt Amount</span>
+          <span class="s-val">${fmt(totalPaid)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="s-lbl">Discount</span>
+          <span class="s-val">${fmt(discountTotal)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="s-lbl">Late Fine</span>
+          <span class="s-val">${fmt(lateFineTotal)}</span>
+        </div>
+        <div class="summary-row">
           <span class="s-lbl">Paid So Far</span>
           <span class="s-val">${fmt(aggregatedPaidSoFar)}</span>
         </div>
@@ -1281,6 +1421,10 @@ exports.getBillHtmlReceipt = async (req, res) => {
         <div class="summary-row total-row">
           <span class="s-lbl">This Receipt</span>
           <span class="s-val">${fmt(totalPaid)}</span>
+        </div>
+        <div class="summary-row total-row">
+          <span class="s-lbl">Grand Total Received</span>
+          <span class="s-val">${fmt(aggregatedPaidSoFar)}</span>
         </div>
       </div>
     </div>
