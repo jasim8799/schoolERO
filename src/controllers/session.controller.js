@@ -151,7 +151,7 @@ const getActiveSession = async (req, res) => {
 const updateSession = async (req, res) => {
   try {
     const { id } = req.params;
-    const { isActive } = req.body;
+    const { isActive, name, startDate, endDate, lifecycleStatus } = req.body || {};
 
     const session = await AcademicSession.findById(id);
     if (!session) {
@@ -161,35 +161,106 @@ const updateSession = async (req, res) => {
       });
     }
 
+    // Basic school isolation for non-super-admin users.
+    if (
+      req.user?.role !== 'SUPER_ADMIN' &&
+      req.user?.schoolId &&
+      session.schoolId?.toString() !== (req.user.schoolId?._id || req.user.schoolId).toString()
+    ) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Access denied. Cannot edit another school session.'
+      });
+    }
+
+    // Optional edit support on the same endpoint (no API contract changes).
+    if (typeof name === 'string' && name.trim()) {
+      const duplicate = await AcademicSession.findOne({
+        schoolId: session.schoolId,
+        name: name.trim(),
+        _id: { $ne: session._id }
+      });
+      if (duplicate) {
+        return res.status(HTTP_STATUS.CONFLICT).json({
+          success: false,
+          message: 'Academic session with this name already exists'
+        });
+      }
+      session.name = name.trim();
+    }
+
+    if (startDate) session.startDate = new Date(startDate);
+    if (endDate) session.endDate = new Date(endDate);
+    if (session.startDate && session.endDate && new Date(session.startDate) >= new Date(session.endDate)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'End date must be after start date'
+      });
+    }
+
+    if (typeof lifecycleStatus === 'string' && lifecycleStatus.trim()) {
+      const normalized = lifecycleStatus.trim().toUpperCase();
+      const allowedStatuses = ['SETUP', 'ACTIVE', 'EXAM_PHASE', 'RESULT_PHASE', 'CLOSED'];
+      if (!allowedStatuses.includes(normalized)) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          message: `Invalid lifecycleStatus. Allowed: ${allowedStatuses.join(', ')}`
+        });
+      }
+      session.lifecycleStatus = normalized;
+      if (normalized === 'CLOSED') {
+        session.isActive = false;
+        session.closedAt = new Date();
+      }
+    }
+
     // If activating this session, deactivate others
-    if (isActive) {
+    if (isActive === true) {
       await AcademicSession.updateMany(
         { schoolId: session.schoolId, _id: { $ne: id } },
         { isActive: false }
       );
+      session.lifecycleStatus = 'ACTIVE';
+    } else if (isActive === false) {
+      session.isActive = false;
     }
 
-    session.isActive = isActive;
+    if (isActive === true) {
+      session.isActive = true;
+    }
     await session.save();
 
-    logger.success(`Session ${isActive ? 'activated' : 'deactivated'}: ${session.name}`);
+    logger.success(`Session updated: ${session.name}`);
 
     // Create audit log
     await auditLog({
-      action: 'SESSION_ACTIVATED',
+      action: isActive === true ? 'SESSION_ACTIVATED' : 'SESSION_UPDATED',
       userId: req.user.userId,
       schoolId: session.schoolId,
       details: {
         sessionName: session.name,
-        isActive,
-        action: isActive ? 'activated' : 'deactivated'
+        isActive: session.isActive,
+        action:
+          isActive === true
+            ? 'activated'
+            : isActive === false
+                ? 'deactivated'
+                : 'edited',
+        lifecycleStatus: session.lifecycleStatus,
+        startDate: session.startDate,
+        endDate: session.endDate,
       },
       req
     });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: `Session ${isActive ? 'activated' : 'deactivated'} successfully`,
+      message:
+        isActive === true
+          ? 'Session activated successfully'
+          : isActive === false
+              ? 'Session deactivated successfully'
+              : 'Session updated successfully',
       data: session
     });
   } catch (error) {
@@ -428,20 +499,38 @@ const activateSession = async (req, res) => {
       });
     }
 
+    const previousActive = await AcademicSession.findOne({
+      schoolId,
+      isActive: true,
+      _id: { $ne: sessionId }
+    });
+
     await AcademicSession.updateMany(
       { schoolId, _id: { $ne: sessionId } },
       { isActive: false }
     );
 
     session.isActive = true;
+    session.lifecycleStatus = 'ACTIVE';
     await session.save();
+
+    // Auto-close previous active session to keep lifecycle explicit.
+    if (previousActive) {
+      previousActive.lifecycleStatus = 'CLOSED';
+      previousActive.closedAt = new Date();
+      previousActive.isActive = false;
+      await previousActive.save();
+    }
 
     await School.findByIdAndUpdate(schoolId, { forceLogoutAt: new Date() });
 
     return res.status(HTTP_STATUS.OK).json({
       success: true,
       message: `Session "${session.name}" activated. All users must re-login.`,
-      data: session
+      data: {
+        session,
+        previousClosedSessionId: previousActive?._id || null,
+      }
     });
   } catch (error) {
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
