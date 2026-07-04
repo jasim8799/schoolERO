@@ -24,7 +24,6 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 // Security middleware
 const { authenticate } = require('./middlewares/auth.middleware.fixed');
 const { enforceSchoolIsolation, sanitizeResponse, securityHeaders, productionErrorHandler } = require('./middlewares/security.middleware.final');
-const { authRateLimit, loginRateLimit, paymentRateLimit, backupRateLimit, generalRateLimit } = require('./middlewares/rateLimit.middleware.fixed');
 
 const app = express();
 
@@ -42,21 +41,6 @@ app.use(cors({
 // Body parsing with size limits
 app.use(express.json({ limit: '10mb' })); // Limit payload size
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Rate limiting for sensitive routes
-// NOTE: /api/auth (login) is NOT rate-limited to prevent blocking all users from one IP
-// Per-account lockout is handled by accountSecurity.service.js
-app.use('/api/fees/pay', paymentRateLimit);
-app.use('/api/backup', backupRateLimit);
-app.use('/api/restore', backupRateLimit);
-
-// General rate limiting — never on /api/auth/login (per-account lockout only)
-app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/auth')) {
-    return next();
-  }
-  return generalRateLimit(req, res, next);
-});
 
 // Response sanitization (remove sensitive data)
 app.use(sanitizeResponse);

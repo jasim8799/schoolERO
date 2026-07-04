@@ -1,14 +1,11 @@
 const express = require('express');
 
 const { authenticate } = require('../middlewares/auth.middleware');
-const { createRateLimit } = require('../middlewares/rateLimit.middleware.fixed');
 const ctrl = require('../controllers/reports.enterprise.controller');
 
 const router = express.Router();
-const apiBurstLimiter = createRateLimit(120, 15 * 60 * 1000, 'REPORTS_ENTERPRISE');
 
 router.use(authenticate);
-router.use(apiBurstLimiter);
 
 router.get('/', ctrl.getReports);
 router.get('/metrics', ctrl.getMetrics);

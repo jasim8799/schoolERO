@@ -8,7 +8,6 @@ const { checkModuleAccess } = require('./middlewares/moduleAccess.middleware');
 const { checkMaintenanceMode } = require('./middlewares/maintenance.middleware');
 const { attachActiveSession } = require('./middlewares/session.middleware.js');
 const errorHandler = require('./middlewares/error.middleware');
-const { paymentRateLimit, generalRateLimit } = require('./middlewares/rateLimit.middleware.fixed.js');
 const adminRoutes = require('./routes/admin.routes');
 const schoolRoutes = require('./routes/school.routes');
 const sessionRoutes = require('./routes/session.routes');
@@ -219,7 +218,6 @@ app.use('/api/promotion', attachSchoolId, attachActiveSession, checkSubscription
 app.use('/api/academic-history', attachSchoolId, checkSubscriptionStatus(), checkModuleAccess('students'), academicHistoryRoutes);
 app.use(
   '/api/fees',
-  paymentRateLimit,
   attachSchoolId,
   attachActiveSession,
   checkSubscriptionStatus(true),
@@ -258,7 +256,6 @@ app.use('/api/student-transport', attachSchoolId, checkSubscriptionStatus(), che
 app.use('/api/transport-fees', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('transport'), transportFeeRoutes);
 app.use(
   '/api/dashboard',
-  generalRateLimit,
   (req, res, next) => {
     // SUPER_ADMIN skips school attachment and subscription check
     if (req.user && req.user.role === 'SUPER_ADMIN') return next();
@@ -285,7 +282,6 @@ app.use('/api/notifications', attachSchoolId, notificationRoutes);
 app.use('/api/bills', attachSchoolId, attachActiveSession, checkSubscriptionStatus(), checkModuleAccess('fees'), billRoutes);
 app.use(
   '/api/fee-collection',
-  paymentRateLimit,
   attachSchoolId,
   attachActiveSession,
   checkSubscriptionStatus(),

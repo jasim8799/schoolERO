@@ -26,16 +26,30 @@ const _isAuthLoginPath = (req) => {
   );
 };
 
-const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterName = 'GENERAL') => {
-  return (req, res, next) => {
-    // Login uses per-account lockout only — never IP-based limits
-    if (_isAuthLoginPath(req)) {
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createRateLimit = (
+  maxRequests = 100,
+  windowMs = 15 * 60 * 1000,
+  limiterName = 'GENERAL',
+  options = {}
+) => {
+  const {
+    keyResolver,
+    skip,
+    responseMessage = 'Too many requests. Please try again later.',
+    delayAfterLimitMs = 0,
+  } = options;
+
+  return async (req, res, next) => {
+    if (typeof skip === 'function' && skip(req)) {
       return next();
     }
 
-    const key = `${req.user?._id || req.ip}-${limiterName}`;
+    const key = typeof keyResolver === 'function'
+      ? keyResolver(req)
+      : `${req.user?._id || req.ip}-${limiterName}`;
     const now = Date.now();
-    const windowStart = now - windowMs;
 
     let userRequests = rateLimitStore.get(key);
 
@@ -83,11 +97,15 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
       const retryAfterSeconds = Math.ceil((userRequests.resetTime - now) / 1000);
       const retryAfterMinutes = Math.ceil(retryAfterSeconds / 60);
 
+      if (delayAfterLimitMs > 0) {
+        await wait(delayAfterLimitMs);
+      }
+
       res.set('Retry-After', retryAfterSeconds);
 
       return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
         success: false,
-        message: 'Too many requests. Please try again later.',
+        message: responseMessage,
         retryAfter: retryAfterSeconds,
         retryAfterHuman: `${retryAfterMinutes} minute(s)`
       });
@@ -102,17 +120,22 @@ const createRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000, limiterNa
 // accountSecurity.service.js which prevents collateral damage to other users.
 // Global rate limits on login would block all school network users when one user fails.
 
-// Auth rate limit applies to register/profile endpoints only, NOT login
-const authRateLimit = createRateLimit(20, 15 * 60 * 1000, 'AUTH'); // 20 requests per 15 minutes
-const loginRateLimit = (req, res, next) => {
-  // No-op: login has its own per-account security via accountSecurity.service.js
-  // Returning 429 here would block other users from the same IP/network.
-  next();
-};
+// Strict auth limiter for brute-force protection on public login endpoints.
+const authRateLimit = createRateLimit(5, 15 * 60 * 1000, 'AUTH_PUBLIC', {
+  keyResolver: (req) => `${req.ip}-AUTH_PUBLIC`,
+  responseMessage: 'Invalid email or password',
+  delayAfterLimitMs: 400,
+});
 
-const paymentRateLimit = createRateLimit(10, 60 * 60 * 1000, 'PAYMENT'); // 10 requests per hour for payments
-const backupRateLimit = createRateLimit(3, 60 * 60 * 1000, 'BACKUP'); // 3 requests per hour for backup/restore
-const generalRateLimit = createRateLimit(100, 15 * 60 * 1000, 'GENERAL'); // 100 requests per 15 minutes general
+const loginRateLimit = createRateLimit(5, 15 * 60 * 1000, 'AUTH_LOGIN', {
+  keyResolver: (req) => `${req.ip}-AUTH_LOGIN`,
+  responseMessage: 'Invalid email or password',
+  delayAfterLimitMs: 400,
+});
+
+const paymentRateLimit = (req, res, next) => next();
+const backupRateLimit = (req, res, next) => next();
+const generalRateLimit = (req, res, next) => next();
 
 module.exports = {
   createRateLimit,
