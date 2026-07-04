@@ -14,6 +14,6 @@ const router = express.Router();
 router.post('/', authenticate, requireMinRole(USER_ROLES.STUDENT), applyLeave);
 router.get('/my', authenticate, requireMinRole(USER_ROLES.STUDENT), getMyLeaveApplications);
 router.get('/all', authenticate, requireMinRole(USER_ROLES.OPERATOR), getAllLeaveApplications);
-router.patch('/:id/review', authenticate, requireMinRole(USER_ROLES.OPERATOR), reviewLeaveApplication);
+router.patch('/:id/review', authenticate, requireMinRole(USER_ROLES.PRINCIPAL), reviewLeaveApplication);
 
 module.exports = router;

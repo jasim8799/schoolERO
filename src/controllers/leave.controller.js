@@ -132,7 +132,7 @@ const getAllLeaveApplications = async (req, res) => {
     if (filterRole) filter.applicantRole = filterRole;
 
     const applications = await LeaveApplication.find(filter)
-      .populate('applicantId', 'name email role')
+      .populate('applicantId', 'name email role employeeId department designation')
       .populate('studentId', 'name rollNumber classId')
       .populate('reviewedBy', 'name')
       .sort({ createdAt: -1 });

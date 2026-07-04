@@ -220,6 +220,7 @@ const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length
     // Pending leave applications (staff leave awaiting approval)
     const pendingLeaveCount = await LeaveApplication.countDocuments({
       schoolId,
+      applicantRole: { $in: ['TEACHER', 'OPERATOR'] },
       status: 'PENDING'
     });
 
