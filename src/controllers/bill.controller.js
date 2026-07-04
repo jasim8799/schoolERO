@@ -801,10 +801,49 @@ exports.getBillHtmlReceipt = async (req, res) => {
       return m ? m[1].trim() : '—';
     };
 
+    const normalizeBillType = (value) =>
+      String(value || '')
+        .trim()
+        .toUpperCase();
+
+    const paymentBillIds = Array.from(
+      new Set(
+        receiptPayments
+          .map((p) => {
+            const raw = p?.billId;
+            if (!raw) return '';
+            if (typeof raw === 'object') {
+              return String(raw._id || '');
+            }
+            return String(raw);
+          })
+          .filter(Boolean)
+      )
+    );
+
+    const canonicalBills = paymentBillIds.length
+      ? await Bill.find({ _id: { $in: paymentBillIds }, schoolId })
+          .select('billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status')
+          .lean()
+      : [];
+    const canonicalBillById = new Map(
+      canonicalBills.map((b) => [String(b._id), b])
+    );
+
+    const getPaymentBill = (paymentLine) => {
+      const raw = paymentLine?.billId;
+      if (!raw) return null;
+      if (typeof raw === 'object') {
+        const id = String(raw._id || '');
+        return canonicalBillById.get(id) || raw;
+      }
+      return canonicalBillById.get(String(raw)) || null;
+    };
+
     const assignmentSourceIds = [];
     const studentFeeSourceIds = [];
     for (const p of receiptPayments) {
-      const b = p?.billId;
+      const b = getPaymentBill(p);
       if (!b || typeof b !== 'object') continue;
       const sourceId = b.sourceId ? String(b.sourceId) : '';
       if (!sourceId) continue;
@@ -850,9 +889,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
     );
 
     const deriveLineMeta = (paymentLine) => {
-      const billDoc = paymentLine?.billId && typeof paymentLine.billId === 'object'
-        ? paymentLine.billId
-        : null;
+      const billDoc = getPaymentBill(paymentLine) || bill;
       const sourceType = billDoc?.sourceType || '';
       const sourceId = billDoc?.sourceId ? String(billDoc.sourceId) : '';
       const fromAssignment = sourceId && sourceType === 'StudentFeeAssignment'
@@ -864,10 +901,30 @@ exports.getBillHtmlReceipt = async (req, res) => {
 
       const feeNameFromSource = fromAssignment?.feeName || fromStudentFee?.feeName || '';
       const billingMonth = fromAssignment?.billingMonth || fromStudentFee?.billingMonth || '—';
-      const billType = humanizeToken(billDoc?.billType || bill?.billType || '');
+      const billTypeUpper = normalizeBillType(billDoc?.billType || bill?.billType || '');
+      const billType = humanizeToken(billTypeUpper);
       const description = (billDoc?.description || bill?.description || '').toString().trim();
 
-      const feeType = feeNameFromSource || billType || description || 'Fee';
+      const sourceFeeNorm = feeNameFromSource.trim().toLowerCase();
+      const isGenericTuitionName =
+        sourceFeeNorm === 'tuition' ||
+        sourceFeeNorm === 'tuition fee' ||
+        sourceFeeNorm === 'monthly fee' ||
+        sourceFeeNorm === 'monthly tuition';
+
+      let feeType;
+      if (billTypeUpper === 'HOSTEL') {
+        feeType = 'Hostel Fee';
+      } else if (billTypeUpper === 'TRANSPORT') {
+        feeType = 'Transport Fee';
+      } else if (billTypeUpper === 'TUITION') {
+        feeType = feeNameFromSource && !isGenericTuitionName
+          ? feeNameFromSource
+          : 'Tuition Fee';
+      } else {
+        feeType = feeNameFromSource || billType || description || 'Fee';
+      }
+
       return {
         feeType,
         description: description || feeType,
@@ -904,14 +961,9 @@ exports.getBillHtmlReceipt = async (req, res) => {
         <td class="amount">${fmt(line.amount)}</td>
       </tr>`).join('');
 
-    const normalizeBillType = (value) =>
-      String(value || '')
-        .trim()
-        .toUpperCase();
-
     const receiptBillMap = new Map();
     for (const p of receiptPayments) {
-      const billDoc = p?.billId && typeof p.billId === 'object' ? p.billId : null;
+      const billDoc = getPaymentBill(p);
       const billId = billDoc?._id || p?.billId;
       const key = billId ? String(billId) : '';
       if (!key || receiptBillMap.has(key)) continue;
@@ -926,8 +978,8 @@ exports.getBillHtmlReceipt = async (req, res) => {
 
     const paidFeeTypes = Array.from(
       new Set(
-        receiptPayments
-          .map((p) => normalizeBillType(p?.billId?.billType || bill?.billType))
+        receiptLines
+          .map((line) => normalizeBillType(line?.feeType || ''))
           .filter(Boolean)
       )
     );
@@ -965,6 +1017,14 @@ exports.getBillHtmlReceipt = async (req, res) => {
         ? sum + line.amount
         : sum;
     }, 0);
+
+    console.info(
+      '[ReceiptDebug] Transaction=%s payments=%d bills=%d billTypes=%s',
+      primaryPayment.transactionGroupId || 'N/A',
+      receiptPayments.length,
+      receiptBills.length,
+      receiptLines.map((line) => line.feeType).join(', ') || 'NONE'
+    );
 
     const html = `<!DOCTYPE html>
 <html lang="en">
