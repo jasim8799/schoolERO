@@ -1,17 +1,44 @@
+const mongoose = require('mongoose');
 const AcademicSession = require('../models/AcademicSession.js');
 const School = require('../models/School.js');
 const Class = require('../models/Class.js');
 const Section = require('../models/Section.js');
 const Subject = require('../models/Subject.js');
 const Student = require('../models/Student.js');
+const FeeStructure = require('../models/FeeStructure.js');
+const Exam = require('../models/Exam.js');
+const TeacherAssignment = require('../models/TeacherAssignment.js');
+const AcademicHistory = require('../models/AcademicHistory.js');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 
+const _asId = (v) => (v?._id || v)?.toString();
+
+const _resolveSchoolIdFromRequest = (req, bodySchoolId = null) => {
+  if (req.user?.role === 'SUPER_ADMIN') {
+    return bodySchoolId || req.query.schoolId || req.params.schoolId || _asId(req.user?.schoolId);
+  }
+  return _asId(req.user?.schoolId) || bodySchoolId || req.params.schoolId || req.query.schoolId;
+};
+
+const _isSchoolAllowed = (req, sessionSchoolId) => {
+  if (req.user?.role === 'SUPER_ADMIN') return true;
+  return _asId(req.user?.schoolId) === _asId(sessionSchoolId);
+};
+
 // Create Academic Session
 const createSession = async (req, res) => {
   try {
-    const { schoolId, name, startDate, endDate, isActive } = req.body;
+    const {
+      schoolId: bodySchoolId,
+      name,
+      startDate,
+      endDate,
+      isActive,
+      description
+    } = req.body;
+    const schoolId = _resolveSchoolIdFromRequest(req, bodySchoolId);
 
     // Validate required fields
     if (!schoolId || !name || !startDate || !endDate) {
@@ -63,6 +90,7 @@ const createSession = async (req, res) => {
       name,
       startDate,
       endDate,
+      description: description || '',
       isActive: existingActiveSession ? false : true
     });
 
@@ -92,10 +120,76 @@ const createSession = async (req, res) => {
   }
 };
 
+// GET /api/sessions
+const listSessions = async (req, res) => {
+  try {
+    const schoolId = _resolveSchoolIdFromRequest(req);
+    if (!schoolId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, message: 'schoolId is required' });
+    }
+
+    const sessions = await AcademicSession.find({ schoolId })
+      .sort({ startDate: -1 })
+      .lean();
+
+    const stats = {
+      total: sessions.length,
+      active: sessions.filter((s) => s.isActive).length,
+      closed: sessions.filter((s) => (s.lifecycleStatus || '').toUpperCase() === 'CLOSED').length,
+      upcoming: sessions.filter((s) => !s.isActive && (s.lifecycleStatus || '').toUpperCase() !== 'CLOSED').length,
+    };
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: sessions,
+      stats,
+    });
+  } catch (error) {
+    logger.error('List sessions error:', error.message);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: 'Error fetching sessions', error: error.message });
+  }
+};
+
+// GET /api/sessions/current
+const getCurrentSession = async (req, res) => {
+  try {
+    const schoolId = _resolveSchoolIdFromRequest(req);
+    if (!schoolId) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, message: 'schoolId is required' });
+    }
+
+    const [session, school] = await Promise.all([
+      AcademicSession.findOne({ schoolId, isActive: true }).lean(),
+      School.findById(schoolId).select('activeSessionId currentSessionId sessionVersion forceLogoutOnSessionChange').lean()
+    ]);
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: {
+        session: session || null,
+        sessionVersion: school?.sessionVersion || 1,
+        forceLogoutOnSessionChange: !!school?.forceLogoutOnSessionChange,
+        activeSessionId: school?.activeSessionId || session?._id || null,
+        currentSessionId: school?.currentSessionId || session?._id || null,
+      }
+    });
+  } catch (error) {
+    logger.error('Get current session error:', error.message);
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: 'Error fetching current session', error: error.message });
+  }
+};
+
 // Get All Sessions for a School
 const getSessionsBySchool = async (req, res) => {
   try {
     const { schoolId } = req.params;
+
+    if (req.user?.role !== 'SUPER_ADMIN' && _asId(req.user?.schoolId) !== _asId(schoolId)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        message: 'Access denied. Cannot view another school sessions.'
+      });
+    }
 
     const sessions = await AcademicSession.find({ schoolId })
       .populate('schoolId', 'name code')
@@ -151,7 +245,7 @@ const getActiveSession = async (req, res) => {
 const updateSession = async (req, res) => {
   try {
     const { id } = req.params;
-    const { isActive, name, startDate, endDate, lifecycleStatus } = req.body || {};
+    const { isActive, name, startDate, endDate, description, lifecycleStatus } = req.body || {};
 
     const session = await AcademicSession.findById(id);
     if (!session) {
@@ -173,6 +267,22 @@ const updateSession = async (req, res) => {
       });
     }
 
+    const hasEditablePayload =
+      typeof name === 'string' ||
+      typeof description === 'string' ||
+      !!startDate ||
+      !!endDate;
+
+    if (hasEditablePayload) {
+      const lockedForEdit = session.isActive || ['ACTIVE', 'CLOSED'].includes((session.lifecycleStatus || '').toUpperCase());
+      if (lockedForEdit) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          message: 'Only non-activated sessions can be edited.'
+        });
+      }
+    }
+
     // Optional edit support on the same endpoint (no API contract changes).
     if (typeof name === 'string' && name.trim()) {
       const duplicate = await AcademicSession.findOne({
@@ -187,6 +297,10 @@ const updateSession = async (req, res) => {
         });
       }
       session.name = name.trim();
+    }
+
+    if (typeof description === 'string') {
+      session.description = description.trim();
     }
 
     if (startDate) session.startDate = new Date(startDate);
@@ -276,7 +390,12 @@ const updateSession = async (req, res) => {
 const duplicateSessionSetup = async (req, res) => {
   try {
     const { sessionId: targetSessionId } = req.params;
-    const { fromSessionId } = req.body;
+    const {
+      fromSessionId,
+      copyFeeStructures = false,
+      copyExamTemplates = false,
+      copyTimetableTemplates = false,
+    } = req.body;
     const { schoolId } = req.user;
 
     if (!fromSessionId) {
@@ -387,7 +506,84 @@ const duplicateSessionSetup = async (req, res) => {
       subjectIdMap[sub._id.toString()] = newSubject._id;
     }
 
-    // Intentionally do not copy fee structures, since yearly amounts may change.
+    let feesCreated = 0;
+    if (copyFeeStructures) {
+      const sourceFeeStructures = await FeeStructure.find({ schoolId, sessionId: fromSessionId });
+      for (const fee of sourceFeeStructures) {
+        const mappedClassId = classIdMap[fee.classId?.toString()];
+        if (!mappedClassId) continue;
+        try {
+          await FeeStructure.create({
+            name: fee.name,
+            amount: fee.amount,
+            frequency: fee.frequency,
+            classId: mappedClassId,
+            sessionId: targetSessionId,
+            schoolId,
+            isOptional: fee.isOptional,
+            status: fee.status,
+            createdBy: req.user.userId,
+          });
+          feesCreated += 1;
+        } catch (_) {}
+      }
+    }
+
+    let examsCreated = 0;
+    if (copyExamTemplates) {
+      const sourceExams = await Exam.find({ schoolId, sessionId: fromSessionId });
+      const targetSession = await AcademicSession.findById(targetSessionId).select('startDate endDate').lean();
+      for (const exam of sourceExams) {
+        const mappedClassId = classIdMap[exam.classId?.toString()];
+        if (!mappedClassId || !targetSession?.startDate || !targetSession?.endDate) continue;
+        try {
+          const start = new Date(targetSession.startDate);
+          const end = new Date(start);
+          end.setDate(end.getDate() + 7);
+          await Exam.create({
+            name: exam.name,
+            classId: mappedClassId,
+            sessionId: targetSessionId,
+            startDate: start,
+            endDate: end > new Date(targetSession.endDate) ? targetSession.endDate : end,
+            resultDate: null,
+            status: 'Draft',
+            schoolId,
+            createdBy: req.user.userId,
+          });
+          examsCreated += 1;
+        } catch (_) {}
+      }
+    }
+
+    let timetableTemplatesCreated = 0;
+    if (copyTimetableTemplates) {
+      const sourceAssignments = await TeacherAssignment.find({ schoolId, sessionId: fromSessionId }).lean();
+      for (const assignment of sourceAssignments) {
+        const mappedClassId = classIdMap[assignment.classId?.toString()];
+        const mappedSectionId = sectionIdMap[assignment.sectionId?.toString()];
+        const mappedSubjectId = subjectIdMap[assignment.subjectId?.toString()];
+        if (!mappedClassId || !mappedSectionId || !mappedSubjectId) continue;
+        try {
+          await TeacherAssignment.create({
+            teacherId: assignment.teacherId,
+            classId: mappedClassId,
+            sectionId: mappedSectionId,
+            subjectId: mappedSubjectId,
+            day: assignment.day,
+            periodNumber: assignment.periodNumber,
+            startTime: assignment.startTime,
+            endTime: assignment.endTime,
+            schoolId,
+            sessionId: targetSessionId,
+            isPublished: false,
+            weeklyRepeat: assignment.weeklyRepeat || false,
+          });
+          timetableTemplatesCreated += 1;
+        } catch (_) {}
+      }
+    }
+
     return res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Session setup complete',
@@ -395,6 +591,9 @@ const duplicateSessionSetup = async (req, res) => {
         classesCreated: Object.keys(classIdMap).length,
         sectionsCreated: Object.keys(sectionIdMap).length,
         subjectsCreated: Object.keys(subjectIdMap).length,
+        feeStructuresCreated: feesCreated,
+        examTemplatesCreated: examsCreated,
+        timetableTemplatesCreated,
         classIdMap,
         sectionIdMap
       }
@@ -469,7 +668,7 @@ const getSessionReadiness = async (req, res) => {
 
 const activateSession = async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    const sessionId = req.params.sessionId || req.params.id;
     const { schoolId, role } = req.user;
 
     if (role !== 'PRINCIPAL' && role !== 'OPERATOR') {
@@ -522,14 +721,40 @@ const activateSession = async (req, res) => {
       await previousActive.save();
     }
 
-    await School.findByIdAndUpdate(schoolId, { forceLogoutAt: new Date() });
+    const school = await School.findById(schoolId);
+    const shouldForceLogout = !!school?.forceLogoutOnSessionChange;
+    await School.findByIdAndUpdate(schoolId, {
+      activeSessionId: session._id,
+      currentSessionId: session._id,
+      $inc: { sessionVersion: 1 },
+      ...(shouldForceLogout ? { forceLogoutAt: new Date() } : {})
+    });
+
+    session.activatedAt = new Date();
+    session.activatedBy = req.user.userId;
+    await session.save();
+
+    await auditLog({
+      action: 'SESSION_ACTIVATED',
+      userId: req.user.userId,
+      schoolId,
+      details: {
+        oldSessionId: previousActive?._id || null,
+        newSessionId: session._id,
+        newSessionName: session.name,
+      },
+      req
+    });
 
     return res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: `Session "${session.name}" activated. All users must re-login.`,
+      message: shouldForceLogout
+        ? `Session "${session.name}" activated. All users must re-login.`
+        : `Session "${session.name}" activated. School context refreshed without logout.`,
       data: {
         session,
         previousClosedSessionId: previousActive?._id || null,
+        forceLogoutOnSessionChange: shouldForceLogout,
       }
     });
   } catch (error) {
@@ -540,12 +765,126 @@ const activateSession = async (req, res) => {
   }
 };
 
+// POST /api/sessions/:id/close
+const closeSession = async (req, res) => {
+  try {
+    const sessionId = req.params.id || req.params.sessionId;
+    const session = await AcademicSession.findById(sessionId);
+    if (!session) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Session not found' });
+    }
+    if (!_isSchoolAllowed(req, session.schoolId)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, message: 'Access denied' });
+    }
+    if (session.isActive) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Active session cannot be closed directly. Activate another session first.'
+      });
+    }
+
+    session.lifecycleStatus = 'CLOSED';
+    session.closedAt = new Date();
+    session.isActive = false;
+    await session.save();
+
+    await auditLog({
+      action: 'SESSION_CLOSED',
+      userId: req.user.userId,
+      schoolId: session.schoolId,
+      details: { sessionId: session._id, sessionName: session.name },
+      req
+    });
+
+    return res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Session closed successfully',
+      data: session
+    });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
+  }
+};
+
+// DELETE /api/sessions/:id
+const deleteSession = async (req, res) => {
+  try {
+    const sessionId = req.params.id || req.params.sessionId;
+    const session = await AcademicSession.findById(sessionId);
+    if (!session) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'Session not found' });
+    }
+    if (!_isSchoolAllowed(req, session.schoolId)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, message: 'Access denied' });
+    }
+    if (session.isActive) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, message: 'Active session cannot be deleted' });
+    }
+
+    const schoolId = session.schoolId;
+
+    const checks = await Promise.all([
+      Student.countDocuments({ schoolId, sessionId }),
+      AcademicHistory.countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentDailyAttendance').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentSubjectAttendance').countDocuments({ schoolId, sessionId }),
+      mongoose.model('TeacherAttendance').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StaffAttendance').countDocuments({ schoolId, sessionId }),
+      Exam.countDocuments({ schoolId, sessionId }),
+      mongoose.model('Result').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentFee').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentFeeAssignment').countDocuments({ schoolId, sessionId }),
+      mongoose.model('FeePayment').countDocuments({ schoolId, sessionId }),
+      mongoose.model('Payment').countDocuments({ schoolId, sessionId }),
+      mongoose.model('ExamPayment').countDocuments({ schoolId, sessionId }),
+      mongoose.model('Bill').countDocuments({ schoolId, sessionId }),
+      mongoose.model('Homework').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentHostel').countDocuments({ schoolId, sessionId }),
+      mongoose.model('TransportFee').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentTransport').countDocuments({ schoolId, sessionId }),
+      TeacherAssignment.countDocuments({ schoolId, sessionId }),
+    ]);
+
+    const hasHistoricalRecords = checks.some((count) => count > 0);
+    if (hasHistoricalRecords) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Cannot delete. Session contains historical records.'
+      });
+    }
+
+    await Promise.all([
+      FeeStructure.deleteMany({ schoolId, sessionId }),
+      Subject.deleteMany({ schoolId, sessionId }),
+      Section.deleteMany({ schoolId, sessionId }),
+      Class.deleteMany({ schoolId, sessionId }),
+      AcademicSession.deleteOne({ _id: sessionId }),
+    ]);
+
+    await auditLog({
+      action: 'SESSION_DELETED',
+      userId: req.user.userId,
+      schoolId,
+      details: { sessionId, sessionName: session.name },
+      req
+    });
+
+    return res.status(HTTP_STATUS.OK).json({ success: true, message: 'Session deleted successfully' });
+  } catch (error) {
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createSession,
+  listSessions,
+  getCurrentSession,
   getSessionsBySchool,
   getActiveSession,
   updateSession,
   duplicateSessionSetup,
   getSessionReadiness,
-  activateSession
+  activateSession,
+  closeSession,
+  deleteSession,
 };

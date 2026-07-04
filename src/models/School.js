@@ -227,6 +227,25 @@ const schoolSchema = new mongoose.Schema({
   forceLogoutAt: {
     type: Date,
     default: null // Timestamp when force logout was triggered
+  },
+  activeSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicSession',
+    default: null,
+  },
+  currentSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicSession',
+    default: null,
+  },
+  sessionVersion: {
+    type: Number,
+    default: 1,
+    min: 1,
+  },
+  forceLogoutOnSessionChange: {
+    type: Boolean,
+    default: false,
   }
 }, {
   timestamps: true

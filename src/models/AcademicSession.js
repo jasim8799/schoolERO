@@ -11,6 +11,11 @@ const academicSessionSchema = new mongoose.Schema({
     required: [true, 'Session name is required'],
     trim: true
   },
+  description: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   startDate: {
     type: Date,
     required: [true, 'Start date is required']
@@ -27,6 +32,12 @@ const academicSessionSchema = new mongoose.Schema({
     type: String,
     enum: ['SETUP', 'ACTIVE', 'EXAM_PHASE', 'RESULT_PHASE', 'CLOSED'],
     default: 'SETUP'
+  },
+  activatedAt: { type: Date },
+  activatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
   },
   closedAt: { type: Date },
   settings: {
