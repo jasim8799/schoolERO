@@ -9,6 +9,8 @@ const FeeStructure = require('../models/FeeStructure.js');
 const Exam = require('../models/Exam.js');
 const TeacherAssignment = require('../models/TeacherAssignment.js');
 const AcademicHistory = require('../models/AcademicHistory.js');
+const User = require('../models/User.js');
+const redis = require('../../config/redis');
 const { HTTP_STATUS } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
@@ -25,6 +27,27 @@ const _resolveSchoolIdFromRequest = (req, bodySchoolId = null) => {
 const _isSchoolAllowed = (req, sessionSchoolId) => {
   if (req.user?.role === 'SUPER_ADMIN') return true;
   return _asId(req.user?.schoolId) === _asId(sessionSchoolId);
+};
+
+const _invalidateSessionCaches = async (schoolId) => {
+  try {
+    const patterns = [
+      `sessions:${schoolId}:*`,
+      `school:${schoolId}:session:*`,
+      `permissions:${schoolId}:*`,
+      `modules:${schoolId}:*`,
+      `layout:nav:${schoolId}:*`,
+    ];
+
+    for (const p of patterns) {
+      const keys = await redis.keys(p);
+      if (Array.isArray(keys) && keys.length > 0) {
+        await redis.del(keys);
+      }
+    }
+  } catch (_) {
+    // Cache invalidation is best-effort.
+  }
 };
 
 // Create Academic Session
@@ -678,11 +701,7 @@ const activateSession = async (req, res) => {
       });
     }
 
-    const classCount = await Class.countDocuments({
-      sessionId,
-      schoolId,
-      status: 'active'
-    });
+    const classCount = await Class.countDocuments({ sessionId, schoolId, status: 'active' });
     if (classCount === 0) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
@@ -690,49 +709,89 @@ const activateSession = async (req, res) => {
       });
     }
 
-    const session = await AcademicSession.findOne({ _id: sessionId, schoolId });
-    if (!session) {
+    const targetSession = await AcademicSession.findOne({ _id: sessionId, schoolId });
+    if (!targetSession) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'Session not found'
       });
     }
 
-    const previousActive = await AcademicSession.findOne({
-      schoolId,
-      isActive: true,
-      _id: { $ne: sessionId }
-    });
+    const school = await School.findById(schoolId).select('forceLogoutOnSessionChange');
+    const shouldForceLogout = !!school?.forceLogoutOnSessionChange;
 
-    await AcademicSession.updateMany(
-      { schoolId, _id: { $ne: sessionId } },
-      { isActive: false }
-    );
+    const mongoSession = await mongoose.startSession();
+    let previousActive = null;
 
-    session.isActive = true;
-    session.lifecycleStatus = 'ACTIVE';
-    await session.save();
+    try {
+      await mongoSession.withTransaction(async () => {
+        previousActive = await AcademicSession.findOne({
+          schoolId,
+          isActive: true,
+          _id: { $ne: sessionId }
+        }).session(mongoSession);
 
-    // Auto-close previous active session to keep lifecycle explicit.
-    if (previousActive) {
-      previousActive.lifecycleStatus = 'CLOSED';
-      previousActive.closedAt = new Date();
-      previousActive.isActive = false;
-      await previousActive.save();
+        await AcademicSession.updateMany(
+          { schoolId, _id: { $ne: sessionId } },
+          { isActive: false },
+          { session: mongoSession }
+        );
+
+        targetSession.isActive = true;
+        targetSession.lifecycleStatus = 'ACTIVE';
+        targetSession.activatedAt = new Date();
+        targetSession.activatedBy = req.user.userId;
+        await targetSession.save({ session: mongoSession });
+
+        if (previousActive) {
+          previousActive.lifecycleStatus = 'CLOSED';
+          previousActive.closedAt = new Date();
+          previousActive.isActive = false;
+          await previousActive.save({ session: mongoSession });
+        }
+
+        await School.findByIdAndUpdate(
+          schoolId,
+          {
+            activeSessionId: targetSession._id,
+            currentSessionId: targetSession._id,
+            $inc: { sessionVersion: 1 },
+            ...(shouldForceLogout ? { forceLogoutAt: new Date() } : {})
+          },
+          { session: mongoSession }
+        );
+      });
+    } finally {
+      await mongoSession.endSession();
     }
 
-    const school = await School.findById(schoolId);
-    const shouldForceLogout = !!school?.forceLogoutOnSessionChange;
-    await School.findByIdAndUpdate(schoolId, {
-      activeSessionId: session._id,
-      currentSessionId: session._id,
-      $inc: { sessionVersion: 1 },
-      ...(shouldForceLogout ? { forceLogoutAt: new Date() } : {})
-    });
+    await _invalidateSessionCaches(_asId(schoolId));
 
-    session.activatedAt = new Date();
-    session.activatedBy = req.user.userId;
-    await session.save();
+    // In-app notification for all users in this school.
+    const recipients = await User.find(
+      {
+        schoolId,
+        role: { $in: ['PRINCIPAL', 'OPERATOR', 'TEACHER', 'STUDENT', 'PARENT'] },
+        status: 'active',
+        isDeleted: { $ne: true }
+      },
+      { _id: 1, role: 1 }
+    ).lean();
+
+    if (recipients.length > 0) {
+      const NotificationQueue = mongoose.model('NotificationQueue');
+      const docs = recipients.map((u) => ({
+        schoolId,
+        recipientId: u._id,
+        recipientRole: u.role,
+        type: 'GENERAL',
+        title: `Academic Session ${targetSession.name} has started.`,
+        body: `New Academic Session Activated ${targetSession.name}. School data has been refreshed.`,
+        relatedEntityId: targetSession._id,
+        relatedEntityType: 'AcademicSession'
+      }));
+      await NotificationQueue.insertMany(docs, { ordered: false });
+    }
 
     await auditLog({
       action: 'SESSION_ACTIVATED',
@@ -740,8 +799,8 @@ const activateSession = async (req, res) => {
       schoolId,
       details: {
         oldSessionId: previousActive?._id || null,
-        newSessionId: session._id,
-        newSessionName: session.name,
+        newSessionId: targetSession._id,
+        newSessionName: targetSession.name,
       },
       req
     });
@@ -749,10 +808,10 @@ const activateSession = async (req, res) => {
     return res.status(HTTP_STATUS.OK).json({
       success: true,
       message: shouldForceLogout
-        ? `Session "${session.name}" activated. All users must re-login.`
-        : `Session "${session.name}" activated. School context refreshed without logout.`,
+        ? `Session "${targetSession.name}" activated. All users must re-login.`
+        : `Session "${targetSession.name}" activated. School context refreshed without logout.`,
       data: {
-        session,
+        session: targetSession,
         previousClosedSessionId: previousActive?._id || null,
         forceLogoutOnSessionChange: shouldForceLogout,
       }
