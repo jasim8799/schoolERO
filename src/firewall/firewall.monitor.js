@@ -18,6 +18,7 @@ function firewallMiddleware() {
   return async (req, res, next) => {
     const ip   = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0';
     const path = req.path;
+    const hasBearerToken = req.headers.authorization?.startsWith('Bearer ');
 
     // Login/auth routes use per-account lockout only (app.js also skips firewall for /auth)
     if (path.startsWith('/auth')) {
@@ -25,28 +26,30 @@ function firewallMiddleware() {
     }
 
     try {
-      // ── Rate limit check with timeout protection (non-auth API only) ───
-      const rateKey = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW)}`;
-      const redisResult = await Promise.race([
-        redis.incr(rateKey),
-        new Promise((resolve) => setTimeout(() => resolve(0), 500))
-      ]).catch(() => 0);
+      // ── Rate limit check with timeout protection (public non-auth traffic only) ───
+      if (!hasBearerToken) {
+        const rateKey = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW)}`;
+        const redisResult = await Promise.race([
+          redis.incr(rateKey),
+          new Promise((resolve) => setTimeout(() => resolve(0), 500))
+        ]).catch(() => 0);
 
-      if (redisResult === 1) {
-        redis.expire(rateKey, 2).catch(() => {});
-      }
+        if (redisResult === 1) {
+          redis.expire(rateKey, 2).catch(() => {});
+        }
 
-      if (redisResult > RATE_LIMIT_MAX) {
-        console.warn(`[RATE_LIMIT] IP ${ip} exceeded limit on ${path}`);
-        _logFirewallEvent(ip, 'RATE_LIMITED', path, req, 0.65, 'RATE_LIMIT_EXCEEDED').catch(() => {});
-        recordSecurityEvent('RATE_LIMIT_EXCEEDED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
-        global.io?.of('/activity').emit('firewall:event', {
-          ip, action: 'RATE_LIMITED', path, timestamp: new Date(),
-        });
-        return res.status(429).json({
-          success: false,
-          message: 'Rate limit exceeded. Please slow down.',
-        });
+        if (redisResult > RATE_LIMIT_MAX) {
+          console.warn(`[RATE_LIMIT] IP ${ip} exceeded limit on ${path}`);
+          _logFirewallEvent(ip, 'RATE_LIMITED', path, req, 0.65, 'RATE_LIMIT_EXCEEDED').catch(() => {});
+          recordSecurityEvent('RATE_LIMIT_EXCEEDED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
+          global.io?.of('/activity').emit('firewall:event', {
+            ip, action: 'RATE_LIMITED', path, timestamp: new Date(),
+          });
+          return res.status(429).json({
+            success: false,
+            message: 'Rate limit exceeded. Please slow down.',
+          });
+        }
       }
 
       // ── Detect injection patterns ─────────────────────────────────────
@@ -72,9 +75,7 @@ function firewallMiddleware() {
         ]).catch(() => null);
 
         // Allow authenticated requests through (even from banned IPs — admin investigating)
-        const hasValidToken = req.headers.authorization?.startsWith('Bearer ');
-        
-        if (blocked && !hasValidToken) {
+        if (blocked && !hasBearerToken) {
           console.warn(`[THREAT_TRACKING] Blacklisted IP ${ip} attempted access on ${path}`);
           _logFirewallEvent(ip, 'BLOCKED', path, req, 0.95, 'IP_BLACKLISTED').catch(() => {});
           recordSecurityEvent('IP_BLACKLISTED', { ipAddress: ip, severity: 'HIGH' }).catch(() => {});
