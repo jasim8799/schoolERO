@@ -240,6 +240,15 @@ const createSession = async (req, res) => {
       isActive: existingActiveSession ? false : true
     });
 
+    // If this is the first session (auto-activated), sync School references
+    if (!existingActiveSession) {
+      await School.findByIdAndUpdate(schoolId, {
+        activeSessionId: session._id,
+        currentSessionId: session._id,
+        $inc: { sessionVersion: 1 },
+      });
+    }
+
     logger.success(`Academic session created: ${session.name} for school ${school.code}`);
 
     // Create audit log
@@ -542,7 +551,6 @@ const duplicateSessionSetup = async (req, res) => {
       copyExamTemplates = false,
       copyTimetableTemplates = false,
     } = req.body;
-    const { schoolId } = req.user;
 
     if (!fromSessionId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -558,21 +566,21 @@ const duplicateSessionSetup = async (req, res) => {
       });
     }
 
-    const targetSession = await AcademicSession.findOne({
-      _id: targetSessionId,
-      schoolId
-    });
+    // Fetch target session first, derive schoolId from it (supports SUPER_ADMIN)
+    const targetSession = await AcademicSession.findById(targetSessionId);
     if (!targetSession) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         message: 'Target session not found'
       });
     }
+    if (!_isSchoolAllowed(req, targetSession.schoolId)) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, message: 'Access denied' });
+    }
 
-    const sourceSession = await AcademicSession.findOne({
-      _id: fromSessionId,
-      schoolId
-    });
+    const schoolId = targetSession.schoolId;
+
+    const sourceSession = await AcademicSession.findOne({ _id: fromSessionId, schoolId });
     if (!sourceSession) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
@@ -580,10 +588,7 @@ const duplicateSessionSetup = async (req, res) => {
       });
     }
 
-    const existingClasses = await Class.countDocuments({
-      sessionId: targetSessionId,
-      schoolId
-    });
+    const existingClasses = await Class.countDocuments({ sessionId: targetSessionId, schoolId });
     if (existingClasses > 0) {
       return res.status(409).json({
         success: false,
@@ -592,151 +597,186 @@ const duplicateSessionSetup = async (req, res) => {
       });
     }
 
-    const sourceClasses = await Class.find({
-      sessionId: fromSessionId,
+    // Batch-fetch all source structure in parallel
+    const [sourceClasses, sourceSections, sourceSubjects] = await Promise.all([
+      Class.find({ sessionId: fromSessionId, schoolId, status: 'active' }).lean(),
+      Section.find({ sessionId: fromSessionId, schoolId, status: 'active' }).lean(),
+      Subject.find({ sessionId: fromSessionId, schoolId, status: 'active' }).lean(),
+    ]);
+
+    // --- Classes: insertMany ---
+    const classInsertDocs = sourceClasses.map((cls) => ({
+      name: cls.name,
+      order: cls.order,
       schoolId,
-      status: 'active'
-    });
+      sessionId: targetSessionId,
+      status: 'active',
+    }));
+    const newClasses = classInsertDocs.length > 0
+      ? await Class.insertMany(classInsertDocs, { ordered: true })
+      : [];
     const classIdMap = {};
-
-    for (const cls of sourceClasses) {
-      const newClass = await Class.create({
-        name: cls.name,
-        order: cls.order,
-        schoolId,
-        sessionId: targetSessionId,
-        status: 'active'
-      });
-      classIdMap[cls._id.toString()] = newClass._id;
-    }
-
-    const sourceSections = await Section.find({
-      sessionId: fromSessionId,
-      schoolId,
-      status: 'active'
+    sourceClasses.forEach((cls, i) => {
+      classIdMap[cls._id.toString()] = newClasses[i]._id;
     });
-    const sectionIdMap = {};
 
+    // --- Sections: insertMany with classId mapping ---
+    const sectionPairs = [];
     for (const sec of sourceSections) {
       const newClassId = classIdMap[sec.classId?.toString()];
       if (!newClassId) continue;
-
-      const newSection = await Section.create({
-        name: sec.name,
-        classId: newClassId,
-        schoolId,
-        sessionId: targetSessionId,
-        status: sec.status || 'active'
+      sectionPairs.push({
+        sourceId: sec._id.toString(),
+        doc: {
+          name: sec.name,
+          classId: newClassId,
+          schoolId,
+          sessionId: targetSessionId,
+          status: sec.status || 'active',
+        },
       });
-      sectionIdMap[sec._id.toString()] = newSection._id;
     }
-
-    const sourceSubjects = await Subject.find({
-      sessionId: fromSessionId,
-      schoolId,
-      status: 'active'
+    const newSections = sectionPairs.length > 0
+      ? await Section.insertMany(sectionPairs.map((p) => p.doc), { ordered: true })
+      : [];
+    const sectionIdMap = {};
+    sectionPairs.forEach((p, i) => {
+      sectionIdMap[p.sourceId] = newSections[i]._id;
     });
-    const subjectIdMap = {};
 
+    // --- Subjects: insertMany with classId mapping ---
+    const subjectPairs = [];
     for (const sub of sourceSubjects) {
       const newClassId = classIdMap[sub.classId?.toString()];
       if (!newClassId) continue;
-
-      const newSubject = await Subject.create({
-        name: sub.name,
-        classId: newClassId,
-        schoolId,
-        sessionId: targetSessionId,
-        status: sub.status || 'active'
+      subjectPairs.push({
+        sourceId: sub._id.toString(),
+        doc: {
+          name: sub.name,
+          classId: newClassId,
+          schoolId,
+          sessionId: targetSessionId,
+          status: sub.status || 'active',
+        },
       });
-      subjectIdMap[sub._id.toString()] = newSubject._id;
     }
+    const newSubjects = subjectPairs.length > 0
+      ? await Subject.insertMany(subjectPairs.map((p) => p.doc), { ordered: true })
+      : [];
+    const subjectIdMap = {};
+    subjectPairs.forEach((p, i) => {
+      subjectIdMap[p.sourceId] = newSubjects[i]._id;
+    });
 
+    // --- Optional: Fee Structures ---
     let feesCreated = 0;
     if (copyFeeStructures) {
-      const sourceFeeStructures = await FeeStructure.find({ schoolId, sessionId: fromSessionId });
-      for (const fee of sourceFeeStructures) {
-        const mappedClassId = classIdMap[fee.classId?.toString()];
-        if (!mappedClassId) continue;
-        try {
-          await FeeStructure.create({
+      try {
+        const sourceFees = await FeeStructure.find({ schoolId, sessionId: fromSessionId }).lean();
+        const feeDocs = sourceFees
+          .filter((fee) => classIdMap[fee.classId?.toString()])
+          .map((fee) => ({
             name: fee.name,
             amount: fee.amount,
             frequency: fee.frequency,
-            classId: mappedClassId,
+            classId: classIdMap[fee.classId.toString()],
             sessionId: targetSessionId,
             schoolId,
             isOptional: fee.isOptional,
             status: fee.status,
             createdBy: req.user.userId,
-          });
-          feesCreated += 1;
-        } catch (_) {}
-      }
+          }));
+        if (feeDocs.length > 0) {
+          await FeeStructure.insertMany(feeDocs, { ordered: false });
+          feesCreated = feeDocs.length;
+        }
+      } catch (_) {}
     }
 
+    // --- Optional: Exam Templates ---
     let examsCreated = 0;
     if (copyExamTemplates) {
-      const sourceExams = await Exam.find({ schoolId, sessionId: fromSessionId });
-      const targetSession = await AcademicSession.findById(targetSessionId).select('startDate endDate').lean();
-      for (const exam of sourceExams) {
-        const mappedClassId = classIdMap[exam.classId?.toString()];
-        if (!mappedClassId || !targetSession?.startDate || !targetSession?.endDate) continue;
-        try {
-          const start = new Date(targetSession.startDate);
-          const end = new Date(start);
-          end.setDate(end.getDate() + 7);
-          await Exam.create({
-            name: exam.name,
-            classId: mappedClassId,
-            sessionId: targetSessionId,
-            startDate: start,
-            endDate: end > new Date(targetSession.endDate) ? targetSession.endDate : end,
-            resultDate: null,
-            status: 'Draft',
-            schoolId,
-            createdBy: req.user.userId,
+      try {
+        const sourceExams = await Exam.find({ schoolId, sessionId: fromSessionId }).lean();
+        const tStart = new Date(targetSession.startDate);
+        const examDocs = sourceExams
+          .filter((exam) => classIdMap[exam.classId?.toString()])
+          .map((exam) => {
+            const start = new Date(tStart);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 7);
+            return {
+              name: exam.name,
+              classId: classIdMap[exam.classId.toString()],
+              sessionId: targetSessionId,
+              startDate: start,
+              endDate: end > new Date(targetSession.endDate) ? targetSession.endDate : end,
+              resultDate: null,
+              status: 'Draft',
+              schoolId,
+              createdBy: req.user.userId,
+            };
           });
-          examsCreated += 1;
-        } catch (_) {}
-      }
+        if (examDocs.length > 0) {
+          await Exam.insertMany(examDocs, { ordered: false });
+          examsCreated = examDocs.length;
+        }
+      } catch (_) {}
     }
 
+    // --- Optional: Timetable / Teacher Assignments ---
     let timetableTemplatesCreated = 0;
     if (copyTimetableTemplates) {
-      const sourceAssignments = await TeacherAssignment.find({ schoolId, sessionId: fromSessionId }).lean();
-      for (const assignment of sourceAssignments) {
-        const mappedClassId = classIdMap[assignment.classId?.toString()];
-        const mappedSectionId = sectionIdMap[assignment.sectionId?.toString()];
-        const mappedSubjectId = subjectIdMap[assignment.subjectId?.toString()];
-        if (!mappedClassId || !mappedSectionId || !mappedSubjectId) continue;
-        try {
-          await TeacherAssignment.create({
-            teacherId: assignment.teacherId,
-            classId: mappedClassId,
-            sectionId: mappedSectionId,
-            subjectId: mappedSubjectId,
-            day: assignment.day,
-            periodNumber: assignment.periodNumber,
-            startTime: assignment.startTime,
-            endTime: assignment.endTime,
+      try {
+        const sourceAssignments = await TeacherAssignment.find({ schoolId, sessionId: fromSessionId }).lean();
+        const assignmentDocs = sourceAssignments
+          .filter((a) =>
+            classIdMap[a.classId?.toString()] &&
+            sectionIdMap[a.sectionId?.toString()] &&
+            subjectIdMap[a.subjectId?.toString()]
+          )
+          .map((a) => ({
+            teacherId: a.teacherId,
+            classId: classIdMap[a.classId.toString()],
+            sectionId: sectionIdMap[a.sectionId.toString()],
+            subjectId: subjectIdMap[a.subjectId.toString()],
+            day: a.day,
+            periodNumber: a.periodNumber,
+            startTime: a.startTime,
+            endTime: a.endTime,
             schoolId,
             sessionId: targetSessionId,
             isPublished: false,
-            weeklyRepeat: assignment.weeklyRepeat || false,
-          });
-          timetableTemplatesCreated += 1;
-        } catch (_) {}
-      }
+            weeklyRepeat: a.weeklyRepeat || false,
+          }));
+        if (assignmentDocs.length > 0) {
+          await TeacherAssignment.insertMany(assignmentDocs, { ordered: false });
+          timetableTemplatesCreated = assignmentDocs.length;
+        }
+      } catch (_) {}
     }
+
+    await auditLog({
+      action: 'SESSION_SETUP_DUPLICATED',
+      userId: req.user.userId,
+      schoolId,
+      details: {
+        targetSessionId,
+        fromSessionId,
+        classesCreated: newClasses.length,
+        sectionsCreated: newSections.length,
+        subjectsCreated: newSubjects.length,
+      },
+      req,
+    });
 
     return res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Session setup complete',
       data: {
-        classesCreated: Object.keys(classIdMap).length,
-        sectionsCreated: Object.keys(sectionIdMap).length,
-        subjectsCreated: Object.keys(subjectIdMap).length,
+        classesCreated: newClasses.length,
+        sectionsCreated: newSections.length,
+        subjectsCreated: newSubjects.length,
         feeStructuresCreated: feesCreated,
         examTemplatesCreated: examsCreated,
         timetableTemplatesCreated,
@@ -755,50 +795,28 @@ const duplicateSessionSetup = async (req, res) => {
 const getSessionReadiness = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { schoolId } = req.user;
+    const schoolId = _resolveSchoolIdFromRequest(req);
 
-    const [classCount, sectionCount, subjectCount, studentCount] =
+    const [classCount, sectionCount, subjectCount, studentCount, examCount, feeCount] =
       await Promise.all([
         Class.countDocuments({ sessionId, schoolId, status: 'active' }),
         Section.countDocuments({ sessionId, schoolId, status: 'active' }),
         Subject.countDocuments({ sessionId, schoolId, status: 'active' }),
-        Student.countDocuments({ sessionId, schoolId, status: 'ACTIVE' })
+        Student.countDocuments({ sessionId, schoolId, status: 'ACTIVE' }),
+        Exam.countDocuments({ sessionId, schoolId }),
+        FeeStructure.countDocuments({ sessionId, schoolId }),
       ]);
 
     const checks = [
-      {
-        key: 'classes',
-        label: 'Classes created',
-        passed: classCount > 0,
-        count: classCount,
-        required: true
-      },
-      {
-        key: 'sections',
-        label: 'Sections created',
-        passed: sectionCount > 0,
-        count: sectionCount,
-        required: false
-      },
-      {
-        key: 'subjects',
-        label: 'Subjects created',
-        passed: subjectCount > 0,
-        count: subjectCount,
-        required: false
-      },
-      {
-        key: 'students',
-        label: 'Students promoted/enrolled',
-        passed: studentCount > 0,
-        count: studentCount,
-        required: false
-      }
+      { key: 'classes',  label: 'Classes created',              passed: classCount   > 0, count: classCount,   required: true  },
+      { key: 'sections', label: 'Sections created',             passed: sectionCount > 0, count: sectionCount, required: false },
+      { key: 'subjects', label: 'Subjects created',             passed: subjectCount > 0, count: subjectCount, required: false },
+      { key: 'students', label: 'Students promoted/enrolled',   passed: studentCount > 0, count: studentCount, required: false },
+      { key: 'exams',    label: 'Exam templates created',       passed: examCount    > 0, count: examCount,    required: false },
+      { key: 'fees',     label: 'Fee structures configured',    passed: feeCount     > 0, count: feeCount,     required: false },
     ];
 
-    const canActivate = checks
-      .filter((c) => c.required)
-      .every((c) => c.passed);
+    const canActivate = checks.filter((c) => c.required).every((c) => c.passed);
 
     return res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -1112,6 +1130,10 @@ const getSessionStats = async (req, res) => {
       promotedCount,
       retainedCount,
       graduatedCount,
+      homeworkCount,
+      hostelCount,
+      transportCount,
+      parentCount,
     ] = await Promise.all([
       Class.countDocuments({ schoolId, sessionId }),
       Section.countDocuments({ schoolId, sessionId }),
@@ -1125,6 +1147,10 @@ const getSessionStats = async (req, res) => {
       AcademicHistory.countDocuments({ schoolId, sessionId, status: 'Promoted' }),
       AcademicHistory.countDocuments({ schoolId, sessionId, status: 'Retained' }),
       AcademicHistory.countDocuments({ schoolId, sessionId, status: 'Graduated' }),
+      mongoose.model('Homework').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentHostel').countDocuments({ schoolId, sessionId }),
+      mongoose.model('StudentTransport').countDocuments({ schoolId, sessionId }),
+      User.countDocuments({ schoolId, role: 'PARENT', status: 'active', isDeleted: { $ne: true } }),
     ]);
 
     return res.status(HTTP_STATUS.OK).json({
@@ -1138,6 +1164,10 @@ const getSessionStats = async (req, res) => {
         feeCollections: feePayments + payments,
         results,
         promotionStatus: `Promoted: ${promotedCount}, Retained: ${retainedCount}, Graduated: ${graduatedCount}`,
+        homework: homeworkCount,
+        hostel: hostelCount,
+        transport: transportCount,
+        parents: parentCount,
       },
     });
   } catch (error) {
