@@ -273,6 +273,8 @@ exports.getBillSummary = async (req, res) => {
     console.log('[BillSummary][Context] schoolId used:', safeSchoolId.toString());
     console.log('[BillSummary][Context] sessionId received:', sessionId || null);
 
+    // FIX: Use schoolSessionMatch for ALL dashboard aggregations
+    // This ensures summary cards reflect ONLY the current active session
     const schoolMatch = { schoolId: safeSchoolId };
     const schoolSessionMatch = safeSessionId
       ? { schoolId: safeSchoolId, sessionId: safeSessionId }
@@ -293,33 +295,26 @@ exports.getBillSummary = async (req, res) => {
       unpaidBillsCount,
       cancelledBillsCount,
       waivedBillsCount,
-      billsFoundForSession,
-      paymentsFoundForSchool,
-      paymentsFoundForSession,
       totalPaidAmountAgg,
       dueByStatusAgg,
       todayPayments,
       allPayments,
       monthPayments,
-      billsApiStyleCount,
     ] = await Promise.all([
-      Bill.countDocuments(schoolMatch),
-      Bill.countDocuments({ ...schoolMatch, status: 'PAID' }),
-      Bill.countDocuments({ ...schoolMatch, status: 'PARTIAL' }),
-      Bill.countDocuments({ ...schoolMatch, status: 'UNPAID' }),
-      Bill.countDocuments({ ...schoolMatch, status: 'CANCELLED' }),
-      Bill.countDocuments({ ...schoolMatch, status: 'WAIVED' }),
       Bill.countDocuments(schoolSessionMatch),
-      Payment.countDocuments(schoolMatch),
-      Payment.countDocuments(schoolSessionMatch),
+      Bill.countDocuments({ ...schoolSessionMatch, status: 'PAID' }),
+      Bill.countDocuments({ ...schoolSessionMatch, status: 'PARTIAL' }),
+      Bill.countDocuments({ ...schoolSessionMatch, status: 'UNPAID' }),
+      Bill.countDocuments({ ...schoolSessionMatch, status: 'CANCELLED' }),
+      Bill.countDocuments({ ...schoolSessionMatch, status: 'WAIVED' }),
       Bill.aggregate([
-        { $match: schoolMatch },
+        { $match: schoolSessionMatch },
         { $group: { _id: null, totalPaidAmount: { $sum: '$paidAmount' } } },
       ]),
       Bill.aggregate([
         {
           $match: {
-            ...schoolMatch,
+            ...schoolSessionMatch,
             status: { $in: ['UNPAID', 'PARTIAL'] },
             dueAmount: { $gt: 0 },
           },
@@ -333,18 +328,17 @@ exports.getBillSummary = async (req, res) => {
         },
       ]),
       Payment.aggregate([
-        { $match: { ...schoolMatch, paymentDate: { $gte: today, $lt: tomorrow } } },
+        { $match: { ...schoolSessionMatch, paymentDate: { $gte: today, $lt: tomorrow } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       Payment.aggregate([
-        { $match: schoolMatch },
+        { $match: schoolSessionMatch },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       Payment.aggregate([
-        { $match: { ...schoolMatch, paymentDate: { $gte: monthStart, $lt: monthEnd } } },
+        { $match: { ...schoolSessionMatch, paymentDate: { $gte: monthStart, $lt: monthEnd } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
-      Bill.countDocuments({ ...schoolMatch, ...getSessionFilter(req) }),
     ]);
 
     const dueMap = dueByStatusAgg.reduce((acc, item) => {
@@ -359,24 +353,23 @@ exports.getBillSummary = async (req, res) => {
     const totalDue = unpaidDue + partialDue;
     const totalPaidAmount = totalPaidAmountAgg[0]?.totalPaidAmount || 0;
 
-    console.log('========== BILL SUMMARY FORENSIC AUDIT ==========' );
+    console.log('========== BILL SUMMARY (Session-Scoped) ==========' );
+    console.log('[BillSummary][Session] schoolId:', safeSchoolId.toString());
+    console.log('[BillSummary][Session] sessionId:', safeSessionId?.toString() || 'none (school-level fallback)');
     console.log('[BillSummary][DB] Total Bills:', totalBillsCount);
     console.log('[BillSummary][DB] Paid Bills:', paidBillsCount);
     console.log('[BillSummary][DB] Partial Bills:', partialBillsCount);
     console.log('[BillSummary][DB] Unpaid Bills:', unpaidBillsCount);
     console.log('[BillSummary][DB] Cancelled Bills:', cancelledBillsCount);
     console.log('[BillSummary][DB] Waived Bills:', waivedBillsCount);
-    console.log('[BillSummary][DB] Bills found (school + session):', billsFoundForSession);
-    console.log('[BillSummary][DB] Bills found (/api/bills style):', billsApiStyleCount);
-    console.log('[BillSummary][DB] Total Payments:', paymentsFoundForSchool);
-    console.log('[BillSummary][DB] Payments found (school + session):', paymentsFoundForSession);
+    console.log('[BillSummary][DB] Total Payments:', allPayments[0]?.count || 0);
     console.log('[BillSummary][DB] Today\'s Payments:', todayPayments[0]?.count || 0);
     console.log('[BillSummary][DB] Current Month Payments:', monthPayments[0]?.count || 0);
     console.log('[BillSummary][DB] Total Due Amount:', totalDue);
     console.log('[BillSummary][DB] Total Paid Amount (Bill.paidAmount sum):', totalPaidAmount);
     console.log('[BillSummary][Response] unpaidDue:', unpaidDue, 'partialDue:', partialDue, 'totalDue:', totalDue);
     console.log('[BillSummary][Response] collectedToday:', todayPayments[0]?.total || 0, 'totalCollected:', allPayments[0]?.total || 0, 'thisMonthCollected:', monthPayments[0]?.total || 0);
-    console.log('===============================================');
+    console.log('================================================');
 
     res.json({
       success: true,
