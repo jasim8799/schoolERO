@@ -153,6 +153,13 @@ exports.createBill = async (req, res) => {
       return res.status(400).json({ message: 'Student not found' });
     }
 
+    if (student.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot create bill for student with status: ' + student.status + '. Only ACTIVE students can have bills.' 
+      });
+    }
+
     if (!sessionId) {
       return res.status(400).json({ message: 'No active session found' });
     }

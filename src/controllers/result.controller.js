@@ -47,6 +47,18 @@ const createOrUpdateResult = async (req, res) => {
       });
     }
 
+    // Validate student exists and is ACTIVE
+    const student = await Student.findOne({ _id: studentId, schoolId, sessionId });
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    if (student.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot submit results for student with status: ' + student.status + '. Only ACTIVE students can have results recorded.' 
+      });
+    }
+
     // Check if exam is published
     const exam = await Exam.findOne({ _id: examId, schoolId, sessionId });
     if (!exam) {

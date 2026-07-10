@@ -128,19 +128,30 @@ const authenticate = async (req, res, next) => {
     };
     req.deviceHash = _getDeviceHash(req);
 
+    // FIX: Validate forceLogoutAt and sessionVersion
     if (req.user.role !== USER_ROLES.SUPER_ADMIN && req.user.schoolId) {
-      School.findById(req.user.schoolId)
-        .select('forceLogoutAt')
-        .lean()
-        .then((school) => {
-          if (
-            school?.forceLogoutAt &&
-            decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()
-          ) {
-            console.warn('[authenticate] forceLogoutAt exceeded for user', req.user.userId);
-          }
-        })
-        .catch(() => {});
+      try {
+        const school = await School.findById(req.user.schoolId)
+          .select('forceLogoutAt sessionVersion')
+          .lean();
+        
+        if (school?.forceLogoutAt && decoded.iat * 1000 < new Date(school.forceLogoutAt).getTime()) {
+          return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+            success: false,
+            message: 'Your session has been invalidated. Please login again.'
+          });
+        }
+        
+        if (decoded.sessionVersion && decoded.sessionVersion !== school?.sessionVersion) {
+          return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+            success: false,
+            message: 'Your session has been invalidated. Please login again.'
+          });
+        }
+      } catch (schoolErr) {
+        console.error('[authenticate] School validation failed:', schoolErr.message);
+        // Continue on error - don't block the request
+      }
     }
 
     _runBackgroundTasks(req.user, req, decoded);

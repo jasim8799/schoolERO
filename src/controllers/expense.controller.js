@@ -6,6 +6,12 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// Session filter for multi-session support
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -165,7 +171,7 @@ const getExpenses = async (req, res) => {
     const { month } = req.query; // Format: YYYY-MM
     const { schoolId } = req.user;
 
-    let filter = { schoolId };
+    let filter = { schoolId, ...getSessionFilter(req) };
 
     // Add month filter if provided
     if (month) {
@@ -241,11 +247,13 @@ const getExpenseSummary = async (req, res) => {
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(year, monthNum, 1);
 
-    // MongoDB aggregation pipeline — no sessionId filter so totals match the list
+    // MongoDB aggregation pipeline — FIX: Added session filter for data isolation
+    const sFilter = getSessionFilter(req);
     const pipeline = [
       {
         $match: {
           schoolId,
+          ...sFilter,
           date: {
             $gte: startDate,
             $lt: endDate
@@ -294,7 +302,7 @@ const getExpenseById = async (req, res) => {
       });
     }
 
-    const expense = await Expense.findOne({ _id: id, schoolId })
+    const expense = await Expense.findOne({ _id: id, schoolId, ...getSessionFilter(req) })
       .populate('createdBy', 'name')
       .populate('sessionId', 'name');
 
@@ -334,7 +342,7 @@ const updateExpense = async (req, res) => {
       });
     }
 
-    const expense = await Expense.findOne({ _id: id, schoolId });
+    const expense = await Expense.findOne({ _id: id, schoolId, ...getSessionFilter(req) });
     if (!expense) {
       return res.status(404).json({
         success: false,

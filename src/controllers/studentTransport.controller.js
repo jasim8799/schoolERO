@@ -50,6 +50,13 @@ const assignTransport = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
+    if (student.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot assign transport to student with status: ' + student.status + '. Only ACTIVE students can have transport assigned.' 
+      });
+    }
+
     // Check no active transport
     const existing = await StudentTransport.findOne({ studentId, status: 'ACTIVE', schoolId });
     if (existing) {

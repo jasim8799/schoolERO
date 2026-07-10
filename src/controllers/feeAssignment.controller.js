@@ -1,8 +1,20 @@
 const mongoose = require('mongoose');
 const { generateMonthlyFees } = require('../services/automation.service');
 
-const getSessionFilter = (req, requestedSessionId) => {
-  if (requestedSessionId) return { sessionId: requestedSessionId };
+// FIX: Validate requestedSessionId belongs to user's school
+const getSessionFilter = async (req, requestedSessionId) => {
+  if (requestedSessionId) {
+    // Security: Verify sessionId belongs to user's school
+    const AcademicSession = require('../models/AcademicSession');
+    const session = await AcademicSession.findOne({
+      _id: requestedSessionId,
+      schoolId: req.user.schoolId
+    }).lean();
+    if (!session) {
+      throw new Error('Invalid session ID for this school');
+    }
+    return { sessionId: requestedSessionId };
+  }
   const sessionId = req.user?.sessionId;
   return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
 };

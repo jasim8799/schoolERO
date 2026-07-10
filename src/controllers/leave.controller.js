@@ -78,6 +78,12 @@ const applyLeave = async (req, res) => {
       if (!student) {
         return res.status(404).json({ success: false, message: 'Student record not found' });
       }
+      if (student.status !== 'ACTIVE') {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Cannot apply for leave. Student status is: ' + student.status + '. Only ACTIVE students can apply for leave.' 
+        });
+      }
       studentId = student._id;
     }
 

@@ -15,6 +15,13 @@ const assignHostel = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
+    if (student.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot assign hostel to student with status: ' + student.status + '. Only ACTIVE students can have hostel assigned.' 
+      });
+    }
+
     // Check no active hostel
     const existing = await StudentHostel.findOne({ studentId, status: 'ACTIVE', schoolId });
     if (existing) {

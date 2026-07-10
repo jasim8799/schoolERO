@@ -41,8 +41,12 @@ const askQuestion = async (req, res) => {
 
     let studentId;
     if (role === 'STUDENT') {
-      const student = await Student.findOne({ userId, schoolId }).select('_id').lean();
+      const student = await Student.findOne({ userId, schoolId }).select('_id status').lean();
       if (!student) return res.status(404).json({ success: false, message: 'Student not found' });
+      
+      if (student.status !== 'ACTIVE') {
+        return res.status(403).json({ success: false, message: 'Cannot ask questions - student status is: ' + student.status + '. Only ACTIVE students can ask questions.' });
+      }
       studentId = student._id;
     } else if (role === 'PARENT') {
       studentId = req.body.studentId;
@@ -233,8 +237,8 @@ const getAllQuestions = async (req, res) => {
 
 const getSubjectsForStudent = async (req, res) => {
   try {
-    const { schoolId } = req.user;
-    const subjects = await Subject.find({ schoolId })
+    const { schoolId, sessionId } = req.user;
+    const subjects = await Subject.find({ schoolId, ..._sessionFilter(sessionId) })
       .select('name _id')
       .sort({ name: 1 })
       .lean();
@@ -246,8 +250,8 @@ const getSubjectsForStudent = async (req, res) => {
 
 const getTeachersForStudent = async (req, res) => {
   try {
-    const { schoolId } = req.user;
-    const teachers = await Teacher.find({ schoolId })
+    const { schoolId, sessionId } = req.user;
+    const teachers = await Teacher.find({ schoolId, ..._sessionFilter(sessionId) })
       .select('_id userId')
       .populate('userId', 'name')
       .sort({ createdAt: -1 })

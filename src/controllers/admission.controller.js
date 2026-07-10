@@ -37,6 +37,13 @@ exports.createAdmission = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
 
+    if (student.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot create admission - student status is: ' + student.status + '. Only ACTIVE students can have admission records.' 
+      });
+    }
+
     // Prevent duplicate admission records
     const existing = await Admission.findOne({ studentId });
     if (existing) {

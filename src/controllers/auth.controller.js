@@ -299,12 +299,20 @@ const login = async (req, res) => {
         })
       : null;
 
-    // Generate JWT token
+    // Fetch school for sessionVersion
+    let sessionVersion = 1;
+    if (user.schoolId) {
+      const schoolRecord = await School.findById(user.schoolId).select('sessionVersion').lean();
+      sessionVersion = schoolRecord?.sessionVersion || 1;
+    }
+
+    // Generate JWT token - FIX: Include sessionVersion for validation
     const token = generateToken({
       userId: user._id,
       role: user.role,
       schoolId: user.schoolId ? (user.schoolId._id || user.schoolId).toString() : null,
       sessionId: activeSession ? activeSession._id.toString() : null,
+      sessionVersion: sessionVersion
     });
 
     _postLoginActions(user, req, token).catch((e) => console.error('[postLogin]', e.message));

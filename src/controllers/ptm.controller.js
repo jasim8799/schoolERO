@@ -167,9 +167,15 @@ const bookPtm = async (req, res) => {
     let studentId, parentId;
     if (role === 'STUDENT') {
       const student = await Student.findOne({
-        userId, schoolId }).select('_id').lean();
+        userId, schoolId }).select('_id status').lean();
       if (!student) return res.status(404).json({
         success: false, message: 'Student not found' });
+      if (student.status !== 'ACTIVE') {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Cannot book PTM - student status is: ' + student.status + '. Only ACTIVE students can book PTM slots.' 
+        });
+      }
       studentId = student._id;
     } else if (role === 'PARENT') {
       studentId = bodyStudentId;

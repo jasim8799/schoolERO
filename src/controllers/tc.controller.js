@@ -6,6 +6,11 @@ const Parent = require('../models/Parent.js');
 const School = require('../models/School.js');
 const PDFDocument = require('pdfkit');
 
+const getSessionFilter = (req) => {
+  const sessionId = req.user?.sessionId;
+  return sessionId ? { $or: [{ sessionId }, { sessionId: { $exists: false } }] } : {};
+};
+
 const handleError = (res, err, context = 'TC Request') => {
   if (err.name === 'CastError') {
     return res.status(400).json({
@@ -94,7 +99,7 @@ const issueTC = async (req, res) => {
     }
 
     // Generate readable tcNumber school-wise
-    const count = await TC.countDocuments({ schoolId });
+    const count = await TC.countDocuments({ schoolId, ...getSessionFilter(req) });
     const year = new Date().getFullYear();
     const seq = String(count + 1).padStart(4, '0');
     const tcNumber = `TC/${year}/${seq}`;
@@ -178,7 +183,7 @@ const getStudentsWithTC = async (req, res) => {
   try {
     const { schoolId } = req.user;
 
-    const tcs = await TC.find({ schoolId })
+    const tcs = await TC.find({ schoolId, ...getSessionFilter(req) })
       .populate({
         path: 'studentId',
         populate: [

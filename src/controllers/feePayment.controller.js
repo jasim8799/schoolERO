@@ -561,6 +561,13 @@ const generateAndPay = async (req, res) => {
     if (!student)
       return res.status(404).json({ success: false, message: 'Student not found' });
 
+    if (student.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot generate payment for student with status: ' + student.status + '. Only ACTIVE students can have fees paid.' 
+      });
+    }
+
     const billTypeToCategory = {
       TUITION: 'FEE_COLLECTION',
       HOSTEL: 'HOSTEL_COLLECTION',

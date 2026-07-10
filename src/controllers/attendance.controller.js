@@ -86,6 +86,11 @@ const markStudentDailyAttendance = async (req, res) => {
           success: false, message: 'Student does not belong to the specified section'
         });
       }
+      if (student.status !== 'ACTIVE') {
+        return res.status(403).json({
+          success: false, message: 'Cannot mark attendance for student with status: ' + student.status + '. Only ACTIVE students can have attendance marked.'
+        });
+      }
     }
 
     const bulkOps = records.map((record) => {
