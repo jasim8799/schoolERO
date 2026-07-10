@@ -101,7 +101,7 @@ async function ensureStudentPendingAssignmentBills({
       billNumber = generateBillNumber(schoolId);
       attempts += 1;
       if (attempts > 10) break;
-    } while (await Bill.findOne({ billNumber }).select('_id').lean());
+    } while (await Bill.findOne({ billNumber, schoolId }).select('_id').lean());
 
     const totalAmount = Number(assignment.totalAmount || 0);
     const paidAmount = Math.max(0, totalAmount - dueAmount);

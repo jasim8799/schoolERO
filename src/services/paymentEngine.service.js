@@ -93,7 +93,7 @@ const ensureUniqueBillNumber = async ({ schoolId, mongoSession }) => {
     if (attempts > 20) {
       throw new PaymentEngineError('Could not generate bill number', 500);
     }
-  } while (await Bill.findOne({ billNumber }).session(mongoSession));
+  } while (await Bill.findOne({ billNumber, schoolId }).session(mongoSession));
   return billNumber;
 };
 

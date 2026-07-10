@@ -135,15 +135,35 @@ module.exports.getFinancialSummary = async ({ schoolId, sessionId }) => {
 
   const [hostelAssignments, hostelBills, transportAssignments, transportBills] =
     await Promise.all([
+      // FIXED: Now filters hostel assignments to only those from students in active session
       StudentHostel.find({ schoolId: safeSchoolId, status: 'ACTIVE' })
+        .populate({
+          path: 'studentId',
+          select: '_id sessionId',
+          match: sessionId ? { sessionId: new mongoose.Types.ObjectId(sessionId.toString()) } : {}
+        })
         .populate('hostelId', 'monthlyFee')
-        .lean(),
+        .lean()
+        .then(assignments => 
+          // Filter out assignments where student populate failed (sessionId mismatch)
+          assignments.filter(a => a.studentId && a.studentId._id)
+        ),
       Bill.find({ schoolId: safeSchoolId, billType: 'HOSTEL', ...sessionMatch, status: { $ne: 'CANCELLED' } })
         .select('studentId description status totalAmount dueAmount createdAt')
         .lean(),
+      // FIXED: Now filters transport assignments to only those from students in active session
       StudentTransport.find({ schoolId: safeSchoolId, status: 'ACTIVE' })
+        .populate({
+          path: 'studentId',
+          select: '_id sessionId',
+          match: sessionId ? { sessionId: new mongoose.Types.ObjectId(sessionId.toString()) } : {}
+        })
         .populate('routeId', 'monthlyFee')
-        .lean(),
+        .lean()
+        .then(assignments =>
+          // Filter out assignments where student populate failed (sessionId mismatch)
+          assignments.filter(a => a.studentId && a.studentId._id)
+        ),
       Bill.find({ schoolId: safeSchoolId, billType: 'TRANSPORT', ...sessionMatch, status: { $ne: 'CANCELLED' } })
         .select('studentId description status totalAmount dueAmount createdAt')
         .lean(),

@@ -55,7 +55,7 @@ const generateBillNumber = async (schoolId) => {
     billNumber = `BILL-${schoolId.toString().slice(-4)}-${ts}-${r}`;
     attempts += 1;
     if (attempts > 10) break;
-  } while (await Bill.findOne({ billNumber }).select('_id').lean());
+  } while (await Bill.findOne({ billNumber, schoolId }).select('_id').lean());
 
   return billNumber;
 };

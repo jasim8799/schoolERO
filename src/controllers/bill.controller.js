@@ -171,7 +171,7 @@ exports.createBill = async (req, res) => {
       billNumber = generateBillNumber(schoolId);
       attempts++;
       if (attempts > 10) throw new Error('Could not generate bill number');
-    } while (await Bill.findOne({ billNumber }));
+    } while (await Bill.findOne({ billNumber, schoolId }));
 
     const bill = await Bill.create({
       billNumber,
@@ -911,7 +911,7 @@ exports.getBillHtmlReceipt = async (req, res) => {
     );
 
     const canonicalBills = paymentBillIds.length
-      ? await Bill.find({ _id: { $in: paymentBillIds }, schoolId })
+      ? await Bill.find({ _id: { $in: paymentBillIds }, schoolId, ...getSessionFilter(req) })
           .select('billNumber billType description sourceType sourceId totalAmount paidAmount dueAmount status')
           .lean()
       : [];

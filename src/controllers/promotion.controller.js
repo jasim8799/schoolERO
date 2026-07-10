@@ -498,7 +498,7 @@ async function createFreshTuitionIfNeeded({ schoolId, toSessionId, principalUser
     const studentFee = feeDoc[0];
     let billNumber = buildBillNumber(schoolId);
     let attempts = 0;
-    while (await Bill.findOne({ billNumber }).session(mongoSession)) {
+    while (await Bill.findOne({ billNumber, schoolId }).session(mongoSession)) {
       billNumber = buildBillNumber(schoolId);
       attempts += 1;
       if (attempts > 5) break;

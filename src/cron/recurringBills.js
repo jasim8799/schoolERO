@@ -55,7 +55,7 @@ const generateMonthlyBills = async () => {
           billNumber = generateBillNumber(assignment.schoolId);
           attempts++;
         } while (attempts < 10 &&
-          await Bill.findOne({ billNumber }));
+          await Bill.findOne({ billNumber, schoolId: assignment.schoolId }));
 
         await Bill.create({
           billNumber,
@@ -108,7 +108,7 @@ const generateMonthlyBills = async () => {
           billNumber = generateBillNumber(assignment.schoolId);
           attempts++;
         } while (attempts < 10 &&
-          await Bill.findOne({ billNumber }));
+          await Bill.findOne({ billNumber, schoolId: assignment.schoolId }));
 
         await Bill.create({
           billNumber,

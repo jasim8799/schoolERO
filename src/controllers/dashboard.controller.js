@@ -249,6 +249,7 @@ const presentCount = todayAttendances.filter(a => a.status === 'PRESENT').length
     // Overdue fee amount (sum of all overdue bills)
     const overdueBills = await Bill.find({
       schoolId,
+      ...sFilter,
       status: { $in: ['UNPAID', 'PARTIAL'] },
       dueAmount: { $gt: 0 },
       dueDate: { $lt: today }
@@ -431,6 +432,7 @@ const getOperatorDashboard = async (req, res) => {
     // Overdue fee amount
     const overdueBills = await Bill.find({
       schoolId,
+      ...sFilter,
       status: { $in: ['UNPAID', 'PARTIAL'] },
       dueAmount: { $gt: 0 },
       dueDate: { $lt: today }
