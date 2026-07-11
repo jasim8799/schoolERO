@@ -1,6 +1,7 @@
 const User = require('../models/User.js');
 const Student = require('../models/Student.js');
 const AcademicSession = require('../models/AcademicSession.js');
+const School = require('../models/School.js');
 const { hashPassword, comparePassword } = require('../utils/password.js');
 const { generateToken } = require('../utils/jwt.js');
 const { _postLoginActions, _handleFailedLogin } = require('../middlewares/auth.middleware');
