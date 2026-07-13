@@ -27,6 +27,9 @@ function firewallMiddleware() {
 
     try {
       // ── Rate limit check with timeout protection (public non-auth traffic only) ───
+      // IMPORTANT: Authenticated requests bypass IP-based rate limiting to allow bulk operations
+      // (e.g., creating 100+ staff members). Per-account brute-force protection is handled
+      // separately in auth.controller.js (accountSecurity.service.js).
       if (!hasBearerToken) {
         const rateKey = `ratelimit:${ip}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW)}`;
         const redisResult = await Promise.race([
@@ -50,6 +53,10 @@ function firewallMiddleware() {
             message: 'Rate limit exceeded. Please slow down.',
           });
         }
+      } else {
+        // Authenticated requests (Bearer token present) are trusted and skip IP-based rate limits
+        // This allows authenticated admins to perform bulk operations (create 100+ staff, etc.)
+        console.debug(`[FIREWALL] Authenticated request allowed for ${ip} on ${path}`);
       }
 
       // ── Detect injection patterns ─────────────────────────────────────
