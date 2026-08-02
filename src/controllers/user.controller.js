@@ -7,6 +7,7 @@ const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 const redis = require('../config/redis.js');
+const { config } = require('../config/env.js');
 const { enrichUserForDashboard } = require('../users/user.enricher.js');
 const { calculateUserThreatScore } = require('../security/user.threat.scorer.js');
 
@@ -846,29 +847,45 @@ const setUserPassword = async (req, res) => {
 const changeMyPassword = async (req, res) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body || {};
+    const userId = req.user?.userId || req.user?._id || null;
 
-    if (!currentPassword) {
+    // Temporary debug metadata logs (no secrets)
+    console.log('[changeMyPassword] User ID', userId ? userId.toString() : null);
+
+    if (!currentPassword || typeof currentPassword !== 'string') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Current password is required',
       });
     }
 
-    if (!newPassword || newPassword.length < 8) {
+    if (!newPassword || typeof newPassword !== 'string') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'New password must be at least 8 characters long',
+        message: 'New password is required',
       });
     }
 
-    if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+    if (!confirmPassword || typeof confirmPassword !== 'string') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        message: 'Confirm password does not match',
+        message: 'Confirm password is required',
       });
     }
 
-    const user = await User.findById(req.user.userId).select('+password');
+    if (!userId) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const user = await User.findById(userId).select('+password');
+    console.log('[changeMyPassword] Loaded User ID', user?._id ? user._id.toString() : null);
+    console.log('[changeMyPassword] Password Loaded', !!user?.password);
+    console.log('[changeMyPassword] Hash Length', user?.password?.length || 0);
+    console.log('[changeMyPassword] Current Password Length', currentPassword?.length || 0);
+
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
@@ -876,23 +893,60 @@ const changeMyPassword = async (req, res) => {
       });
     }
 
-    const matches = await comparePassword(currentPassword, user.password);
-    if (!matches) {
+    // Verify current password first (plain text vs stored hash)
+    const isMatch = await comparePassword(currentPassword, user.password);
+    console.log('[changeMyPassword] Compare Result', isMatch);
+    if (!isMatch) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
         message: 'Current password is incorrect',
       });
     }
 
+    if (newPassword.length < 8) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'New password must be at least 8 characters long',
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Confirm password does not match',
+      });
+    }
+
+    // Hash only the new password after successful current-password verification.
     user.password = await hashPassword(newPassword);
     user.lockedUntil = null;
     user.failedLogins = 0;
     await user.save();
 
+    // Invalidate active sessions and force re-login on all devices.
+    await LoginSession.updateMany(
+      { userId: user._id, isActive: true },
+      {
+        $set: {
+          isActive: false,
+          logoutAt: new Date(),
+          forceLoggedOut: true,
+          logoutReason: 'PASSWORD_CHANGED',
+        },
+      }
+    );
+
+    // If blacklist checks are enabled, blacklist this user's tokens for the JWT lifespan.
+    const ttlSeconds = _jwtExpiryToSeconds(config?.jwt?.expiresIn);
+    if (ttlSeconds > 0) {
+      await redis.setex(`blacklist:user:${user._id}`, ttlSeconds, '1').catch(() => {});
+    }
+    await _invalidateUserCaches(user._id);
+
     await auditLog({
       action: 'PASSWORD_CHANGED',
       category: 'USER',
-      userId: req.user.userId,
+      userId: userId,
       userName: req.user.name,
       role: req.user.role,
       entityType: 'USER',
@@ -917,6 +971,23 @@ const changeMyPassword = async (req, res) => {
     });
   }
 };
+
+function _jwtExpiryToSeconds(expiresIn) {
+  if (!expiresIn) return 0;
+  if (typeof expiresIn === 'number' && expiresIn > 0) return Math.floor(expiresIn);
+  if (typeof expiresIn !== 'string') return 0;
+
+  const raw = expiresIn.trim().toLowerCase();
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
+
+  const match = raw.match(/^(\d+)\s*([smhd])$/);
+  if (!match) return 0;
+  const value = Number(match[1]);
+  const unit = match[2];
+  const factors = { s: 1, m: 60, h: 3600, d: 86400 };
+  return value * (factors[unit] || 0);
+}
 
 // Update authenticated user's own profile (email/photo)
 const updateMyProfile = async (req, res) => {
