@@ -3,6 +3,7 @@ const School = require('../models/School');
 const BillingHistory = require('../models/BillingHistory');
 const RenewalReminder = require('../models/RenewalReminder');
 const RevenueSnapshot = require('../models/RevenueSnapshot');
+const { auditLog } = require('../utils/auditLog');
 
 async function checkSubscriptionExpiry() {
   const now = new Date();
@@ -15,6 +16,73 @@ async function checkSubscriptionExpiry() {
   }).lean();
 
   for (const school of expiredSchools) {
+    const subStart = school?.subscription?.startDate ? new Date(school.subscription.startDate) : null;
+    const subEnd = school?.subscription?.endDate ? new Date(school.subscription.endDate) : null;
+    const gracePeriodDays = Number(school?.subscription?.gracePeriodDays ?? 30);
+    const graceEnd = subEnd && Number.isFinite(subEnd.getTime())
+      ? new Date(subEnd.getTime() + gracePeriodDays * 86400000)
+      : null;
+    const daysRemaining = subEnd && Number.isFinite(subEnd.getTime())
+      ? Math.ceil((subEnd.getTime() - now.getTime()) / 86400000)
+      : null;
+    const triggeredCondition =
+      `status=active && endDate<=graceThreshold | (${school.status}) && ` +
+      `${subEnd ? subEnd.toISOString() : 'INVALID_END_DATE'} <= ${graceThreshold.toISOString()}`;
+
+    console.log('===== SCHOOL SUSPENSION =====');
+    console.log('Job:', 'subscriptionCron.checkSubscriptionExpiry');
+    console.log('Timestamp:', now.toISOString());
+    console.log('School:', school.name || 'Unknown');
+    console.log('School ID:', school._id?.toString?.() || String(school._id));
+    console.log('Old Status:', school.status);
+    console.log('New Status:', 'inactive');
+    console.log('Current Date:', now.toISOString());
+    console.log('Subscription Start:', subStart ? subStart.toISOString() : 'N/A');
+    console.log('Subscription End:', subEnd ? subEnd.toISOString() : 'Invalid Date');
+    console.log('Grace End:', graceEnd ? graceEnd.toISOString() : 'Invalid Date');
+    console.log('Days Remaining:', daysRemaining);
+    console.log('Grace Period:', gracePeriodDays);
+    console.log('Reason:', 'Subscription expired after grace period');
+    console.log('Condition:', triggeredCondition);
+    console.log('Call Stack:', new Error('[subscription.cron] school suspension').stack);
+    console.log('=============================');
+
+    await auditLog({
+      action: 'SCHOOL_AUTO_SUSPENDED_SUBSCRIPTION',
+      role: 'SYSTEM',
+      category: 'SUBSCRIPTION',
+      entityType: 'SCHOOL',
+      entityId: school._id,
+      entityName: school.name,
+      schoolId: school._id,
+      schoolName: school.name,
+      description: `School auto-suspended by subscription cron: ${school.name || school._id}`,
+      details: {
+        jobName: 'subscriptionCron.checkSubscriptionExpiry',
+        automatic: true,
+        operator: 'SYSTEM',
+        oldStatus: school.status,
+        newStatus: 'inactive',
+        reason: 'Subscription expired after grace period',
+        currentDate: now.toISOString(),
+        subscriptionStartDate: subStart ? subStart.toISOString() : null,
+        subscriptionEndDate: subEnd ? subEnd.toISOString() : null,
+        graceEndDate: graceEnd ? graceEnd.toISOString() : null,
+        gracePeriodDays,
+        daysRemaining,
+        subscriptionStatus: school?.subscription?.status || null,
+        planStatus: school?.plan || null,
+        triggeredCondition,
+        dateChecks: {
+          nowValid: Number.isFinite(now.getTime()),
+          startDateValid: !!(subStart && Number.isFinite(subStart.getTime())),
+          endDateValid: !!(subEnd && Number.isFinite(subEnd.getTime())),
+          graceEndValid: !!(graceEnd && Number.isFinite(graceEnd.getTime())),
+        },
+        callStack: new Error('[subscription.cron] school suspension audit').stack,
+      },
+    });
+
     await School.findByIdAndUpdate(school._id, { status: 'inactive' });
     console.log(`[SubscriptionCron] Auto-suspended: ${school.name}`);
     global.io?.of('/subscriptions').emit('subscription:autoSuspended', {

@@ -8,6 +8,7 @@ const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 const redis = require('../config/redis.js');
 const { config } = require('../config/env.js');
+const FraudAlert = require('../models/FraudAlert.js');
 const { enrichUserForDashboard } = require('../users/user.enricher.js');
 const { calculateUserThreatScore } = require('../security/user.threat.scorer.js');
 
@@ -918,10 +919,36 @@ const changeMyPassword = async (req, res) => {
     }
 
     // Hash only the new password after successful current-password verification.
+    const schoolBefore = user.schoolId
+      ? await School.findById(user.schoolId).select('status plan subscription').lean().catch(() => null)
+      : null;
+    const fraudBefore = user.schoolId
+      ? await FraudAlert.findOne({ schoolId: user.schoolId }).sort({ createdAt: -1 }).select('threatScore createdAt alertType severity').lean().catch(() => null)
+      : null;
+
     user.password = await hashPassword(newPassword);
     user.lockedUntil = null;
     user.failedLogins = 0;
     await user.save();
+
+    const schoolAfter = user.schoolId
+      ? await School.findById(user.schoolId).select('status plan subscription').lean().catch(() => null)
+      : null;
+    const fraudAfter = user.schoolId
+      ? await FraudAlert.findOne({ schoolId: user.schoolId }).sort({ createdAt: -1 }).select('threatScore createdAt alertType severity').lean().catch(() => null)
+      : null;
+
+    console.log('===== PASSWORD CHANGE FORENSICS =====');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('User ID:', userId ? userId.toString() : null);
+    console.log('Role:', req.user?.role || null);
+    console.log('School ID:', user.schoolId ? user.schoolId.toString() : null);
+    console.log('School Status Before:', schoolBefore?.status || null);
+    console.log('School Status After:', schoolAfter?.status || null);
+    console.log('Fraud Score Before:', fraudBefore?.threatScore ?? null);
+    console.log('Fraud Score After:', fraudAfter?.threatScore ?? null);
+    console.log('Subscription Status:', schoolAfter?.subscription?.status || schoolBefore?.subscription?.status || null);
+    console.log('=============================');
 
     // Invalidate active sessions and force re-login on all devices.
     await LoginSession.updateMany(
@@ -954,7 +981,21 @@ const changeMyPassword = async (req, res) => {
       entityName: user.name,
       description: `${req.user.name} changed own password`,
       schoolId: user.schoolId,
-      details: { changedBy: req.user.role },
+      details: {
+        changedBy: req.user.role,
+        timestamp: new Date().toISOString(),
+        schoolId: user.schoolId ? user.schoolId.toString() : null,
+        schoolStatusBefore: schoolBefore?.status || null,
+        schoolStatusAfter: schoolAfter?.status || null,
+        fraudScoreBefore: fraudBefore?.threatScore ?? null,
+        fraudScoreAfter: fraudAfter?.threatScore ?? null,
+        fraudSignalBefore: fraudBefore?.alertType || null,
+        fraudSignalAfter: fraudAfter?.alertType || null,
+        subscriptionStatus: schoolAfter?.subscription?.status || schoolBefore?.subscription?.status || null,
+        subscriptionStartDate: schoolAfter?.subscription?.startDate || schoolBefore?.subscription?.startDate || null,
+        subscriptionEndDate: schoolAfter?.subscription?.endDate || schoolBefore?.subscription?.endDate || null,
+        subscriptionGraceDays: schoolAfter?.subscription?.gracePeriodDays || schoolBefore?.subscription?.gracePeriodDays || null,
+      },
       req,
     });
 

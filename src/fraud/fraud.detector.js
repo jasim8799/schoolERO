@@ -1,10 +1,12 @@
 const { calculateThreatScore } = require('./threat.scorer');
 const FraudAlert = require('../models/FraudAlert');
 const School = require('../models/School');
+const { auditLog } = require('../utils/auditLog');
 
 async function runFraudScan() {
   const schools = await School.find({ isDeleted: false, status: 'active' }).lean();
   let alertsCreated = 0;
+  const fraudThreshold = 0.92;
 
   for (const school of schools) {
     try {
@@ -38,7 +40,76 @@ async function runFraudScan() {
       });
 
       // Auto-suspend if critical threat
-      if (score > 0.92) {
+      if (score > fraudThreshold) {
+        const now = new Date();
+        const subStart = school?.subscription?.startDate ? new Date(school.subscription.startDate) : null;
+        const subEnd = school?.subscription?.endDate ? new Date(school.subscription.endDate) : null;
+        const gracePeriodDays = Number(school?.subscription?.gracePeriodDays ?? 30);
+        const daysRemaining = subEnd && Number.isFinite(subEnd.getTime())
+          ? Math.ceil((subEnd.getTime() - now.getTime()) / 86400000)
+          : null;
+        const weightedBreakdown = _buildWeightedBreakdown(signals);
+        const dominant = _dominantSignal(signals);
+        const triggeredCondition = `score>${fraudThreshold} | ${score}>${fraudThreshold}`;
+
+        console.log('===== SCHOOL SUSPENSION =====');
+        console.log('Job:', 'fraudDetector.runFraudScan');
+        console.log('Timestamp:', now.toISOString());
+        console.log('School:', school.name || 'Unknown');
+        console.log('School ID:', school._id?.toString?.() || String(school._id));
+        console.log('Old Status:', school.status);
+        console.log('New Status:', 'inactive');
+        console.log('Current Date:', now.toISOString());
+        console.log('Subscription Start:', subStart ? subStart.toISOString() : 'N/A');
+        console.log('Subscription End:', subEnd ? subEnd.toISOString() : 'Invalid Date');
+        console.log('Days Remaining:', daysRemaining);
+        console.log('Grace Period:', gracePeriodDays);
+        console.log('Fraud Score:', score);
+        console.log('Fraud Threshold:', fraudThreshold);
+        console.log('Signals:', JSON.stringify(signals || {}));
+        console.log('Dominant Rule:', dominant);
+        console.log('Weighted Contributions:', JSON.stringify(weightedBreakdown));
+        console.log('Reason:', 'Verified fraud policy threshold exceeded');
+        console.log('Condition:', triggeredCondition);
+        console.log('Call Stack:', new Error('[fraud.detector] school suspension').stack);
+        console.log('=============================');
+
+        await auditLog({
+          action: 'SCHOOL_AUTO_SUSPENDED_FRAUD',
+          role: 'SYSTEM',
+          category: 'SECURITY',
+          entityType: 'SCHOOL',
+          entityId: school._id,
+          entityName: school.name,
+          schoolId: school._id,
+          schoolName: school.name,
+          description: `School auto-suspended by fraud detector: ${school.name || school._id}`,
+          details: {
+            jobName: 'fraudDetector.runFraudScan',
+            automatic: true,
+            operator: 'SYSTEM',
+            oldStatus: school.status,
+            newStatus: 'inactive',
+            reason: 'Verified fraud policy threshold exceeded',
+            currentDate: now.toISOString(),
+            subscriptionStartDate: subStart ? subStart.toISOString() : null,
+            subscriptionEndDate: subEnd ? subEnd.toISOString() : null,
+            gracePeriodDays,
+            daysRemaining,
+            subscriptionStatus: school?.subscription?.status || null,
+            planStatus: school?.plan || null,
+            fraudScore: score,
+            fraudThreshold,
+            severity,
+            dominantSignal: dominant,
+            signals: signals || {},
+            weightedContributions: weightedBreakdown,
+            triggeredCondition,
+            whyExceeded: `Fraud score ${score} exceeded threshold ${fraudThreshold}`,
+            callStack: new Error('[fraud.detector] school suspension audit').stack,
+          },
+        });
+
         await School.findByIdAndUpdate(school._id, { status: 'inactive' });
         global.io?.of('/subscriptions').emit('fraud:autosuspend', {
           schoolId: school._id, schoolName: school.name, score,
@@ -82,6 +153,25 @@ function _dominantSignal(signals) {
 function _daysRemaining(school) {
   if (!school.subscription?.endDate) return 0;
   return Math.ceil((new Date(school.subscription.endDate) - new Date()) / 86400000);
+}
+
+function _buildWeightedBreakdown(signals = {}) {
+  const weights = {
+    failedPayments: 0.25,
+    failedLogins: 0.20,
+    apiAbuse: 0.15,
+    subscriptionExpiry: 0.15,
+    rapidPlanSwitch: 0.10,
+    unusualLocation: 0.10,
+    concurrentSessions: 0.05,
+  };
+
+  const entries = [];
+  for (const [key, weight] of Object.entries(weights)) {
+    const base = Number(signals?.[key]?.score || 0);
+    entries.push({ signal: key, score: base, weight, contribution: Number((base * weight).toFixed(4)) });
+  }
+  return entries.sort((a, b) => b.contribution - a.contribution);
 }
 
 module.exports = { runFraudScan };
