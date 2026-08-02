@@ -71,14 +71,169 @@ exports.getStudentBills = async (req, res) => {
 exports.getSchoolBills = async (req, res) => {
   try {
     const { schoolId } = req.user;
-    const { status, billType, studentId, page = 1, limit = 50 } = req.query;
+    const {
+      status,
+      billType,
+      studentId,
+      classId,
+      month,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      page = 1,
+      limit = 50,
+    } = req.query;
 
-    const filter = { schoolId, ...getSessionFilter(req) };
-    if (status) filter.status = status;
-    if (billType) filter.billType = billType;
-    if (studentId) filter.studentId = studentId;
+    const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 500);
+    const skip = (parsedPage - 1) * parsedLimit;
 
-    const skip = (page - 1) * limit;
+    const filterClauses = [{ schoolId }, getSessionFilter(req)];
+    if (status) filterClauses.push({ status });
+    if (billType) filterClauses.push({ billType });
+
+    const normalizedStudentId = studentId ? String(studentId) : null;
+    const normalizedClassId = classId ? String(classId) : null;
+    const trimmedSearch = String(search || '').trim();
+
+    let matchingStudentIds = null;
+    if (normalizedClassId || trimmedSearch) {
+      const studentFilter = { schoolId };
+      if (normalizedClassId) {
+        if (!mongoose.Types.ObjectId.isValid(normalizedClassId)) {
+          return res.json({
+            success: true,
+            data: [],
+            pagination: {
+              total: 0,
+              page: parsedPage,
+              limit: parsedLimit,
+              totalPages: 0,
+              hasNext: false,
+              hasPrevious: parsedPage > 1,
+            },
+          });
+        }
+        studentFilter.classId = new mongoose.Types.ObjectId(normalizedClassId);
+      }
+
+      if (trimmedSearch) {
+        const rx = new RegExp(trimmedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        studentFilter.$or = [
+          { name: rx },
+          { rollNumber: rx },
+          { admissionNumber: rx },
+          { mobile: rx },
+        ];
+      }
+
+      matchingStudentIds = await Student.distinct('_id', studentFilter);
+      if (!matchingStudentIds.length) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            total: 0,
+            page: parsedPage,
+            limit: parsedLimit,
+            totalPages: 0,
+            hasNext: false,
+            hasPrevious: parsedPage > 1,
+          },
+        });
+      }
+    }
+
+    if (normalizedStudentId) {
+      if (!mongoose.Types.ObjectId.isValid(normalizedStudentId)) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            total: 0,
+            page: parsedPage,
+            limit: parsedLimit,
+            totalPages: 0,
+            hasNext: false,
+            hasPrevious: parsedPage > 1,
+          },
+        });
+      }
+
+      const studentObjectId = new mongoose.Types.ObjectId(normalizedStudentId);
+      if (
+        Array.isArray(matchingStudentIds) &&
+        !matchingStudentIds.some((id) => id.toString() === normalizedStudentId)
+      ) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            total: 0,
+            page: parsedPage,
+            limit: parsedLimit,
+            totalPages: 0,
+            hasNext: false,
+            hasPrevious: parsedPage > 1,
+          },
+        });
+      }
+      filterClauses.push({ studentId: studentObjectId });
+    } else if (Array.isArray(matchingStudentIds)) {
+      filterClauses.push({ studentId: { $in: matchingStudentIds } });
+    }
+
+    if (trimmedSearch) {
+      const rx = new RegExp(trimmedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const billSearchClause = {
+        $or: [
+          { billNumber: rx },
+          { description: rx },
+        ],
+      };
+
+      if (normalizedStudentId || !Array.isArray(matchingStudentIds)) {
+        filterClauses.push(billSearchClause);
+      } else {
+        filterClauses.push({
+          $or: [
+            billSearchClause,
+            { studentId: { $in: matchingStudentIds } },
+          ],
+        });
+      }
+    }
+
+    const monthNumber = parseInt(month, 10);
+    if (monthNumber >= 1 && monthNumber <= 12) {
+      filterClauses.push({
+        $expr: {
+          $eq: [
+            { $month: { $ifNull: ['$dueDate', '$createdAt'] } },
+            monthNumber,
+          ],
+        },
+      });
+    }
+
+    const filter = filterClauses.length === 1
+      ? filterClauses[0]
+      : { $and: filterClauses };
+
+    const sortMap = {
+      createdAt: 'createdAt',
+      dueDate: 'dueDate',
+      billNumber: 'billNumber',
+      totalAmount: 'totalAmount',
+      paidAmount: 'paidAmount',
+      dueAmount: 'dueAmount',
+      status: 'status',
+      billType: 'billType',
+    };
+    const sortField = sortMap[sortBy] || 'createdAt';
+    const sortDirection = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
+    const sort = { [sortField]: sortDirection, _id: -1 };
+
     const [bills, total] = await Promise.all([
       Bill.find(filter)
         .populate({
@@ -91,9 +246,9 @@ exports.getSchoolBills = async (req, res) => {
         })
         .populate('sessionId', 'name')
         .populate('createdBy', 'name')
-        .sort({ createdAt: -1 })
+        .sort(sort)
         .skip(skip)
-        .limit(Number(limit))
+        .limit(parsedLimit)
         .lean(),
       Bill.countDocuments(filter)
     ]);
@@ -130,7 +285,14 @@ exports.getSchoolBills = async (req, res) => {
     res.json({
       success: true,
       data: enrichedBills,
-      pagination: { total, page: Number(page), limit: Number(limit) }
+      pagination: {
+        total,
+        page: parsedPage,
+        limit: parsedLimit,
+        totalPages: total ? Math.ceil(total / parsedLimit) : 0,
+        hasNext: skip + enrichedBills.length < total,
+        hasPrevious: parsedPage > 1,
+      }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
