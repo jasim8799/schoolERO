@@ -14,6 +14,42 @@ const { createTeacher: createTeacherProfile } = require('./teacher.controller.js
 
 const PLAN_PRICES = { BASIC: 9000, STANDARD: 18000, PREMIUM: 32000 };
 
+const _cleanString = (value) => {
+  if (value == null) return '';
+  const trimmed = value.toString().trim();
+  return trimmed;
+};
+
+const normalizeSchoolContact = (payload = {}, existingContact = {}) => {
+  const contact = payload.contact;
+  const contactMap = contact && typeof contact === 'object' && !Array.isArray(contact)
+    ? contact
+    : {};
+
+  const phone =
+    _cleanString(contactMap.phone) ||
+    _cleanString(contactMap.mobile) ||
+    (typeof contact === 'string' ? _cleanString(contact) : '') ||
+    _cleanString(payload.phone) ||
+    _cleanString(payload.mobile) ||
+    _cleanString(payload.contactNumber) ||
+    _cleanString(existingContact.phone) ||
+    _cleanString(existingContact.mobile);
+
+  const email =
+    _cleanString(contactMap.email) ||
+    _cleanString(contactMap.contactEmail) ||
+    _cleanString(payload.email) ||
+    _cleanString(payload.contactEmail) ||
+    _cleanString(existingContact.email) ||
+    _cleanString(existingContact.contactEmail);
+
+  return {
+    phone: phone || undefined,
+    email: email || undefined,
+  };
+};
+
 function addMonths(date, months) {
   const d = new Date(date);
   d.setMonth(d.getMonth() + months);
@@ -23,7 +59,7 @@ function addMonths(date, months) {
 // Create School
 const createSchool = async (req, res) => {
   try {
-    const { schoolName, schoolCode, plan, limits } = req.body;
+    const { schoolName, schoolCode, plan, limits, address } = req.body;
 
     // Validate required fields
     if (!schoolName || !schoolCode) {
@@ -84,6 +120,8 @@ const createSchool = async (req, res) => {
       name: schoolName,
       code: schoolCode.toUpperCase(),
       plan,
+      address,
+      contact: normalizeSchoolContact(req.body),
       limits: {
         studentLimit: limits.students,
         teacherLimit: limits.teachers,
@@ -414,13 +452,30 @@ const getSchoolById = async (req, res) => {
 const updateSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, address, contact, plan } = req.body;
+    const { name, address, plan } = req.body;
+
+    const schoolDoc = await School.findById(id).select('contact');
+    if (!schoolDoc) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
 
     // Build update object
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (address !== undefined) updateData.address = address;
-    if (contact !== undefined) updateData.contact = contact;
+    if (
+      req.body.contact !== undefined ||
+      req.body.phone !== undefined ||
+      req.body.mobile !== undefined ||
+      req.body.email !== undefined ||
+      req.body.contactNumber !== undefined ||
+      req.body.contactEmail !== undefined
+    ) {
+      updateData.contact = normalizeSchoolContact(req.body, schoolDoc.contact || {});
+    }
     
     // Only allow plan update if valid
     if (plan !== undefined && Object.values(SAAS_PLANS).includes(plan)) {
@@ -494,7 +549,6 @@ const createSchoolWithLifecycle = async (req, res) => {
       name,
       code,
       address,
-      contact,
       plan,
       monthlyPrice,  // NEW: Accept monthly price
       principalName,
@@ -555,7 +609,7 @@ const createSchoolWithLifecycle = async (req, res) => {
       name,
       code: schoolCode,
       address,
-      contact,
+  contact: normalizeSchoolContact(req.body),
       plan: plan || SAAS_PLANS.BASIC, // Default to BASIC if not specified
       status: 'active',
       subscription: {

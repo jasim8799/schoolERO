@@ -709,7 +709,7 @@ const getMyStudentProfile = async (req, res) => {
     const populatedStudent = await Student.findById(student._id)
       .populate('classId', 'name')
       .populate('sectionId', 'name')
-      .populate('schoolId', 'name code address contact')
+      .populate('schoolId', 'name code address contact phone email contactNumber contactEmail mobile')
       .populate('sessionId', 'name startDate endDate');
 
     if (!populatedStudent) {

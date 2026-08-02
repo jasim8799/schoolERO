@@ -381,7 +381,7 @@ const login = async (req, res) => {
 const getCurrentUser = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
-      .populate('schoolId', 'name code address contact')
+      .populate('schoolId', 'name code address contact phone email contactNumber contactEmail mobile')
       .select('-password');
 
     if (!user) {
