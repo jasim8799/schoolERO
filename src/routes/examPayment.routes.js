@@ -8,25 +8,25 @@ const router = express.Router();
 // GET all payments (OPERATOR / PRINCIPAL)
 router.get(
   '/',
-  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL),
+  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, USER_ROLES.SUPER_ADMIN),
   getAllExamPayments
 );
 
 router.get(
   '/status',
-  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL),
+  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, USER_ROLES.SUPER_ADMIN),
   getExamPaymentStatus
 );
 
 router.post(
   '/',
-  requireRole(USER_ROLES.PARENT, USER_ROLES.STUDENT, USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR),
+  requireRole(USER_ROLES.PRINCIPAL, USER_ROLES.OPERATOR, USER_ROLES.SUPER_ADMIN),
   payExamFee
 );
 
 router.post(
   '/manual',
-  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL),
+  requireRole(USER_ROLES.OPERATOR, USER_ROLES.PRINCIPAL, USER_ROLES.SUPER_ADMIN),
   manualExamPayment
 );
 

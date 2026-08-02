@@ -13,54 +13,25 @@ const payExamFee = async (req, res) => {
       return res.status(400).json({ message: 'examFormId and amount are required' });
     }
 
-    if (!['PARENT', 'STUDENT'].includes(role)) {
-      return res.status(403).json({ message: 'Only parents or students can pay exam fees online' });
+    if (!['PRINCIPAL', 'OPERATOR', 'SUPER_ADMIN'].includes(role)) {
+      return res.status(403).json({
+        message: 'Students and parents cannot mark exam fees as paid. Please contact school office for verification.',
+      });
     }
 
-    if (role === 'PARENT') {
-      const Parent = require('../models/Parent.js');
-      const Student = require('../models/Student.js');
-      const parent = await Parent.findOne({ userId, schoolId });
-      if (!parent) return res.status(400).json({ message: 'Parent profile not found' });
-      if (!parent.children.some((id) => id.toString() === studentId.toString())) {
-        return res.status(403).json({ message: 'Access denied. Student not associated with this parent.' });
-      }
-      
-      // Validate student status for parent payment
-      const student = await Student.findById(studentId).select('status').lean();
-      if (!student) {
-        return res.status(404).json({ message: 'Student not found' });
-      }
-      if (student.status !== 'ACTIVE') {
-        return res.status(403).json({ message: 'Cannot pay exam fee for student - status is: ' + student.status + '. Only ACTIVE students can have exam fees paid.' });
-      }
-      
-      studentIds = parent.children;
+    const Student = require('../models/Student.js');
+    const targetStudent = await Student.findOne({ _id: studentId, schoolId }).select('status').lean();
+    if (!targetStudent) {
+      return res.status(404).json({ message: 'Student not found' });
     }
-
-    if (role === 'STUDENT') {
-      const Student = require('../models/Student.js');
-      const ownStudent = await Student.findOne({ userId, schoolId }).select('_id status');
-      if (!ownStudent) {
-        return res.status(400).json({ message: 'Student profile not found' });
-      }
-      if (ownStudent.status !== 'ACTIVE') {
-        return res.status(403).json({ message: 'Cannot pay exam fee - student status is: ' + ownStudent.status + '. Only ACTIVE students can pay exam fees.' });
-      }
-      if (!studentId) {
-        studentId = ownStudent._id;
-      }
-      if (studentId && ownStudent._id.toString() !== studentId.toString()) {
-        return res.status(403).json({ message: 'Access denied. You can only pay for your own exam fee.' });
-      }
+    if (targetStudent.status !== 'ACTIVE') {
+      return res.status(403).json({
+        message: 'Cannot verify exam fee for student - status is: ' + targetStudent.status + '. Only ACTIVE students are eligible.',
+      });
     }
 
     if (!studentId) {
       return res.status(400).json({ message: 'studentId is required' });
-    }
-
-    if (role === 'PARENT' && studentIds.length === 0) {
-      return res.status(400).json({ message: 'No students associated with this parent' });
     }
 
     const { examPayment } = await processExamFeePayment({
@@ -182,8 +153,21 @@ const getMyExamPayments = async (req, res) => {
           select: 'name'
         }
       })
+      .populate('createdBy', 'name role')
       .sort({ createdAt: -1 });
-    res.json(payments);
+
+    const mapped = payments.map((paymentDoc) => {
+      const payment = paymentDoc.toObject ? paymentDoc.toObject() : paymentDoc;
+      return {
+        ...payment,
+        verificationStatus: payment.status,
+        verifiedBy: payment.createdBy?.name || null,
+        verifiedByRole: payment.createdBy?.role || null,
+        paymentDate: payment.createdAt || null,
+      };
+    });
+
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
