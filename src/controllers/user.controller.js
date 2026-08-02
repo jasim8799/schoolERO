@@ -950,6 +950,12 @@ const changeMyPassword = async (req, res) => {
     console.log('Subscription Status:', schoolAfter?.subscription?.status || schoolBefore?.subscription?.status || null);
     console.log('=============================');
 
+    // Capture active session JTIs before revocation so those JWTs can be denied immediately.
+    const activeSessions = await LoginSession.find({ userId: user._id, isActive: true })
+      .select('sessionToken')
+      .lean()
+      .catch(() => []);
+
     // Invalidate active sessions and force re-login on all devices.
     await LoginSession.updateMany(
       { userId: user._id, isActive: true },
@@ -963,10 +969,19 @@ const changeMyPassword = async (req, res) => {
       }
     );
 
-    // If blacklist checks are enabled, blacklist this user's tokens for the JWT lifespan.
+    // Blacklist only JWT JTIs (never blacklist:user for password change).
     const ttlSeconds = _jwtExpiryToSeconds(config?.jwt?.expiresIn);
     if (ttlSeconds > 0) {
-      await redis.setex(`blacklist:user:${user._id}`, ttlSeconds, '1').catch(() => {});
+      const jtiKeys = new Set();
+      if (req.user?.jti) jtiKeys.add(String(req.user.jti));
+      for (const s of activeSessions || []) {
+        if (s?.sessionToken) jtiKeys.add(String(s.sessionToken));
+      }
+      await Promise.all(
+        [...jtiKeys].map((jti) =>
+          redis.setex(`blacklist:token:${jti}`, ttlSeconds, '1').catch(() => {})
+        )
+      );
     }
     await _invalidateUserCaches(user._id);
 
@@ -1082,6 +1097,11 @@ const forceLogoutUser = async (req, res) => {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, message: 'User not found' });
     }
 
+    const activeSessions = await LoginSession.find({ userId: user._id, isActive: true })
+      .select('sessionToken')
+      .lean()
+      .catch(() => []);
+
     const logoutResult = await LoginSession.updateMany(
       { userId: user._id, isActive: true },
       {
@@ -1093,7 +1113,13 @@ const forceLogoutUser = async (req, res) => {
       }
     );
 
-    await redis.setex(`blacklist:user:${user._id}`, 3600, '1').catch(() => {});
+    const ttlSeconds = _jwtExpiryToSeconds(config?.jwt?.expiresIn) || 3600;
+    const jtis = [...new Set((activeSessions || []).map((s) => s?.sessionToken).filter(Boolean))];
+    if (jtis.length > 0) {
+      await Promise.all(
+        jtis.map((jti) => redis.setex(`blacklist:token:${jti}`, ttlSeconds, '1').catch(() => {}))
+      );
+    }
     await _invalidateUserCaches(user._id);
 
     await auditLog({
