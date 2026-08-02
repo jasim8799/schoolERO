@@ -4,6 +4,7 @@ const Student = require('../models/Student.js');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants.js');
 const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
+const { attachPrincipalEmailToSchool } = require('../utils/schoolContactEnricher');
 
 // Create Parent
 const createParent = async (req, res) => {
@@ -185,9 +186,23 @@ const getMyChildren = async (req, res) => {
       });
     }
 
+    const children = await Promise.all(
+      (parent.children || []).map(async (childDoc) => {
+        const child = childDoc && typeof childDoc.toObject === 'function'
+          ? childDoc.toObject()
+          : childDoc;
+
+        if (child && child.schoolId && typeof child.schoolId === 'object') {
+          child.schoolId = await attachPrincipalEmailToSchool(child.schoolId);
+        }
+
+        return child;
+      })
+    );
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      data: parent.children
+      data: children
     });
   } catch (error) {
     logger.error('Get my children error:', error.message);

@@ -11,6 +11,7 @@ const { auditLog } = require('../utils/auditLog');
 const { recordSecurityEvent } = require('../services/security.metrics');
 const accountSecurity = require('../services/accountSecurity.service');
 const { logLoginFailed, logLoginSuccess } = require('../services/security.event.logger');
+const { attachPrincipalEmailToSchool } = require('../utils/schoolContactEnricher');
 
 // Register User
 const register = async (req, res) => {
@@ -391,9 +392,14 @@ const getCurrentUser = async (req, res) => {
       });
     }
 
+    const userObj = user.toObject();
+    if (userObj.schoolId && typeof userObj.schoolId === 'object') {
+      userObj.schoolId = await attachPrincipalEmailToSchool(userObj.schoolId);
+    }
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      data: user
+      data: userObj
     });
   } catch (error) {
     logger.error('Get current user error:', error.message);

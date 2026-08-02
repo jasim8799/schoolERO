@@ -11,6 +11,7 @@ const { logger } = require('../utils/logger.js');
 const { auditLog } = require('../utils/auditLog.js');
 const { hashPassword } = require('../utils/password.js');
 const { autoAssignClassTuitionFee } = require('../services/studentFeeAutoAssign.service');
+const { attachPrincipalEmailToSchool } = require('../utils/schoolContactEnricher');
 
 // Create Student
 const createStudent = async (req, res) => {
@@ -741,6 +742,9 @@ const getMyStudentProfile = async (req, res) => {
       }
 
       const studentObj = populatedStudent.toObject();
+      if (studentObj.schoolId && typeof studentObj.schoolId === 'object') {
+        studentObj.schoolId = await attachPrincipalEmailToSchool(studentObj.schoolId);
+      }
       return res.json({
         success: true,
         data: {
@@ -754,9 +758,14 @@ const getMyStudentProfile = async (req, res) => {
       });
     }
 
+    const responseStudent = populatedStudent.toObject();
+    if (responseStudent.schoolId && typeof responseStudent.schoolId === 'object') {
+      responseStudent.schoolId = await attachPrincipalEmailToSchool(responseStudent.schoolId);
+    }
+
     res.json({
       success: true,
-      data: populatedStudent
+      data: responseStudent
     });
   } catch (err) {
     res.status(500).json({
