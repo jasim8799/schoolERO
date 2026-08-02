@@ -3,6 +3,7 @@ const Question = require('../models/Question.js');
 const Student = require('../models/Student.js');
 const Teacher = require('../models/Teacher.js');
 const Subject = require('../models/Subject.js');
+const Parent = require('../models/Parent.js');
 
 const _ip = (req) =>
   req.headers['x-forwarded-for']?.split(',')[0]?.trim()
@@ -237,11 +238,90 @@ const getAllQuestions = async (req, res) => {
 
 const getSubjectsForStudent = async (req, res) => {
   try {
-    const { schoolId, sessionId } = req.user;
-    const subjects = await Subject.find({ schoolId, ..._sessionFilter(sessionId) })
+    const { schoolId, sessionId, role } = req.user;
+    const normalizedSchoolId = schoolId?._id || schoolId;
+
+    // Keep existing role behavior unchanged for non-student/parent roles.
+    if (role !== 'STUDENT' && role !== 'PARENT') {
+      const subjects = await Subject.find({
+        schoolId: normalizedSchoolId,
+        ..._sessionFilter(sessionId),
+      })
+        .select('name _id')
+        .sort({ name: 1 })
+        .lean();
+      return res.json({ success: true, data: subjects });
+    }
+
+    let targetStudent = null;
+
+    if (role === 'STUDENT') {
+      const userId = req.user._id || req.user.userId;
+      targetStudent = await Student.findOne({
+        userId,
+        schoolId: normalizedSchoolId,
+      })
+        .select('_id classId schoolId sessionId')
+        .lean();
+
+      if (!targetStudent) {
+        return res.json({ success: true, data: [] });
+      }
+    } else {
+      const userId = req.user._id || req.user.userId;
+      const parent = await Parent.findOne({ userId, schoolId: normalizedSchoolId })
+        .select('children')
+        .lean();
+
+      if (!parent || !Array.isArray(parent.children) || parent.children.length === 0) {
+        return res.json({ success: true, data: [] });
+      }
+
+      const requestedStudentId = req.query.studentId;
+      let selectedStudentId = null;
+      if (requestedStudentId && mongoose.Types.ObjectId.isValid(requestedStudentId)) {
+        const allowed = parent.children.some(
+          (cid) => cid?.toString() === requestedStudentId.toString()
+        );
+        if (allowed) selectedStudentId = requestedStudentId;
+      }
+
+      // Fallback: first linked child when caller does not pass studentId.
+      selectedStudentId = selectedStudentId || parent.children[0];
+
+      targetStudent = await Student.findOne({
+        _id: selectedStudentId,
+        schoolId: normalizedSchoolId,
+      })
+        .select('_id classId schoolId sessionId')
+        .lean();
+
+      if (!targetStudent) {
+        return res.json({ success: true, data: [] });
+      }
+    }
+
+    const targetSessionId = targetStudent.sessionId || sessionId;
+    const subjects = await Subject.find({
+      schoolId: targetStudent.schoolId,
+      classId: targetStudent.classId,
+      ..._sessionFilter(targetSessionId),
+    })
       .select('name _id')
       .sort({ name: 1 })
       .lean();
+
+    // Temporary debug logs for student/parent subject scoping.
+    console.log('[Q&A][SUBJECTS] role=%s student=%s class=%s school=%s session=%s count=%d',
+      role,
+      targetStudent._id?.toString(),
+      targetStudent.classId?.toString(),
+      targetStudent.schoolId?.toString(),
+      targetSessionId?.toString?.() || targetSessionId,
+      subjects.length
+    );
+    console.log('[Q&A][SUBJECTS] names=%s', subjects.map((s) => s.name).join(', '));
+
     return res.json({ success: true, data: subjects });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
